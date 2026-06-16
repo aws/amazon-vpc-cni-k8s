@@ -398,7 +398,11 @@ func New(ctx context.Context, k8sClient client.Client, withApiServer bool) (*IPA
 	prometheusRegister()
 	c := &IPAMContext{}
 	c.k8sClient = k8sClient
-	c.networkClient = networkutils.New()
+	networkClient, err := networkutils.New()
+	if err != nil {
+		return nil, errors.Wrap(err, "ipamd: failed to initialize network utils")
+	}
+	c.networkClient = networkClient
 	c.useCustomNetworking = UseCustomNetworkCfg()
 	c.manageENIsNonScheduleable = ManageENIsOnNonSchedulableNode()
 	c.useSubnetDiscovery = UseSubnetDiscovery()
@@ -747,7 +751,7 @@ func (c *IPAMContext) updateCIDRsRulesOnChange(oldVPCCIDRs []string) []string {
 	old := sets.NewString(oldVPCCIDRs...)
 	new := sets.NewString(newVPCCIDRs...)
 	if !old.Equal(new) {
-		err = c.networkClient.UpdateHostIptablesRules(newVPCCIDRs, c.awsClient.GetPrimaryENImac(), &primaryIP,
+		err = c.networkClient.UpdateHostSNATRules(newVPCCIDRs, c.awsClient.GetPrimaryENImac(), &primaryIP,
 			c.enableIPv6)
 		if err != nil {
 			log.Warnf("unable to update host iptables rules for VPC CIDRs due to error: %v", err)
@@ -2110,6 +2114,8 @@ func EnablePodIPAnnotation() bool {
 // filterUnmanagedENIs filters out ENIs marked with the "node.k8s.amazonaws.com/no_manage" tag
 func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutils.ENIMetadata {
 	numFiltered := 0
+	// Use a local slice to recount from scratch, avoiding accumulation across repeated calls.
+	unmanagedENI := make([]int, len(c.unmanagedENI))
 	ret := make([]awsutils.ENIMetadata, 0, len(enis))
 
 	for _, eni := range enis {
@@ -2127,7 +2133,7 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 					log.Debugf("Skipping ENI %s: IPv6 Mode is enabled and VPC CNI will only ENIs created by it in v6 PD mode",
 						eni.ENIID)
 					numFiltered++
-					c.unmanagedENI[eni.NetworkCard] += 1
+					unmanagedENI[eni.NetworkCard] += 1
 					continue
 				} else if isUnmanagedNIC {
 					log.Debugf("Skipping ENI %s: since it is on unmanaged network card index %d", eni.ENIID, eni.NetworkCard)
@@ -2135,14 +2141,14 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 				} else if isEfaOnlyENI {
 					log.Debugf("Skipping ENI %s: since it is EFA only ENI on network card index %d", eni.ENIID, eni.NetworkCard)
 					numFiltered++
-					c.unmanagedENI[eni.NetworkCard] += 1
+					unmanagedENI[eni.NetworkCard] += 1
 					continue
 				}
 			}
 		} else if isUnmanagedENI {
 			log.Debugf("Skipping ENI %s: since it is unmanaged", eni.ENIID)
 			numFiltered++
-			c.unmanagedENI[eni.NetworkCard] += 1
+			unmanagedENI[eni.NetworkCard] += 1
 			continue
 		} else if isUnmanagedNIC {
 			log.Debugf("Skipping ENI %s: since it is on unmanaged network card index %d", eni.ENIID, eni.NetworkCard)
@@ -2150,12 +2156,17 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 		} else if isEfaOnlyENI {
 			log.Debugf("Skipping ENI %s: since it is EFA only ENI on network card index %d", eni.ENIID, eni.NetworkCard)
 			numFiltered++
-			c.unmanagedENI[eni.NetworkCard] += 1
+			unmanagedENI[eni.NetworkCard] += 1
 			continue
 		}
 
 		ret = append(ret, eni)
 	}
+
+	for networkCard, unmanagedENIs := range unmanagedENI {
+		c.unmanagedENI[networkCard] = unmanagedENIs
+	}
+
 	c.updateIPStats(numFiltered)
 	return ret
 }
