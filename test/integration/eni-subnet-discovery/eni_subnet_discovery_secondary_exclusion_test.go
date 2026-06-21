@@ -25,6 +25,8 @@ import (
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -343,9 +345,24 @@ var _ = Describe("Secondary ENI Exclusion Tests", func() {
 				By("Creating secondary subnet with cni=1 and old cluster tag prefix")
 				subnetOutput, err := f.CloudServices.EC2().
 					CreateSubnet(context.TODO(), "100.64.66.0/24", f.Options.AWSVPCID, *primaryInstance.Placement.AvailabilityZone)
-				Expect(err).ToNot(HaveOccurred())
-
-				secondarySubnetWithOldTagID = *subnetOutput.Subnet.SubnetId
+				if err != nil && strings.Contains(err.Error(), "InvalidSubnet.Conflict") {
+					// Subnet already exists from a previous run, find it
+					By("Subnet already exists, looking up existing subnet")
+					cfg, _ := config.LoadDefaultConfig(context.TODO(), config.WithRegion(f.Options.AWSRegion))
+					ec2Client := ec2.NewFromConfig(cfg)
+					descOutput, descErr := ec2Client.DescribeSubnets(context.TODO(), &ec2.DescribeSubnetsInput{
+						Filters: []ec2types.Filter{
+							{Name: aws.String("vpc-id"), Values: []string{f.Options.AWSVPCID}},
+							{Name: aws.String("cidr-block"), Values: []string{"100.64.66.0/24"}},
+						},
+					})
+					Expect(descErr).ToNot(HaveOccurred())
+					Expect(len(descOutput.Subnets)).To(Equal(1))
+					secondarySubnetWithOldTagID = *descOutput.Subnets[0].SubnetId
+				} else {
+					Expect(err).ToNot(HaveOccurred())
+					secondarySubnetWithOldTagID = *subnetOutput.Subnet.SubnetId
+				}
 
 				By("Tagging test subnet with cni=1 (opt-in) and old-style cluster tag")
 				_, err = f.CloudServices.EC2().
