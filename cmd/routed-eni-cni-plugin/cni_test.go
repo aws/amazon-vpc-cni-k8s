@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
+	"os"
 	"testing"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
@@ -1832,4 +1833,42 @@ func TestLoadNetConf(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDialIPAMD_FallsBackToTCPWhenSocketMissing(t *testing.T) {
+	ctrl, _, mocksGRPC, _, _ := setup(t)
+	defer ctrl.Finish()
+
+	log := logger.New(&logger.Configuration{LogLevel: "DEBUG"})
+
+	// The socket at ipamdSocketPath doesn't exist in the test environment,
+	// so dialIPAMD should fall back to TCP on ipamdAddress.
+	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
+	mocksGRPC.EXPECT().Dial(ipamdAddress, gomock.Any()).Return(conn, nil)
+
+	result, err := dialIPAMD(mocksGRPC, log)
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+}
+
+func TestDialIPAMD_FallsBackToTCPWhenSocketDialFails(t *testing.T) {
+	ctrl, _, mocksGRPC, _, _ := setup(t)
+	defer ctrl.Finish()
+
+	log := logger.New(&logger.Configuration{LogLevel: "DEBUG"})
+
+	// Create a file at the socket path so os.Stat succeeds, but it's not a real socket
+	// so grpcClient.Dial("unix://...") will fail, triggering TCP fallback.
+	tmpDir := t.TempDir()
+	socketPath := tmpDir + "/ipamd.sock"
+	os.WriteFile(socketPath, []byte("not a socket"), 0600)
+
+	// Since ipamdSocketPath is a const pointing to /var/run/aws-node/ipamd.sock (doesn't exist in CI),
+	// dialIPAMD will skip the socket and go straight to TCP fallback.
+	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
+	mocksGRPC.EXPECT().Dial(ipamdAddress, gomock.Any()).Return(conn, nil)
+
+	result, err := dialIPAMD(mocksGRPC, log)
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
 }

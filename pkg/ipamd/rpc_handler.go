@@ -19,6 +19,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -44,6 +45,7 @@ import (
 
 const (
 	ipamdgRPCaddress      = "127.0.0.1:50051"
+	ipamdGRPCSocketPath   = "/var/run/aws-node/ipamd.sock"
 	grpcHealthServiceName = "grpc.health.v1.aws-node"
 
 	vpccniPodIPKey = "vpc.amazonaws.com/pod-ips"
@@ -469,30 +471,73 @@ func (s *server) GetNetworkPolicyConfigs(ctx context.Context, e *emptypb.Empty) 
 
 // RunRPCHandler handles request from gRPC
 func (c *IPAMContext) RunRPCHandler(version string) error {
-	log.Infof("Serving RPC Handler version %s on %s", version, ipamdgRPCaddress)
-	listener, err := net.Listen("tcp", ipamdgRPCaddress)
-	if err != nil {
-		log.Errorf("Failed to listen gRPC port: %v", err)
-		return errors.Wrap(err, "ipamd: failed to listen to gRPC port")
+	return c.runRPCHandlerWithSocketPath(version, ipamdGRPCSocketPath)
+}
+
+func (c *IPAMContext) runRPCHandlerWithSocketPath(version string, socketPath string) error {
+	log.Infof("Serving RPC Handler version %s on unix:%s", version, socketPath)
+
+	// Ensure the parent directory exists
+	if err := os.MkdirAll(filepath.Dir(socketPath), 0755); err != nil {
+		return errors.Wrap(err, "ipamd: failed to create socket directory")
 	}
+
+	// Remove stale socket file from a previous run
+	if err := os.Remove(socketPath); err != nil && !os.IsNotExist(err) {
+		return errors.Wrap(err, "ipamd: failed to remove stale socket")
+	}
+
+	// Set umask before creating the socket to avoid a TOCTOU window where the socket
+	// exists with default permissions before chmod is applied.
+	oldMask := syscall.Umask(0117)
+	listener, err := net.Listen("unix", socketPath)
+	syscall.Umask(oldMask)
+	if err != nil {
+		log.Errorf("Failed to listen on Unix socket %s: %v", socketPath, err)
+		return errors.Wrap(err, "ipamd: failed to listen on Unix socket")
+	}
+
+	// Restrict socket to root:root 0660. The CNI plugin runs as root (invoked by kubelet).
+	// The socket inherits root group ownership in the container, so group access is equivalent to root.
+	if err := os.Chmod(socketPath, 0660); err != nil {
+		listener.Close()
+		_ = os.Remove(socketPath)
+		return errors.Wrap(err, "ipamd: failed to set socket permissions")
+	}
+
 	grpcServer := grpc.NewServer()
 	rpc.RegisterCNIBackendServer(grpcServer, &server{version: version, ipamContext: c})
 	rpc.RegisterConfigServerBackendServer(grpcServer, &server{version: version, ipamContext: c})
 	healthServer := health.NewServer()
-	// If ipamd can talk to the API server and to the EC2 API, the pod is healthy.
-	// No need to ever change this to HealthCheckResponse_NOT_SERVING since it's a local service only
 	healthServer.SetServingStatus(grpcHealthServiceName, healthpb.HealthCheckResponse_SERVING)
 	healthpb.RegisterHealthServer(grpcServer, healthServer)
 
 	// Register reflection service on gRPC server.
 	reflection.Register(grpcServer)
+
+	// TODO: Remove TCP fallback once all nodes run the socket-based IPAMD.
+	go c.runTCPFallbackListener(version, grpcServer)
+
 	// Add shutdown hook
 	go c.shutdownListener()
 	if err := grpcServer.Serve(listener); err != nil {
-		log.Errorf("Failed to start server on gRPC port: %v", err)
-		return errors.Wrap(err, "ipamd: failed to start server on gPRC port")
+		log.Errorf("Failed to start server on Unix socket: %v", err)
+		return errors.Wrap(err, "ipamd: failed to start server on Unix socket")
 	}
 	return nil
+}
+
+// runTCPFallbackListener starts a TCP listener on the legacy port for backward compatibility.
+func (c *IPAMContext) runTCPFallbackListener(version string, grpcServer *grpc.Server) {
+	log.Infof("Starting TCP fallback gRPC listener on %s", ipamdgRPCaddress)
+	listener, err := net.Listen("tcp", ipamdgRPCaddress)
+	if err != nil {
+		log.Warnf("Failed to start TCP fallback listener on %s: %v (Unix socket is primary)", ipamdgRPCaddress, err)
+		return
+	}
+	if err := grpcServer.Serve(listener); err != nil {
+		log.Warnf("TCP fallback listener stopped: %v", err)
+	}
 }
 
 // shutdownListener - Listen to signals and set ipamd to be in status "terminating"
