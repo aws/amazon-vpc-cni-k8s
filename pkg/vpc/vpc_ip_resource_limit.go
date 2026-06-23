@@ -2371,19 +2371,6 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		HypervisorType: "nitro",
 		IsBareMetal:    false,
 	},
-	"c7i.32xlarge": {
-		ENILimit:                15,
-		IPv4Limit:               50,
-		DefaultNetworkCardIndex: 0,
-		NetworkCards: []NetworkCard{
-			{
-				MaximumNetworkInterfaces: 15,
-				NetworkCardIndex:         0,
-			},
-		},
-		HypervisorType: "nitro",
-		IsBareMetal:    false,
-	},
 	"c7i.48xlarge": {
 		ENILimit:                15,
 		IPv4Limit:               50,

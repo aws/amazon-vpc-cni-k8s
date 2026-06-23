@@ -219,7 +219,6 @@ c7i.12xlarge 234
 c7i.16xlarge 737
 c7i.24xlarge 737
 c7i.2xlarge 58
-c7i.32xlarge 737
 c7i.48xlarge 737
 c7i.4xlarge 234
 c7i.8xlarge 234
