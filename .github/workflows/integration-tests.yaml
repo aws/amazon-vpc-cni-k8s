@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout latest commit in the PR
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # refs/tags/v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # refs/tags/v6.0.3
       - name: Set up Docker QEMU
         uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # refs/tags/v3.6.0
       - name: Set up Docker Buildx
