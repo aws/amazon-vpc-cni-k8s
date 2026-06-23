@@ -203,19 +203,19 @@ func (ec *egressContext) setupContainerVethV4() (*current.Interface, *current.In
 func (ec *egressContext) addRouteWithRetry(route *netlink.Route) error {
 	const maxAttempts = 5
 	var lastErr error
-	for attempt := 0; attempt < maxAttempts; attempt++ {
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		lastErr = ec.Link.RouteAdd(route)
 		if lastErr == nil {
-			if attempt > 0 {
-				ec.Log.Infof("addRouteWithRetry: route %v added successfully on attempt %d", route, attempt+1)
+			if attempt > 1 {
+				ec.Log.Infof("addRouteWithRetry: route %v added successfully on attempt %d", route, attempt)
 			}
 			return nil
 		}
 		if !os.IsExist(lastErr) {
 			return lastErr
 		}
-		ec.Log.Warnf("addRouteWithRetry: route %v already exists (attempt %d/%d), retrying in %v", route, attempt+1, maxAttempts, routeRetryInterval)
-		if attempt < maxAttempts-1 {
+		ec.Log.Warnf("addRouteWithRetry: route %v already exists (attempt %d/%d), retrying in %v", route, attempt, maxAttempts, routeRetryInterval)
+		if attempt < maxAttempts {
 			time.Sleep(routeRetryInterval)
 		}
 	}
