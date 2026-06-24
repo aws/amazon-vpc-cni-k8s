@@ -1841,12 +1841,13 @@ func TestDialIPAMD_FallsBackToTCPWhenSocketMissing(t *testing.T) {
 
 	log := logger.New(&logger.Configuration{LogLevel: "DEBUG"})
 
-	// The socket at ipamdSocketPath doesn't exist in the test environment,
-	// so dialIPAMD should fall back to TCP on ipamdAddress.
+	// Use a non-existent socket path so os.Stat fails and we fall back to TCP.
+	socketPath := t.TempDir() + "/nonexistent.sock"
+
 	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
 	mocksGRPC.EXPECT().Dial(ipamdAddress, gomock.Any()).Return(conn, nil)
 
-	result, err := dialIPAMD(mocksGRPC, log)
+	result, err := dialIPAMDWithSocketPath(mocksGRPC, log, socketPath)
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
 }
@@ -1857,18 +1858,36 @@ func TestDialIPAMD_FallsBackToTCPWhenSocketDialFails(t *testing.T) {
 
 	log := logger.New(&logger.Configuration{LogLevel: "DEBUG"})
 
-	// Create a file at the socket path so os.Stat succeeds, but it's not a real socket
-	// so grpcClient.Dial("unix://...") will fail, triggering TCP fallback.
-	tmpDir := t.TempDir()
-	socketPath := tmpDir + "/ipamd.sock"
+	// Create a file so os.Stat succeeds, but mock the Unix Dial to fail.
+	socketPath := t.TempDir() + "/ipamd.sock"
 	os.WriteFile(socketPath, []byte("not a socket"), 0600)
 
-	// Since ipamdSocketPath is a const pointing to /var/run/aws-node/ipamd.sock (doesn't exist in CI),
-	// dialIPAMD will skip the socket and go straight to TCP fallback.
+	// First Dial (Unix socket) fails, triggering TCP fallback.
+	mocksGRPC.EXPECT().Dial("unix://"+socketPath, gomock.Any()).Return(nil, errors.New("connection refused"))
+
+	// Second Dial (TCP fallback) succeeds.
 	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
 	mocksGRPC.EXPECT().Dial(ipamdAddress, gomock.Any()).Return(conn, nil)
 
-	result, err := dialIPAMD(mocksGRPC, log)
+	result, err := dialIPAMDWithSocketPath(mocksGRPC, log, socketPath)
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+}
+
+func TestDialIPAMD_ConnectsViaUnixSocket(t *testing.T) {
+	ctrl, _, mocksGRPC, _, _ := setup(t)
+	defer ctrl.Finish()
+
+	log := logger.New(&logger.Configuration{LogLevel: "DEBUG"})
+
+	// Create a file so os.Stat succeeds, and mock the Unix Dial to succeed.
+	socketPath := t.TempDir() + "/ipamd.sock"
+	os.WriteFile(socketPath, []byte("placeholder"), 0600)
+
+	conn, _ := grpc.Dial("unix://"+socketPath, grpc.WithInsecure())
+	mocksGRPC.EXPECT().Dial("unix://"+socketPath, gomock.Any()).Return(conn, nil)
+
+	result, err := dialIPAMDWithSocketPath(mocksGRPC, log, socketPath)
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
 }

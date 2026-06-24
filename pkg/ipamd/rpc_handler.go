@@ -487,18 +487,13 @@ func (c *IPAMContext) runRPCHandlerWithSocketPath(version string, socketPath str
 		return errors.Wrap(err, "ipamd: failed to remove stale socket")
 	}
 
-	// Set umask before creating the socket to avoid a TOCTOU window where the socket
-	// exists with default permissions before chmod is applied.
-	oldMask := syscall.Umask(0117)
 	listener, err := net.Listen("unix", socketPath)
-	syscall.Umask(oldMask)
 	if err != nil {
 		log.Errorf("Failed to listen on Unix socket %s: %v", socketPath, err)
 		return errors.Wrap(err, "ipamd: failed to listen on Unix socket")
 	}
 
 	// Restrict socket to root:root 0660. The CNI plugin runs as root (invoked by kubelet).
-	// The socket inherits root group ownership in the container, so group access is equivalent to root.
 	if err := os.Chmod(socketPath, 0660); err != nil {
 		listener.Close()
 		_ = os.Remove(socketPath)
@@ -516,7 +511,19 @@ func (c *IPAMContext) runRPCHandlerWithSocketPath(version string, socketPath str
 	reflection.Register(grpcServer)
 
 	// TODO: Remove TCP fallback once all nodes run the socket-based IPAMD.
-	go c.runTCPFallbackListener(version, grpcServer)
+	// TCP must bind successfully — health probes and waitForIPAM depend on it.
+	tcpListener, err := net.Listen("tcp", ipamdgRPCaddress)
+	if err != nil {
+		listener.Close()
+		_ = os.Remove(socketPath)
+		log.Errorf("Failed to listen on TCP %s: %v", ipamdgRPCaddress, err)
+		return errors.Wrap(err, "ipamd: failed to listen on TCP (required for health probes)")
+	}
+	go func() {
+		if err := grpcServer.Serve(tcpListener); err != nil {
+			log.Warnf("TCP fallback listener stopped: %v", err)
+		}
+	}()
 
 	// Add shutdown hook
 	go c.shutdownListener()
@@ -525,19 +532,6 @@ func (c *IPAMContext) runRPCHandlerWithSocketPath(version string, socketPath str
 		return errors.Wrap(err, "ipamd: failed to start server on Unix socket")
 	}
 	return nil
-}
-
-// runTCPFallbackListener starts a TCP listener on the legacy port for backward compatibility.
-func (c *IPAMContext) runTCPFallbackListener(version string, grpcServer *grpc.Server) {
-	log.Infof("Starting TCP fallback gRPC listener on %s", ipamdgRPCaddress)
-	listener, err := net.Listen("tcp", ipamdgRPCaddress)
-	if err != nil {
-		log.Warnf("Failed to start TCP fallback listener on %s: %v (Unix socket is primary)", ipamdgRPCaddress, err)
-		return
-	}
-	if err := grpcServer.Serve(listener); err != nil {
-		log.Warnf("TCP fallback listener stopped: %v", err)
-	}
 }
 
 // shutdownListener - Listen to signals and set ipamd to be in status "terminating"

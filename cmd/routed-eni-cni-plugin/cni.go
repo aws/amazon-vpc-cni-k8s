@@ -140,11 +140,15 @@ func LoadNetConf(bytes []byte) (*NetConf, logger.Logger, error) {
 // dialIPAMD connects to the IPAMD gRPC server. It tries the Unix socket first
 // (secure path), then falls back to TCP for backward compatibility during upgrades.
 func dialIPAMD(grpcClient grpcwrapper.GRPC, log logger.Logger) (*grpc.ClientConn, error) {
+	return dialIPAMDWithSocketPath(grpcClient, log, ipamdSocketPath)
+}
+
+func dialIPAMDWithSocketPath(grpcClient grpcwrapper.GRPC, log logger.Logger, socketPath string) (*grpc.ClientConn, error) {
 	// Try Unix socket first (secure)
-	if _, err := os.Stat(ipamdSocketPath); err == nil {
-		conn, err := grpcClient.Dial("unix://"+ipamdSocketPath, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if _, err := os.Stat(socketPath); err == nil {
+		conn, err := grpcClient.Dial("unix://"+socketPath, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err == nil {
-			log.Debugf("Connected to IPAMD via Unix socket: %s", ipamdSocketPath)
+			log.Debugf("Connected to IPAMD via Unix socket: %s", socketPath)
 			return conn, nil
 		}
 		log.Warnf("Unix socket exists but dial failed (%v), trying TCP fallback", err)
