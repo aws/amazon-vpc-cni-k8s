@@ -391,7 +391,7 @@ func TerminateInstances(f *framework.Framework) error {
 	}
 
 	// Wait until ASG has actually finished terminating its instances before scaling
-	if err := wait.PollUntilContextTimeout(context.TODO(), 10*time.Second, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
+	if err := wait.PollUntilContextTimeout(context.TODO(), 10*time.Second, 20*time.Minute, true, func(ctx context.Context) (bool, error) {
 		asgs, derr := f.CloudServices.AutoScaling().DescribeAutoScalingGroup(ctx, asgName)
 		if derr != nil || len(asgs) == 0 {
 			return false, nil
