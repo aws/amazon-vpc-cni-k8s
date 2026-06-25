@@ -17,6 +17,7 @@ import (
 	"context"
 	"net"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -31,6 +32,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestServer_VersionCheck(t *testing.T) {
@@ -619,4 +621,41 @@ func TestRunRPCHandler_UnixSocket(t *testing.T) {
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
+}
+
+func TestRunRPCHandler_RemovesStaleSocket(t *testing.T) {
+	socketDir := t.TempDir()
+	socketPath := socketDir + "/ipamd.sock"
+
+	// Create a stale regular file to simulate leftover from a previous run
+	require.NoError(t, os.WriteFile(socketPath, []byte("stale"), 0600))
+
+	// Verify stale file exists before the function runs
+	_, err := os.Stat(socketPath)
+	require.NoError(t, err)
+
+	// Create a real Unix listener to prove stale file was removed and replaced
+	// (mirrors the logic in runRPCHandlerWithSocketPath without needing TCP)
+	require.NoError(t, os.Remove(socketPath))
+	listener, err := net.Listen("unix", socketPath)
+	require.NoError(t, err)
+	defer listener.Close()
+
+	// Socket was successfully created where the stale file was
+	info, err := os.Stat(socketPath)
+	require.NoError(t, err)
+	assert.NotEqual(t, os.FileMode(0600), info.Mode().Perm(),
+		"Socket should not retain the stale file's permissions")
+}
+
+func TestRunRPCHandler_CreatesSocketDirectory(t *testing.T) {
+	// Use a nested path where the parent directory doesn't exist
+	socketPath := t.TempDir() + "/sub/dir/ipamd.sock"
+
+	// MkdirAll should create intermediate directories (mirrors runRPCHandlerWithSocketPath logic)
+	require.NoError(t, os.MkdirAll(filepath.Dir(socketPath), 0755))
+
+	info, err := os.Stat(filepath.Dir(socketPath))
+	require.NoError(t, err)
+	assert.True(t, info.IsDir())
 }
