@@ -555,20 +555,6 @@ func (mr *MockAPIsMockRecorder) IsUnmanagedNIC(arg0 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsUnmanagedNIC", reflect.TypeOf((*MockAPIs)(nil).IsUnmanagedNIC), arg0)
 }
 
-// RefreshCustomSGIDs mocks base method.
-func (m *MockAPIs) RefreshCustomSGIDs(arg0 context.Context, arg1 *datastore.DataStoreAccess) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RefreshCustomSGIDs", arg0, arg1)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// RefreshCustomSGIDs indicates an expected call of RefreshCustomSGIDs.
-func (mr *MockAPIsMockRecorder) RefreshCustomSGIDs(arg0, arg1 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RefreshCustomSGIDs", reflect.TypeOf((*MockAPIs)(nil).RefreshCustomSGIDs), arg0, arg1)
-}
-
 // RefreshSGIDs mocks base method.
 func (m *MockAPIs) RefreshSGIDs(arg0 context.Context, arg1 string, arg2 *datastore.DataStoreAccess) error {
 	m.ctrl.T.Helper()
