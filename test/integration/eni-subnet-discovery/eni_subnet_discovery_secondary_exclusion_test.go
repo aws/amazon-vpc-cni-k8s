@@ -107,7 +107,7 @@ var _ = Describe("Secondary ENI Exclusion Tests", func() {
 
 				deploymentBuilder := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 					Container(container).
-					Replicas(15). // Enough to force secondary ENI creation
+					Replicas(computeReplicasForBothSubnets(string(primaryInstance.InstanceType))). // Spread pods across primary + secondary subnets
 					PodLabel(secondaryExclusionPodLabelKey, secondaryExclusionPodLabelVal).
 					NodeName(*primaryInstance.PrivateDnsName).
 					Build()
@@ -194,7 +194,9 @@ var _ = Describe("Secondary ENI Exclusion Tests", func() {
 				validateSecondaryENIExclusionInDatastore()
 
 				By("Scaling deployment to test new pod allocation behavior")
-				scaledDeployment := scaleDeployment(initialDeployment, 25) // Add more pods
+				// Scale above the initial both-subnets count so new pods are created; after the
+				// secondary subnet is excluded these new pods must land in the primary subnet.
+				scaledDeployment := scaleDeployment(initialDeployment, computeReplicasForBothSubnets(string(primaryInstance.InstanceType))+2) // Add more pods
 
 				By("Waiting for new pods to be scheduled")
 				time.Sleep(45 * time.Second)
@@ -219,7 +221,7 @@ var _ = Describe("Secondary ENI Exclusion Tests", func() {
 				time.Sleep(30 * time.Second)
 
 				By("Scaling deployment to test prefix delegation with secondary exclusion")
-				scaledDeployment := scaleDeployment(initialDeployment, 20)
+				scaledDeployment := scaleDeployment(initialDeployment, computeReplicasForBothSubnets(string(primaryInstance.InstanceType))+2)
 
 				By("Verifying new pods use primary subnet with prefix delegation")
 				validateNewPodsAvoidExcludedSecondaryENI(scaledDeployment, primarySubnetCIDR, secondarySubnetCIDR)
@@ -299,7 +301,7 @@ var _ = Describe("Secondary ENI Exclusion Tests", func() {
 
 				deploymentBuilder := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 					Container(container).
-					Replicas(15). // Enough to force secondary ENI creation
+					Replicas(computeReplicasForBothSubnets(string(primaryInstance.InstanceType))). // Overflow onto a secondary ENI so the gating (untagged subnet skipped) is actually exercised
 					PodLabel(secondaryExclusionPodLabelKey, "no-cni-tag-gating").
 					NodeName(*primaryInstance.PrivateDnsName).
 					Build()
@@ -539,7 +541,7 @@ var _ = Describe("Secondary ENI Exclusion Tests", func() {
 
 				deploymentBuilder := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 					Container(container).
-					Replicas(15).
+					Replicas(computeReplicasForBothSubnets(string(primaryInstance.InstanceType))). // Overflow onto a secondary ENI so cluster-isolation (different-cluster subnet skipped) is actually exercised
 					PodLabel(secondaryExclusionPodLabelKey, "different-cluster-isolation").
 					NodeName(*primaryInstance.PrivateDnsName).
 					Build()
