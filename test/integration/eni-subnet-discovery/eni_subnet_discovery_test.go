@@ -59,9 +59,8 @@ var _ = Describe("ENI Subnet Selection Test", func() {
 				Args([]string{"3600"}).
 				Build()
 
-			// Size to the node's ENI capacity (replicas are pinned to one node) rather than a
-			// hardcoded count that overruns smaller instance types.
-			replicas := podsPerENI(string(primaryInstance.InstanceType))
+			// Overflow past one ENI so a secondary ENI is forced into the discovered subnet.
+			replicas := computeReplicasForBothSubnets(string(primaryInstance.InstanceType))
 
 			deploymentBuilder := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 				Container(container).
