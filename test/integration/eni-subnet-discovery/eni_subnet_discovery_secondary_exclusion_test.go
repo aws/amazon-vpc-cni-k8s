@@ -455,16 +455,25 @@ var _ = Describe("Secondary ENI Exclusion Tests", func() {
 					GinkgoWriter.Printf("Warning: Failed to exclude test subnet: %v\n", err)
 				}
 
-				By("Resetting WARM_ENI_TARGET to 0 to release ENIs")
+				// Force the CNI to reclaim the now-unused ENIs in the excluded test subnet.
+				// WARM_ENI_TARGET=0 alone does not: excluding the subnet (cni=0) drops its IPs
+				// from the warm pool, which shuts the ENI-reclaim path. Setting WARM_IP_TARGET
+				// keeps that path always evaluating extra ENIs for deletion.
+				By("Forcing ENI reclaim so the test subnet's ENIs are released")
 				k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
-					utils.AwsNodeName, map[string]string{"WARM_ENI_TARGET": "0"})
-				time.Sleep(90 * time.Second)
+					utils.AwsNodeName, map[string]string{"WARM_IP_TARGET": "2", "WARM_ENI_TARGET": "0"})
 
-				By("Deleting test subnet")
-				err = f.CloudServices.EC2().DeleteSubnet(context.TODO(), secondarySubnetWithOldTagID)
-				if err != nil {
-					GinkgoWriter.Printf("Warning: Failed to delete subnet %s: %v\n", secondarySubnetWithOldTagID, err)
-				}
+				// Delete only once the ENIs are gone, retrying to avoid a DependencyViolation
+				// that would leak the subnet into later specs.
+				By("Deleting test subnet once its ENIs are released")
+				Eventually(func() error {
+					return f.CloudServices.EC2().DeleteSubnet(context.TODO(), secondarySubnetWithOldTagID)
+				}, 3*time.Minute, 20*time.Second).Should(Succeed(), "test subnet should delete once its ENIs are released")
+
+				// Restore WARM_IP_TARGET to its prior (unset) state so the next spec starts clean.
+				By("Restoring WARM_IP_TARGET to its prior unset value")
+				k8sUtils.RemoveVarFromDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
+					utils.AwsNodeName, map[string]struct{}{"WARM_IP_TARGET": {}})
 			})
 
 			It("should include subnet with cni=1 even if old cluster tag is present (old prefix is ignored)", func() {
