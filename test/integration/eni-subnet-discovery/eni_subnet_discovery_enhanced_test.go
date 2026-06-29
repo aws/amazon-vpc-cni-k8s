@@ -130,7 +130,7 @@ var _ = Describe("ENI Subnet Discovery Enhanced Tests", func() {
 
 				deploymentBuilder := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 					Container(container).
-					Replicas(30). // Enough to require secondary ENIs
+					Replicas(computeReplicasForBothSubnets(string(primaryInstance.InstanceType))). // Overflow past one ENI so a secondary ENI is forced; it must land in the discovered subnet.
 					PodLabel(enhancedPodLabelKey, enhancedPodLabelVal).
 					NodeName(*primaryInstance.PrivateDnsName).
 					Build()
@@ -277,7 +277,7 @@ var _ = Describe("ENI Subnet Discovery Enhanced Tests", func() {
 
 				deploymentBuilder := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 					Container(container).
-					Replicas(30). // Enough to require secondary ENIs
+					Replicas(computeReplicasForBothSubnets(string(primaryInstance.InstanceType))). // Must overflow onto a secondary ENI (primary subnet not excluded here)
 					PodLabel(enhancedPodLabelKey, enhancedPodLabelVal).
 					NodeName(*primaryInstance.PrivateDnsName).
 					Build()
