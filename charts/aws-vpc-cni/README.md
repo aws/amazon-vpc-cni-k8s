@@ -90,6 +90,9 @@ The following table lists the configurable parameters for this chart and their d
 | `nodeAgent.enableIpv6`  | Enable IPv6 support for Node Agent                      | `false`                             |
 | `nodeAgent.resources`   | Node Agent resources, will defualt to .Values.resources if not set | `{}`                     |
 | `nodeAgent.logLevel`    | Node Agent logging verbosity level.                     | `debug`                             |
+| `nodeAgent.livenessProbe`  | Liveness probe for the aws-eks-nodeagent container. `httpGet.port` defaults to `nodeAgent.healthProbeBindAddr`. Set to `null` to disable.  | `httpGet /healthz` (see `values.yaml`) |
+| `nodeAgent.readinessProbe` | Readiness probe for the aws-eks-nodeagent container. `httpGet.port` defaults to `nodeAgent.healthProbeBindAddr`. Set to `null` to disable. | `httpGet /readyz`  (see `values.yaml`) |
+| `nodeAgent.startupProbe`   | Startup probe for the aws-eks-nodeagent container. `httpGet.port` defaults to `nodeAgent.healthProbeBindAddr`. Set to `null` to disable.   | `httpGet /healthz` (see `values.yaml`) |
 | `extraVolumes`          | Array to add extra volumes                              | `[]`                                |
 | `extraVolumeMounts`     | Array to add extra mount                                | `[]`                                |
 | `nodeSelector`          | Node labels for pod assignment                          | `{}`                                |
