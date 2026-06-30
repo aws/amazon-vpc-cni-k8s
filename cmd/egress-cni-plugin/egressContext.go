@@ -45,6 +45,8 @@ const (
 	// DadTimeout Time duration CNI waits for an IPv6 address assigned to an interface
 	// to move to stable state before error'ing out.
 	DadTimeout = 10 * time.Second
+	// routeRetryInterval is the delay between retries when RouteAdd fails with EEXIST
+	routeRetryInterval = 100 * time.Millisecond
 )
 
 // egressContext includes all info to run container ADD or DEL action
@@ -195,6 +197,31 @@ func (ec *egressContext) setupContainerVethV4() (*current.Interface, *current.In
 	}
 	return hostInterface, containerInterface, nil
 }
+
+// addRouteWithRetry attempts RouteAdd and retries on EEXIST, which can occur when a
+// stale route from a dying pod's veth has not yet been cleaned up by the container runtime.
+func (ec *egressContext) addRouteWithRetry(route *netlink.Route) error {
+	const maxAttempts = 5
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		lastErr = ec.Link.RouteAdd(route)
+		if lastErr == nil {
+			if attempt > 1 {
+				ec.Log.Infof("addRouteWithRetry: route %v added successfully on attempt %d", route, attempt)
+			}
+			return nil
+		}
+		if !os.IsExist(lastErr) {
+			return lastErr
+		}
+		ec.Log.Warnf("addRouteWithRetry: route %v already exists (attempt %d/%d), retrying in %v", route, attempt, maxAttempts, routeRetryInterval)
+		if attempt < maxAttempts {
+			time.Sleep(routeRetryInterval)
+		}
+	}
+	return fmt.Errorf("stale route still exists after %d attempts: %w", maxAttempts, lastErr)
+}
+
 func (ec *egressContext) setupHostVethV4(vethName string) error {
 	// hostVeth moved namespaces and may have a new ifindex
 	veth, err := ec.Link.LinkByName(vethName)
@@ -226,12 +253,12 @@ func (ec *egressContext) setupHostVethV4(vethName string) error {
 			IP:   ipc.Address.IP,
 			Mask: net.CIDRMask(maskLen, maskLen),
 		}
-		err := ec.Link.RouteAdd(&netlink.Route{
+		route := &netlink.Route{
 			LinkIndex: veth.Attrs().Index,
 			Scope:     netlink.SCOPE_LINK, // <- ptp uses SCOPE_HOST here
 			Dst:       ipn,
-		})
-		if err != nil && !os.IsExist(err) {
+		}
+		if err := ec.addRouteWithRetry(route); err != nil {
 			return fmt.Errorf("failed to add route on host: %v", err)
 		}
 	}
@@ -467,14 +494,15 @@ func (ec *egressContext) setupHostIPv6Route(hostInterface *current.Interface, co
 		return err
 	}
 	// set up to container return traffic route in host
-	return link.RouteAdd(&netlink.Route{
+	route := &netlink.Route{
 		LinkIndex: hostIf.Attrs().Index,
 		Scope:     netlink.SCOPE_HOST,
 		Dst: &net.IPNet{
 			IP:   containerIPv6,
 			Mask: net.CIDRMask(128, 128),
 		},
-	})
+	}
+	return ec.addRouteWithRetry(route)
 }
 
 func (ec *egressContext) setupContainerVethV6() (hostInterface, containerInterface *current.Interface, err error) {
