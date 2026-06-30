@@ -16,6 +16,7 @@ package cni
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"time"
 
@@ -49,11 +50,21 @@ var _ = Describe("SOAK Test pod networking", Ordered, func() {
 		protocol                          string
 		primaryNodeDeployment             *v1.Deployment
 		secondaryNodeDeployment           *v1.Deployment
+		primaryNodeService                *coreV1.Service
+		secondaryNodeService              *coreV1.Service
 		interfaceToPodListOnPrimaryNode   common.InterfaceTypeToPodList
 		interfaceToPodListOnSecondaryNode common.InterfaceTypeToPodList
 		timesToRunTheTest                 = 12
 		waitDuringInMinutes               = time.Duration(5) * time.Minute
 	)
+
+	// External probe is opt-in so it only runs where we have outbound
+	// internet access.
+	externalProbeEnabled := os.Getenv("RUN_EXTERNAL_PROBE") == "true"
+	externalProbeHost := os.Getenv("EXTERNAL_PROBE_HOST")
+	if externalProbeHost == "" {
+		externalProbeHost = "checkip.amazonaws.com"
+	}
 
 	BeforeAll(func() {
 		fmt.Println("Starting SOAK test")
@@ -161,9 +172,42 @@ var _ = Describe("SOAK Test pod networking", Ordered, func() {
 
 			Expect(len(interfaceToPodListOnSecondaryNode.PodsOnSecondaryENI)).
 				Should(BeNumerically(">", 1))
+
+			By("Creating ClusterIP services in front of each deployment")
+			primaryNodeService, err = f.K8sResourceManagers.ServiceManager().
+				CreateService(context.TODO(), manifest.NewHTTPService().
+					ServiceType(coreV1.ServiceTypeClusterIP).
+					Name("primary-node-svc").
+					Port(int32(serverPort)).
+					Protocol(coreV1.ProtocolTCP).
+					Selector("node", "primary").
+					Build())
+			Expect(err).ToNot(HaveOccurred())
+
+			secondaryNodeService, err = f.K8sResourceManagers.ServiceManager().
+				CreateService(context.TODO(), manifest.NewHTTPService().
+					ServiceType(coreV1.ServiceTypeClusterIP).
+					Name("secondary-node-svc").
+					Port(int32(serverPort)).
+					Protocol(coreV1.ProtocolTCP).
+					Selector("node", "secondary").
+					Build())
+			Expect(err).ToNot(HaveOccurred())
 		})
 
 		AfterEach(func() {
+			By("TearDown services")
+			if primaryNodeService != nil {
+				err = f.K8sResourceManagers.ServiceManager().
+					DeleteAndWaitTillServiceDeleted(context.TODO(), primaryNodeService)
+				Expect(err).ToNot(HaveOccurred())
+			}
+			if secondaryNodeService != nil {
+				err = f.K8sResourceManagers.ServiceManager().
+					DeleteAndWaitTillServiceDeleted(context.TODO(), secondaryNodeService)
+				Expect(err).ToNot(HaveOccurred())
+			}
+
 			By("TearDown Pods")
 			err = f.K8sResourceManagers.DeploymentManager().
 				DeleteAndWaitTillDeploymentIsDeleted(primaryNodeDeployment)
@@ -191,8 +235,51 @@ var _ = Describe("SOAK Test pod networking", Ordered, func() {
 					interfaceToPodListOnPrimaryNode.PodsOnPrimaryENI[1], serverPort,
 					testFailedConnectionCommandFunc)
 
+				By("verifying ClusterIP service connectivity from secondary-ENI pods")
+				verifyClusterIPConnectivity(
+					interfaceToPodListOnPrimaryNode.PodsOnSecondaryENI[0],
+					secondaryNodeService.Spec.ClusterIP, serverPort)
+				verifyClusterIPConnectivity(
+					interfaceToPodListOnSecondaryNode.PodsOnSecondaryENI[0],
+					primaryNodeService.Spec.ClusterIP, serverPort)
+
+				if externalProbeEnabled {
+					By(fmt.Sprintf("verifying external connectivity to %s from secondary-ENI pod", externalProbeHost))
+					verifySoakExternalConnectivity(
+						interfaceToPodListOnPrimaryNode.PodsOnSecondaryENI[0],
+						externalProbeHost)
+				}
+
 				time.Sleep(waitDuringInMinutes)
 			})
 		}
 	})
 })
+
+// verifyClusterIPConnectivity exercises the kube-proxy dstnat → aws-cni
+// nat-prerouting chain ordering. ClusterIP traffic stays within the VPC CIDR
+// so it returns early in the snat-mark chain — this validates chain priority,
+// not the mark-set side.
+func verifyClusterIPConnectivity(senderPod coreV1.Pod, clusterIP string, port int) {
+	cmd := []string{"nc", "-v", "-w5", clusterIP, strconv.Itoa(port)}
+	stdout, stderr, err := f.K8sResourceManagers.PodManager().
+		PodExec(senderPod.Namespace, senderPod.Name, cmd)
+	fmt.Fprintf(GinkgoWriter, "clusterIP probe [%s → %s:%d]: stdout=%s stderr=%s\n",
+		senderPod.Name, clusterIP, port, stdout, stderr)
+	Expect(err).ToNot(HaveOccurred(), "ClusterIP probe failed from pod %s to %s", senderPod.Name, clusterIP)
+	Expect(stderr).To(ContainSubstring("succeeded!"))
+}
+
+// verifySoakExternalConnectivity exercises the mark-set side of the snat-mark
+// chain by opening a TCP connection to a non-VPC destination. Opt-in via
+// RUN_EXTERNAL_PROBE=true; only enable where outbound internet access is
+// available.
+func verifySoakExternalConnectivity(senderPod coreV1.Pod, host string) {
+	cmd := []string{"nc", "-v", "-w5", host, "80"}
+	stdout, stderr, err := f.K8sResourceManagers.PodManager().
+		PodExec(senderPod.Namespace, senderPod.Name, cmd)
+	fmt.Fprintf(GinkgoWriter, "external probe [%s → %s:80]: stdout=%s stderr=%s\n",
+		senderPod.Name, host, stdout, stderr)
+	Expect(err).ToNot(HaveOccurred(), "external probe failed from pod %s to %s", senderPod.Name, host)
+	Expect(stderr).To(ContainSubstring("succeeded!"))
+}
