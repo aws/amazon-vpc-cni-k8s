@@ -110,7 +110,18 @@ func (d *defaultIAM) ListPolicies(ctx context.Context, scope string) (*iam.ListP
 	listPolicyInput := &iam.ListPoliciesInput{
 		Scope: types.PolicyScopeType(scope),
 	}
-	return d.client.ListPolicies(ctx, listPolicyInput)
+	// ListPolicies is paginated (max 100 per page). Accumulate all pages so callers
+	// that scan for a policy by name don't miss matches beyond the first page.
+	aggregated := &iam.ListPoliciesOutput{}
+	paginator := iam.NewListPoliciesPaginator(d.client, listPolicyInput)
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+		aggregated.Policies = append(aggregated.Policies, page.Policies...)
+	}
+	return aggregated, nil
 }
 
 func NewIAM(cfg aws.Config) IAM {

@@ -149,7 +149,7 @@ var _ = BeforeSuite(func() {
 		utils.AwsNodeName, map[string]string{"SOME_NON_EXISTENT_VAR": "0"})
 
 	By("installing cni-metrics-helper using helm")
-	err = f.InstallationManager.InstallCNIMetricsHelper(imageRepository, imageTag, ngName)
+	err = f.InstallationManager.InstallCNIMetricsHelper(imageRepository, imageTag, ngName, f.Options.AWSRegion)
 	Expect(err).ToNot(HaveOccurred())
 
 	By("waiting for the metrics helper to publish initial metrics")
