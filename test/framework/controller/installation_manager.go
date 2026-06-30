@@ -19,7 +19,7 @@ import (
 )
 
 type InstallationManager interface {
-	InstallCNIMetricsHelper(image string, tag string, clusterId string) error
+	InstallCNIMetricsHelper(image string, tag string, clusterId string, region string) error
 	UnInstallCNIMetricsHelper() error
 	InstallTigeraOperator(version string) error
 	UninstallTigeraOperator() error
@@ -33,7 +33,7 @@ type defaultInstallationManager struct {
 	releaseManager helm.ReleaseManager
 }
 
-func (d *defaultInstallationManager) InstallCNIMetricsHelper(image string, tag string, clusterId string) error {
+func (d *defaultInstallationManager) InstallCNIMetricsHelper(image string, tag string, clusterId string, region string) error {
 	values := map[string]interface{}{
 		"env": map[string]interface{}{
 			"AWS_CLUSTER_ID": clusterId,
@@ -42,6 +42,10 @@ func (d *defaultInstallationManager) InstallCNIMetricsHelper(image string, tag s
 			"repository": image,
 			"tag":        tag,
 		},
+	}
+
+	if region != "" {
+		values["env"].(map[string]interface{})["AWS_REGION"] = region
 	}
 
 	projectRoot := utils.GetProjectRoot()
