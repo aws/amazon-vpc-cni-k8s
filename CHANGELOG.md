@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.22.4
+
+* Handle route addition with retry with egress-cni plugin in https://github.com/aws/amazon-vpc-cni-k8s/pull/3726
+* Bump containernetworking/plugins from v1.9.0 to v1.9.1 (CVE-2025-52881) in https://github.com/aws/amazon-vpc-cni-k8s/pull/3712
+* build(deps): bump github.com/containerd/containerd from 1.7.29 to 1.7.33 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3736
+* Bump helm to v4.x to remove containerd from the dependency graph and resolve containerd CVEs; bump Go to 1.26
+* Remove PolicyEndpoint CRDs from helm charts in https://github.com/aws/amazon-vpc-cni-k8s/pull/3625
+
 ## v1.22.3
 
 * Bump golang.org/x/net to v0.55.0 to address HTTP/2 vulnerability in https://github.com/aws/amazon-vpc-cni-k8s/pull/3716
