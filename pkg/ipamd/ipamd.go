@@ -1284,18 +1284,18 @@ func (c *IPAMContext) setupENI(ctx context.Context, eni string, eniMetadata awsu
 		return errors.Wrapf(err, "failed to add ENI %s to data store", eni)
 	}
 
-	// Check if this ENI (primary or secondary) is in an excluded subnet and mark it for exclusion
-	if c.useSubnetDiscovery {
-		if _, err := c.excludedENIBasedOnSubnetTags(ctx, eni, eniMetadata); err != nil {
-			return fmt.Errorf("checking to excluded configured subnet, error: %w", err)
-		}
-	}
-
 	// Store the addressable IP for the ENI
 	if c.enableIPv6 {
 		c.primaryIP[eni] = eniMetadata.PrimaryIPv6Address()
 	} else {
 		c.primaryIP[eni] = eniMetadata.PrimaryIPv4Address()
+	}
+
+	// Check if this ENI (primary or secondary) is in an excluded subnet and mark it for exclusion
+	if c.useSubnetDiscovery {
+		if _, err := c.excludedENIBasedOnSubnetTags(ctx, eni, eniMetadata); err != nil {
+			return fmt.Errorf("checking to excluded configured subnet, error: %w", err)
+		}
 	}
 
 	if c.enableIPv6 {

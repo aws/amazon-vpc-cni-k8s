@@ -2889,10 +2889,10 @@ func TestIsSubnetExcluded(t *testing.T) {
 			wantErr:    false,
 		},
 		{
-			name:       "subnet not found in VPC - should error",
+			name:       "subnet not found in VPC - not excluded (HyperPod cross-account topology)",
 			subnetTags: []ec2types.Tag{},
 			want:       false,
-			wantErr:    true,
+			wantErr:    false,
 		},
 	}
 
@@ -2907,7 +2907,7 @@ func TestIsSubnetExcluded(t *testing.T) {
 			if tt.describeError != nil {
 				// Mock DescribeSubnets to return error
 				mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any()).Return(nil, tt.describeError)
-			} else if tt.name == "subnet not found in VPC - should error" {
+			} else if tt.name == "subnet not found in VPC - not excluded (HyperPod cross-account topology)" {
 				// Mock DescribeSubnets to return empty subnet list (subnet not found)
 				subnetResult := &ec2.DescribeSubnetsOutput{
 					Subnets: []ec2types.Subnet{},
