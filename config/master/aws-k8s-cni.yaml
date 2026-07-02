@@ -275,6 +275,8 @@ spec:
               value: "false"
             - name: ENABLE_SUBNET_DISCOVERY
               value: "true"
+            - name: INCLUDE_COOLDOWN_IPS_IN_POOL_SIZE
+              value: "false"
             - name: NETWORK_POLICY_ENFORCING_MODE
               value: "standard"
             - name: VPC_CNI_VERSION
