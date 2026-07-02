@@ -885,6 +885,7 @@ func (c *IPAMContext) tryFreeENI(ctx context.Context, networkCard int) {
 		log.Errorf("Failed to delete rules for Primary IP of ENI err: %v", err)
 		return
 	}
+	delete(c.primaryIP, eni)
 }
 
 // When warm IP/prefix targets are defined, free extra IPs
