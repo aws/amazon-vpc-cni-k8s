@@ -8,6 +8,17 @@ metadata:
   region: us-west-2
   version: "K8S_VERSION_PLACEHOLDER"
 
+autoModeConfig:
+  enabled: false
+
+addons:
+  - name: vpc-cni
+  - name: kube-proxy
+  - name: coredns
+    configurationValues: "{\"podDisruptionBudget\": {\"enabled\": false}}"
+  - name: metrics-server
+    configurationValues: "{\"podDisruptionBudget\": {\"enabled\": false}}"
+
 iam:
    serviceRoleARN: "ROLE_ARN_PLACEHOLDER"
 managedNodeGroups:
