@@ -4003,6 +4003,209 @@ func TestContainsPrivateIPAddressLimitExceededError(t *testing.T) {
 	}
 }
 
+// TestSetupENI_HyperPod_SubnetNotFound verifies that on HyperPod nodes where the ENI's
+// subnet cannot be resolved by DescribeSubnets (cross-account topology), setupENI still
+// correctly records primaryIP for the ENI. This prevents the reconcile path from later
+// adding the primary IP to the pod IP pool.
+func TestSetupENI_HyperPod_SubnetNotFound(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		awsClient:          m.awsutils,
+		networkClient:      m.network,
+		primaryIP:          make(map[string]string),
+		terminating:        int32(0),
+		maxENI:             4,
+		numNetworkCards:    1,
+		enableIPv4:         true,
+		useSubnetDiscovery: true,
+	}
+	mockContext.dataStoreAccess = testDatastore()
+
+	primary := true
+	notPrimary := false
+	testAddr1 := ipaddr01
+	testAddr2 := ipaddr02
+	primaryENIMetadata := awsutils.ENIMetadata{
+		ENIID:          primaryENIid,
+		MAC:            primaryMAC,
+		DeviceNumber:   primaryDevice,
+		SubnetIPv4CIDR: primarySubnet,
+		SubnetID:       "subnet-hyperpod-cross-account",
+		NetworkCard:    defaultNetworkCard,
+		IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
+			{PrivateIpAddress: &testAddr1, Primary: &primary},
+			{PrivateIpAddress: &testAddr2, Primary: &notPrimary},
+		},
+	}
+
+	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid).AnyTimes()
+	m.network.EXPECT().GetRouteTableNumberForENI(defaultNetworkCard, gomock.Any(), primaryDevice, mockContext.maxENI, false).Times(1)
+	// Simulate HyperPod: subnet not found in VPC returns not excluded, no error
+	m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-hyperpod-cross-account").Return(false, nil)
+
+	err := mockContext.setupENI(context.Background(), primaryENIMetadata.ENIID, primaryENIMetadata, false, false)
+	assert.NoError(t, err)
+
+	// The critical assertion: primaryIP must be recorded even when subnet can't be resolved
+	assert.Equal(t, ipaddr01, mockContext.primaryIP[primaryENIid])
+	assert.Equal(t, 1, len(mockContext.primaryIP))
+}
+
+// TestSetupENI_HyperPod_SubnetDiscoveryError verifies that even if IsSubnetExcluded
+// returns an error (e.g., API failure), primaryIP is still recorded before the error
+// propagates. This ensures the safety of the reconcile path.
+func TestSetupENI_HyperPod_SubnetDiscoveryError(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		awsClient:          m.awsutils,
+		networkClient:      m.network,
+		primaryIP:          make(map[string]string),
+		terminating:        int32(0),
+		maxENI:             4,
+		numNetworkCards:    1,
+		enableIPv4:         true,
+		useSubnetDiscovery: true,
+	}
+	mockContext.dataStoreAccess = testDatastore()
+
+	primary := true
+	notPrimary := false
+	testAddr1 := ipaddr01
+	testAddr2 := ipaddr02
+	primaryENIMetadata := awsutils.ENIMetadata{
+		ENIID:          primaryENIid,
+		MAC:            primaryMAC,
+		DeviceNumber:   primaryDevice,
+		SubnetIPv4CIDR: primarySubnet,
+		SubnetID:       "subnet-unreachable",
+		NetworkCard:    defaultNetworkCard,
+		IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
+			{PrivateIpAddress: &testAddr1, Primary: &primary},
+			{PrivateIpAddress: &testAddr2, Primary: &notPrimary},
+		},
+	}
+
+	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid).AnyTimes()
+	m.network.EXPECT().GetRouteTableNumberForENI(defaultNetworkCard, gomock.Any(), primaryDevice, mockContext.maxENI, false).Times(1)
+	// Simulate subnet discovery API failure
+	m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-unreachable").Return(false, errors.New("API error"))
+
+	err := mockContext.setupENI(context.Background(), primaryENIMetadata.ENIID, primaryENIMetadata, false, false)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "checking to excluded configured subnet")
+
+	// Even though setupENI returned an error, primaryIP was recorded before the
+	// subnet check. This is critical: if nodeInit retries and eventually succeeds,
+	// or if the ENI remains in the datastore, the reconcile path will correctly
+	// skip the primary IP.
+	assert.Equal(t, ipaddr01, mockContext.primaryIP[primaryENIid])
+}
+
+// TestReconcile_HyperPod_PrimaryIPSkipped verifies that the reconcile path correctly
+// skips the primary IP when c.primaryIP[eni] is properly set. This is the end-to-end
+// scenario for HyperPod: after setupENI records the primary IP (even with subnet
+// excluded), the reconcile path must not add it to the datastore.
+func TestReconcile_HyperPod_PrimaryIPSkipped(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+	ctx := context.Background()
+
+	mockContext := &IPAMContext{
+		awsClient:       m.awsutils,
+		networkClient:   m.network,
+		primaryIP:       make(map[string]string),
+		terminating:     int32(0),
+		numNetworkCards: 1,
+	}
+	mockContext.reconcileCooldownCache.cache = make(map[string]time.Time)
+	mockContext.dataStoreAccess = testDatastore()
+
+	// Set up the datastore with the ENI registered
+	_ = mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).AddENI(primaryENIid, primaryDevice, true, false, false, 0, "")
+
+	// Simulate HyperPod fix: primaryIP is correctly recorded
+	mockContext.primaryIP[primaryENIid] = ipaddr01
+
+	// Add a secondary IP to the datastore (normal operation)
+	secondaryIP := net.IPNet{IP: net.ParseIP(ipaddr02), Mask: net.IPv4Mask(255, 255, 255, 255)}
+	_ = mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).AddIPv4CidrToStore(primaryENIid, secondaryIP, false)
+
+	// IMDS returns both primary and secondary IPs for the ENI
+	primary := true
+	notPrimary := false
+	testAddr1 := ipaddr01
+	testAddr2 := ipaddr02
+	attachedIPs := []ec2types.NetworkInterfacePrivateIpAddress{
+		{PrivateIpAddress: &testAddr1, Primary: &primary},
+		{PrivateIpAddress: &testAddr2, Primary: &notPrimary},
+	}
+
+	// Run the reconcile function
+	seenIPs := mockContext.verifyAndAddIPsToDatastore(ctx, primaryENIid, attachedIPs, false, defaultNetworkCard)
+
+	// Primary IP should NOT be in seenIPs (it was skipped)
+	assert.False(t, seenIPs[ipaddr01], "Primary IP should be skipped during reconcile")
+	// Secondary IP should be in seenIPs
+	assert.True(t, seenIPs[ipaddr02], "Secondary IP should be seen during reconcile")
+
+	// Verify datastore only has the secondary IP, not the primary
+	curENIs := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).GetENIInfos()
+	assert.Equal(t, 1, curENIs.TotalIPs, "Only secondary IP should be in the datastore")
+}
+
+// TestReconcile_HyperPod_PrimaryIPNotSet_WithoutFix simulates the pre-fix behavior
+// where primaryIP was empty due to setupENI failing before recording it. Without the
+// fix, the reconcile path would add the primary IP to the pool. This test documents
+// the bug behavior and verifies the fix prevents it.
+func TestReconcile_HyperPod_PrimaryIPNotSet_WithoutFix(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+	ctx := context.Background()
+
+	mockContext := &IPAMContext{
+		awsClient:       m.awsutils,
+		networkClient:   m.network,
+		primaryIP:       make(map[string]string),
+		terminating:     int32(0),
+		numNetworkCards: 1,
+	}
+	mockContext.reconcileCooldownCache.cache = make(map[string]time.Time)
+	mockContext.dataStoreAccess = testDatastore()
+
+	// Set up the datastore with the ENI registered
+	_ = mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).AddENI(primaryENIid, primaryDevice, true, false, false, 0, "")
+
+	// Simulate the BUG scenario: primaryIP is NOT set (empty string)
+	// This happened pre-fix when setupENI returned error before recording primaryIP
+	// mockContext.primaryIP[primaryENIid] is intentionally NOT set
+
+	// IMDS returns both primary and secondary IPs
+	primary := true
+	notPrimary := false
+	testAddr1 := ipaddr01
+	testAddr2 := ipaddr02
+	attachedIPs := []ec2types.NetworkInterfacePrivateIpAddress{
+		{PrivateIpAddress: &testAddr1, Primary: &primary},
+		{PrivateIpAddress: &testAddr2, Primary: &notPrimary},
+	}
+
+	// Run reconcile - with primaryIP[eni] == "", the string comparison
+	// `strPrivateIPv4 == c.primaryIP[eni]` won't match for "10.10.10.11"
+	seenIPs := mockContext.verifyAndAddIPsToDatastore(ctx, primaryENIid, attachedIPs, false, defaultNetworkCard)
+
+	// Without primaryIP set, BOTH IPs get added (this is the bug the fix prevents)
+	assert.True(t, seenIPs[ipaddr01], "Without primaryIP set, primary IP is incorrectly treated as a regular IP")
+	assert.True(t, seenIPs[ipaddr02])
+
+	// This documents the bug: TotalIPs is 2 (primary + secondary) instead of 1
+	curENIs := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).GetENIInfos()
+	assert.Equal(t, 2, curENIs.TotalIPs, "Bug: primary IP was added to pool because primaryIP map was empty")
+}
+
 func TestIPAMContext_InInsufficientCidrCoolingPeriod(t *testing.T) {
 	tests := []struct {
 		name                      string
