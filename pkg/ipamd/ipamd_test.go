@@ -146,7 +146,7 @@ func TestNodeInit(t *testing.T) {
 		terminating:     int32(0),
 		networkClient:   m.network,
 		dataStoreAccess: &datastore.DataStoreAccess{
-			DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), false, defaultNetworkCard)},
+			DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), false, false, defaultNetworkCard)},
 		},
 		myNodeName:            myNodeName,
 		enableIPv4:            true,
@@ -250,7 +250,7 @@ func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 		terminating:       int32(0),
 		networkClient:     m.network,
 		dataStoreAccess: &datastore.DataStoreAccess{
-			DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), true, defaultNetworkCard)},
+			DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), true, false, defaultNetworkCard)},
 		},
 		myNodeName:             myNodeName,
 		enablePrefixDelegation: true,
@@ -351,7 +351,7 @@ func TestNodeInitwithPDenabledIPv6Mode(t *testing.T) {
 		networkClient:     m.network,
 		numNetworkCards:   1,
 		dataStoreAccess: &datastore.DataStoreAccess{
-			DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), true, defaultNetworkCard)},
+			DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), true, false, defaultNetworkCard)},
 		},
 		myNodeName:             myNodeName,
 		enablePrefixDelegation: true,
@@ -1507,13 +1507,13 @@ func TestIPAMContext_nodePrefixPoolTooLow(t *testing.T) {
 
 func testDatastore() *datastore.DataStoreAccess {
 	return &datastore.DataStoreAccess{
-		DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false, defaultNetworkCard)},
+		DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false, false, defaultNetworkCard)},
 	}
 }
 
 func testDatastorewithPrefix() *datastore.DataStoreAccess {
 	return &datastore.DataStoreAccess{
-		DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), true, defaultNetworkCard)},
+		DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), true, false, defaultNetworkCard)},
 	}
 }
 
@@ -2272,7 +2272,7 @@ func TestIPAMContext_enableSecurityGroupsForPods(t *testing.T) {
 		enableIPv4: true,
 		enableIPv6: false,
 		dataStoreAccess: &datastore.DataStoreAccess{
-			DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false, defaultNetworkCard)},
+			DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false, false, defaultNetworkCard)},
 		},
 		awsClient:       m.awsutils,
 		networkClient:   m.network,
@@ -2465,7 +2465,7 @@ func TestIsConfigValid(t *testing.T) {
 				enablePodENI:           tt.fields.podENIEnabled,
 				useCustomNetworking:    tt.fields.customNetworkingEnabled,
 				dataStoreAccess: &datastore.DataStoreAccess{
-					DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NullCheckpoint{}, tt.fields.prefixDelegationEnabled, defaultNetworkCard)},
+					DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NullCheckpoint{}, tt.fields.prefixDelegationEnabled, false, defaultNetworkCard)},
 				},
 				numNetworkCards: 1,
 			}

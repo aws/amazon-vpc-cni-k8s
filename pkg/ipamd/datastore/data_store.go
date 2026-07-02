@@ -286,17 +286,18 @@ type PodIPInfo struct {
 
 // DataStore contains node level ENI/IP
 type DataStore struct {
-	total            int
-	assigned         int
-	allocatedPrefix  int
-	eniPool          ENIPool
-	lock             sync.Mutex
-	log              logger.Logger
-	backingStore     Checkpointer
-	netLink          netlinkwrapper.NetLink
-	isPDEnabled      bool
-	ipCooldownPeriod time.Duration
-	networkCard      int
+	total              int
+	assigned           int
+	allocatedPrefix    int
+	eniPool            ENIPool
+	lock               sync.Mutex
+	log                logger.Logger
+	backingStore       Checkpointer
+	netLink            netlinkwrapper.NetLink
+	isPDEnabled        bool
+	ipCooldownPeriod   time.Duration
+	includeCooldownIPs bool
+	networkCard        int
 }
 
 // ENIInfos contains ENI IP information
@@ -310,15 +311,16 @@ type ENIInfos struct {
 }
 
 // NewDataStore returns DataStore structure
-func NewDataStore(log logger.Logger, backingStore Checkpointer, isPDEnabled bool, networkCard int) *DataStore {
+func NewDataStore(log logger.Logger, backingStore Checkpointer, isPDEnabled bool, includeCooldownIPs bool, networkCard int) *DataStore {
 	return &DataStore{
-		eniPool:          make(ENIPool),
-		log:              log,
-		backingStore:     backingStore,
-		netLink:          netlinkwrapper.NewNetLink(),
-		isPDEnabled:      isPDEnabled,
-		ipCooldownPeriod: getCooldownPeriod(),
-		networkCard:      networkCard,
+		eniPool:            make(ENIPool),
+		log:                log,
+		backingStore:       backingStore,
+		netLink:            netlinkwrapper.NewNetLink(),
+		isPDEnabled:        isPDEnabled,
+		ipCooldownPeriod:   getCooldownPeriod(),
+		includeCooldownIPs: includeCooldownIPs,
+		networkCard:        networkCard,
 	}
 }
 
@@ -908,9 +910,14 @@ func (stats *DataStoreStats) String() string {
 		stats.TotalIPs, stats.TotalPrefixes, stats.AssignedIPs, stats.CooldownIPs)
 }
 
-// AvailableAddresses returns the number of IPs that are available for assignment to a pod.
-// IPs in cooldown are not available for assignment until their cooldown period expires.
+// AvailableAddresses returns the number of addresses that are not assigned to a pod
 func (stats *DataStoreStats) AvailableAddresses() int {
+	return stats.TotalIPs - stats.AssignedIPs
+}
+
+// AssignableAddresses returns the number of addresses that can be assigned to a pod, excluding
+// IPs in cooldown, which are not assignable until their cooldown period expires
+func (stats *DataStoreStats) AssignableAddresses() int {
 	return stats.TotalIPs - stats.AssignedIPs - stats.CooldownIPs
 }
 
@@ -945,6 +952,17 @@ func (ds *DataStore) GetIPStats(addressFamily string) *DataStoreStats {
 		}
 	}
 	return stats
+}
+
+// isFreeCidr returns true if the CIDR has no IPs assigned to a pod. When cooldown IPs are included
+// in pool size calculations, a CIDR with IPs in cooldown is not considered free either, since those
+// IPs cannot be assigned to pods until their cooldown expires.
+func (ds *DataStore) isFreeCidr(cidr *CidrInfo) bool {
+	cidrStats := cidr.GetIPStatsFromCidr(ds.ipCooldownPeriod)
+	if ds.includeCooldownIPs && cidrStats.CooldownIPs > 0 {
+		return false
+	}
+	return cidrStats.AssignedIPs == 0
 }
 
 // GetTrunkENI returns the trunk ENI ID or an empty string
@@ -984,8 +1002,11 @@ func (ds *DataStore) isRequiredForWarmIPTarget(warmIPTarget int, eni *ENI) bool 
 			for _, otherPrefixes := range other.AvailableIPv4Cidrs {
 				if (ds.isPDEnabled && otherPrefixes.IsPrefix) || (!ds.isPDEnabled && !otherPrefixes.IsPrefix) {
 					cidrStats := otherPrefixes.GetIPStatsFromCidr(ds.ipCooldownPeriod)
-					// IPs in cooldown are not warm, since they cannot be assigned to pods until their cooldown expires
-					otherWarmIPs += otherPrefixes.Size() - cidrStats.AssignedIPs - cidrStats.CooldownIPs
+					otherWarmIPs += otherPrefixes.Size() - cidrStats.AssignedIPs
+					if ds.includeCooldownIPs {
+						// IPs in cooldown are not warm, since they cannot be assigned to pods until their cooldown expires
+						otherWarmIPs -= cidrStats.CooldownIPs
+					}
 				}
 			}
 		}
@@ -1034,10 +1055,7 @@ func (ds *DataStore) isRequiredForWarmPrefixTarget(warmPrefixTarget int, eni *EN
 				continue
 			}
 			for _, otherPrefixes := range other.AvailableIPv4Cidrs {
-				cidrStats := otherPrefixes.GetIPStatsFromCidr(ds.ipCooldownPeriod)
-				// A prefix with IPs in cooldown is not free, since those IPs cannot be assigned to
-				// pods until their cooldown expires
-				if (cidrStats.AssignedIPs + cidrStats.CooldownIPs) == 0 {
+				if ds.isFreeCidr(otherPrefixes) {
 					freePrefixes++
 				}
 			}
@@ -1451,7 +1469,8 @@ func (ds *DataStore) GetENICIDRs(eniID string) ([]string, []string, error) {
 	return ipPool, prefixPool, nil
 }
 
-// GetFreePrefixes returns the number of prefixes that have no assigned IPs and no IPs in cooldown
+// GetFreePrefixes returns the number of prefixes that have no assigned IPs. When cooldown IPs are
+// included in pool size calculations, prefixes with IPs in cooldown are not counted as free.
 func (ds *DataStore) GetFreePrefixes() int {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
@@ -1459,13 +1478,8 @@ func (ds *DataStore) GetFreePrefixes() int {
 	freePrefixes := 0
 	for _, other := range ds.eniPool {
 		for _, otherPrefixes := range other.AvailableIPv4Cidrs {
-			if otherPrefixes.IsPrefix {
-				cidrStats := otherPrefixes.GetIPStatsFromCidr(ds.ipCooldownPeriod)
-				// A prefix with IPs in cooldown is not free, since those IPs cannot be assigned to
-				// pods until their cooldown expires, and the prefix cannot be returned to EC2.
-				if cidrStats.AssignedIPs == 0 && cidrStats.CooldownIPs == 0 {
-					freePrefixes++
-				}
+			if otherPrefixes.IsPrefix && ds.isFreeCidr(otherPrefixes) {
+				freePrefixes++
 			}
 		}
 	}
@@ -1583,10 +1597,10 @@ func (ds *DataStore) FindFreeableCidrs(eniID string) []CidrInfo {
 
 	var freeable []CidrInfo
 	for _, assignedaddr := range eni.AvailableIPv4Cidrs {
-		cidrStats := assignedaddr.GetIPStatsFromCidr(ds.ipCooldownPeriod)
-		// Cidrs with IPs in cooldown are not freeable, as the cooldown period guards against
-		// traffic to a recently deleted pod reaching a new pod that is assigned the same IP.
-		if cidrStats.AssignedIPs == 0 && cidrStats.CooldownIPs == 0 {
+		// When cooldown IPs are included in pool size calculations, Cidrs with IPs in cooldown are
+		// not freeable, as the cooldown period guards against traffic to a recently deleted pod
+		// reaching a new pod that is assigned the same IP.
+		if ds.isFreeCidr(assignedaddr) {
 			tempFreeable := CidrInfo{
 				Cidr:          assignedaddr.Cidr,
 				IPAddresses:   nil,
@@ -1744,7 +1758,7 @@ type DataStoreAccess struct {
 	DataStores []*DataStore
 }
 
-func InitializeDataStores(skipNetworkCards []bool, defaultDataStorePath string, enablePD bool, log logger.Logger) *DataStoreAccess {
+func InitializeDataStores(skipNetworkCards []bool, defaultDataStorePath string, enablePD bool, includeCooldownIPs bool, log logger.Logger) *DataStoreAccess {
 
 	var dsList = make([]*DataStore, 0, len(skipNetworkCards))
 	for networkCard, shouldSkip := range skipNetworkCards {
@@ -1756,7 +1770,7 @@ func InitializeDataStores(skipNetworkCards []bool, defaultDataStorePath string, 
 				dsBackingStorePath = fmt.Sprintf("%s-nic-%d.json", baseName, networkCard)
 			}
 			checkpointer := NewJSONFile(dsBackingStorePath)
-			dsList = append(dsList, NewDataStore(log, checkpointer, enablePD, networkCard))
+			dsList = append(dsList, NewDataStore(log, checkpointer, enablePD, includeCooldownIPs, networkCard))
 			log.Infof("initialized datastore for network cards index %d", networkCard)
 		}
 	}

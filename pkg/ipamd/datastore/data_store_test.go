@@ -49,7 +49,7 @@ var Testlog = logger.New(&logConfig)
 var defaultNetworkCard = 0
 
 func TestAddENI(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, false, defaultNetworkCard)
 
 	err := ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0), "subnet-1")
 	assert.NoError(t, err)
@@ -75,7 +75,7 @@ func TestAddENI(t *testing.T) {
 }
 
 func TestENISubnetID(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, false, defaultNetworkCard)
 
 	// Test adding ENI with SubnetID
 	err := ds.AddENI("eni-1", 1, false, false, false, networkutils.CalculateRouteTableId(1, 0), "subnet-abc123")
@@ -96,7 +96,7 @@ func TestENISubnetID(t *testing.T) {
 }
 
 func TestDeleteENI(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, false, defaultNetworkCard)
 
 	enis := []struct {
 		id          string
@@ -152,7 +152,7 @@ func TestDeleteENI(t *testing.T) {
 }
 
 func TestDeleteENIwithPDEnabled(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, false, defaultNetworkCard)
 	var err error
 	enis := []struct {
 		id          string
@@ -208,7 +208,7 @@ func TestDeleteENIwithPDEnabled(t *testing.T) {
 }
 
 func TestAddENIIPv4Address(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, false, defaultNetworkCard)
 
 	err := ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0), "")
 	assert.NoError(t, err)
@@ -251,7 +251,7 @@ func TestAddENIIPv4Address(t *testing.T) {
 }
 
 func TestAddENIIPv4AddressWithPDEnabled(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, false, defaultNetworkCard)
 
 	err := ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0), "")
 	assert.NoError(t, err)
@@ -294,7 +294,7 @@ func TestAddENIIPv4AddressWithPDEnabled(t *testing.T) {
 }
 
 func TestGetENIIPs(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, false, defaultNetworkCard)
 
 	err := ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0), "")
 	assert.NoError(t, err)
@@ -330,7 +330,7 @@ func TestGetENIIPs(t *testing.T) {
 }
 
 func TestGetENIIPsWithPDEnabled(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, false, defaultNetworkCard)
 	var err error
 	enis := []struct {
 		id          string
@@ -375,7 +375,7 @@ func TestGetENIIPsWithPDEnabled(t *testing.T) {
 }
 
 func TestDelENIIPv4Address(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, false, defaultNetworkCard)
 	err := ds.AddENI("eni-1", 0, true, false, false, unix.RT_TABLE_MAIN, "")
 	assert.NoError(t, err)
 
@@ -434,7 +434,7 @@ func TestDelENIIPv4Address(t *testing.T) {
 }
 
 func TestDelENIIPv4AddressWithPDEnabled(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, true, defaultNetworkCard)
 	err := ds.AddENI("eni-1", 0, true, false, false, networkutils.CalculateRouteTableId(0, 0), "")
 	assert.NoError(t, err)
 
@@ -494,7 +494,7 @@ func TestDelENIIPv4AddressWithPDEnabled(t *testing.T) {
 
 func TestTogglePD(t *testing.T) {
 	//DS is in secondary IP mode
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, false, defaultNetworkCard)
 
 	enis := []struct {
 		id        string
@@ -586,7 +586,7 @@ func TestTogglePD(t *testing.T) {
 
 func TestPodIPv4Address(t *testing.T) {
 	checkpoint := NewTestCheckpoint(struct{}{})
-	ds := NewDataStore(Testlog, checkpoint, false, defaultNetworkCard)
+	ds := NewDataStore(Testlog, checkpoint, false, false, defaultNetworkCard)
 
 	checkpointDataCmpOpts := cmp.Options{
 		cmpopts.IgnoreFields(CheckpointEntry{}, "AllocationTimestamp"),
@@ -800,7 +800,7 @@ func TestPodIPv4Address(t *testing.T) {
 
 func TestPodIPv4AddressWithPDEnabled(t *testing.T) {
 	checkpoint := NewTestCheckpoint(struct{}{})
-	ds := NewDataStore(Testlog, checkpoint, true, defaultNetworkCard)
+	ds := NewDataStore(Testlog, checkpoint, true, false, defaultNetworkCard)
 
 	checkpointDataCmpOpts := cmp.Options{
 		cmpopts.IgnoreFields(CheckpointEntry{}, "AllocationTimestamp"),
@@ -986,7 +986,7 @@ func TestPodIPv4AddressWithPDEnabled(t *testing.T) {
 func TestGetIPStatsV4(t *testing.T) {
 	os.Setenv(envIPCooldownPeriod, "1")
 	defer os.Unsetenv(envIPCooldownPeriod)
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, false, defaultNetworkCard)
 
 	_ = ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0), "")
 
@@ -1040,7 +1040,7 @@ func TestGetIPStatsV4(t *testing.T) {
 func TestGetIPStatsV4WithPD(t *testing.T) {
 	os.Setenv(envIPCooldownPeriod, "1")
 	defer os.Unsetenv(envIPCooldownPeriod)
-	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, false, defaultNetworkCard)
 
 	_ = ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0), "")
 
@@ -1093,7 +1093,7 @@ func TestGetIPStatsV4WithPD(t *testing.T) {
 }
 
 func TestGetIPStatsV6(t *testing.T) {
-	v6ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
+	v6ds := NewDataStore(Testlog, NullCheckpoint{}, false, true, defaultNetworkCard)
 	_ = v6ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0), "")
 	ipv6Addr := net.IPNet{IP: net.IP{0x21, 0xdb, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Mask: net.CIDRMask(80, 128)}
 	_ = v6ds.AddIPv6CidrToStore("eni-1", ipv6Addr, true)
@@ -1172,7 +1172,7 @@ func TestAssignedIPv6Addresses(t *testing.T) {
 }
 
 func TestWarmENIInteractions(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, false, defaultNetworkCard)
 
 	_ = ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0), "")
 	_ = ds.AddENI("eni-2", 2, false, false, false, networkutils.CalculateRouteTableId(2, 0), "")
@@ -1708,7 +1708,7 @@ func TestForceRemovalMetrics(t *testing.T) {
 		Help: "The total number of IPs force removed",
 	})
 
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, false, defaultNetworkCard)
 
 	// Add an ENI and IP
 	err := ds.AddENI("eni-1", 1, false, false, false, networkutils.CalculateRouteTableId(1, 0), "")
@@ -1774,7 +1774,7 @@ func TestInitializeDataStores(t *testing.T) {
 
 	t.Run("single network card, not skipped", func(t *testing.T) {
 		skip := []bool{false}
-		dsAccess := InitializeDataStores(skip, defaultPath, false, log)
+		dsAccess := InitializeDataStores(skip, defaultPath, false, false, log)
 		assert.NotNil(t, dsAccess)
 		assert.Equal(t, 1, len(dsAccess.DataStores))
 		assert.Equal(t, 0, dsAccess.DataStores[0].GetNetworkCard())
@@ -1782,7 +1782,7 @@ func TestInitializeDataStores(t *testing.T) {
 
 	t.Run("multiple network cards, some skipped", func(t *testing.T) {
 		skip := []bool{false, true, false}
-		dsAccess := InitializeDataStores(skip, defaultPath, true, log)
+		dsAccess := InitializeDataStores(skip, defaultPath, true, false, log)
 		assert.NotNil(t, dsAccess)
 		assert.Equal(t, 2, len(dsAccess.DataStores))
 		assert.Equal(t, 0, dsAccess.DataStores[0].GetNetworkCard())
@@ -1794,7 +1794,7 @@ func TestDataStoreAccess_GetDataStore(t *testing.T) {
 	log := Testlog
 	defaultPath := "/tmp/test-datastore.json"
 	skip := []bool{false, false, false}
-	dsAccess := InitializeDataStores(skip, defaultPath, false, log)
+	dsAccess := InitializeDataStores(skip, defaultPath, false, false, log)
 
 	// Should return the correct DataStore for each network card
 	for i := 0; i < 3; i++ {
