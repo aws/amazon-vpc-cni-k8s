@@ -49,9 +49,9 @@ var (
 	cidrRange              *net.IPNet
 	cidrBlockAssociationID string
 	// Security Group that will be used in ENIConfig
-	customNetworkingSGID         string
-	customNetworkingSubnetIDList       []string
-	customNetworkingRTAssociationIDs   []string
+	customNetworkingSGID             string
+	customNetworkingSubnetIDList     []string
+	customNetworkingRTAssociationIDs []string
 	// List of ENIConfig per Availability Zone
 	eniConfigList        []*v1alpha1.ENIConfig
 	eniConfigBuilderList []*manifest.ENIConfigBuilder

@@ -51,14 +51,14 @@ var (
 	cidrRange              *net.IPNet
 	cidrBlockAssociationID string
 	// Security Group that will be used in ENIConfig
-	customNetworkingSGID         string
-	customNetworkingSGOpenPort   = 8080
-	customNetworkingSubnetIDList       []string
-	customNetworkingRTAssociationIDs   []string
-	corednsSGOpenPort            = 53
-	primaryENISGID               string
-	primaryENISGList             []string
-	clusterSGID                  string
+	customNetworkingSGID             string
+	customNetworkingSGOpenPort       = 8080
+	customNetworkingSubnetIDList     []string
+	customNetworkingRTAssociationIDs []string
+	corednsSGOpenPort                = 53
+	primaryENISGID                   string
+	primaryENISGList                 []string
+	clusterSGID                      string
 	// List of ENIConfig per Availability Zone
 	eniConfigList        []*v1alpha1.ENIConfig
 	eniConfigBuilderList []*manifest.ENIConfigBuilder
