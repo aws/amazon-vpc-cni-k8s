@@ -1291,7 +1291,6 @@ func (c *IPAMContext) setupENI(ctx context.Context, eni string, eniMetadata awsu
 		c.primaryIP[eni] = eniMetadata.PrimaryIPv4Address()
 	}
 
-
 	// Check if this ENI (primary or secondary) is in an excluded subnet and mark it for exclusion
 	if c.useSubnetDiscovery {
 		if _, err := c.excludedENIBasedOnSubnetTags(ctx, eni, eniMetadata); err != nil {
