@@ -146,7 +146,7 @@ func TestNodeInit(t *testing.T) {
 		terminating:     int32(0),
 		networkClient:   m.network,
 		dataStoreAccess: &datastore.DataStoreAccess{
-			DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), false, defaultNetworkCard)},
+			DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), false, false, defaultNetworkCard)},
 		},
 		myNodeName:            myNodeName,
 		enableIPv4:            true,
@@ -250,7 +250,7 @@ func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 		terminating:       int32(0),
 		networkClient:     m.network,
 		dataStoreAccess: &datastore.DataStoreAccess{
-			DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), true, defaultNetworkCard)},
+			DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), true, false, defaultNetworkCard)},
 		},
 		myNodeName:             myNodeName,
 		enablePrefixDelegation: true,
@@ -351,7 +351,7 @@ func TestNodeInitwithPDenabledIPv6Mode(t *testing.T) {
 		networkClient:     m.network,
 		numNetworkCards:   1,
 		dataStoreAccess: &datastore.DataStoreAccess{
-			DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), true, defaultNetworkCard)},
+			DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), true, false, defaultNetworkCard)},
 		},
 		myNodeName:             myNodeName,
 		enablePrefixDelegation: true,
@@ -1402,6 +1402,274 @@ func TestGetWarmIPTargetStateWithPDenabled(t *testing.T) {
 	assert.Equal(t, 0, over)
 }
 
+func TestIncludeCooldownIPsInPoolSize(t *testing.T) {
+	_ = os.Unsetenv(envIncludeCooldownIPs)
+	assert.False(t, includeCooldownIPsInPoolSize())
+
+	_ = os.Setenv(envIncludeCooldownIPs, "true")
+	assert.True(t, includeCooldownIPsInPoolSize())
+
+	_ = os.Setenv(envIncludeCooldownIPs, "false")
+	assert.False(t, includeCooldownIPsInPoolSize())
+	_ = os.Unsetenv(envIncludeCooldownIPs)
+}
+
+func TestIPAMContext_availableAddresses(t *testing.T) {
+	stats := &datastore.DataStoreStats{
+		TotalIPs:    10,
+		AssignedIPs: 2,
+		CooldownIPs: 3,
+	}
+
+	mockContext := &IPAMContext{includeCooldownIPs: false}
+	assert.Equal(t, 8, mockContext.availableAddresses(stats))
+
+	mockContext.includeCooldownIPs = true
+	assert.Equal(t, 5, mockContext.availableAddresses(stats))
+}
+
+// testDatastoreWithCooldown returns a DataStoreAccess whose datastore counts cooldown IPs as
+// unavailable when includeCooldownIPs is true
+func testDatastoreWithCooldown(isPDEnabled bool, includeCooldownIPs bool) *datastore.DataStoreAccess {
+	return &datastore.DataStoreAccess{
+		DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), isPDEnabled, includeCooldownIPs, defaultNetworkCard)},
+	}
+}
+
+// assignAndUnassignPodIPs churns numPods pod IPs through the datastore, leaving them in cooldown
+func assignAndUnassignPodIPs(t *testing.T, ds *datastore.DataStore, numPods int) {
+	var keys []datastore.IPAMKey
+	for i := 0; i < numPods; i++ {
+		key := datastore.IPAMKey{
+			NetworkName: "net0",
+			ContainerID: fmt.Sprintf("sandbox-%d", i),
+			IfName:      "eth0",
+		}
+		_, _, _, err := ds.AssignPodIPv4Address(key, datastore.IPAMMetadata{
+			K8SPodNamespace: "default",
+			K8SPodName:      fmt.Sprintf("sample-pod-%d", i),
+		})
+		assert.NoError(t, err)
+		keys = append(keys, key)
+	}
+	for _, key := range keys {
+		_, _, _, _, _, err := ds.UnassignPodIPAddress(key)
+		assert.NoError(t, err)
+	}
+}
+
+func TestGetWarmIPTargetStateWithCooldownIPs(t *testing.T) {
+	tests := []struct {
+		name               string
+		includeCooldownIPs bool
+		wantShort          int
+	}{
+		{"cooldown IPs counted as available", false, 0},
+		{"cooldown IPs counted as unavailable", true, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := setup(t)
+			defer m.ctrl.Finish()
+
+			mockContext := &IPAMContext{
+				awsClient:          m.awsutils,
+				networkClient:      m.network,
+				primaryIP:          make(map[string]string),
+				terminating:        int32(0),
+				warmIPTarget:       3,
+				includeCooldownIPs: tt.includeCooldownIPs,
+				numNetworkCards:    1,
+			}
+			mockContext.dataStoreAccess = testDatastoreWithCooldown(false, tt.includeCooldownIPs)
+			ds := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard)
+
+			// add 3 addresses to datastore
+			_ = ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0))
+			for _, ipAddress := range []string{"1.1.1.1", "1.1.1.2", "1.1.1.3"} {
+				ipv4Addr := net.IPNet{IP: net.ParseIP(ipAddress), Mask: net.IPv4Mask(255, 255, 255, 255)}
+				_ = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
+			}
+
+			short, over, warmIPTargetDefined := mockContext.datastoreTargetState(nil, defaultNetworkCard)
+			assert.True(t, warmIPTargetDefined)
+			assert.Equal(t, 0, short)
+			assert.Equal(t, 0, over)
+
+			// churn one pod IP, leaving it in cooldown
+			assignAndUnassignPodIPs(t, ds, 1)
+
+			short, over, warmIPTargetDefined = mockContext.datastoreTargetState(nil, defaultNetworkCard)
+			assert.True(t, warmIPTargetDefined)
+			assert.Equal(t, tt.wantShort, short)
+			assert.Equal(t, 0, over)
+		})
+	}
+}
+
+func TestGetWarmIPTargetStateWithPDenabledAndCooldownIPs(t *testing.T) {
+	tests := []struct {
+		name               string
+		includeCooldownIPs bool
+		// short after all 16 IPs of the only prefix are churned into cooldown, with WARM_IP_TARGET=1
+		wantShortOnePrefix int
+		// over after a second (free) prefix is added, with WARM_IP_TARGET=16
+		wantOverTwoPrefixes int
+	}{
+		{"cooldown IPs counted as available", false, 0, 1},
+		{"cooldown IPs counted as unavailable", true, 1, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := setup(t)
+			defer m.ctrl.Finish()
+
+			mockContext := &IPAMContext{
+				awsClient:              m.awsutils,
+				networkClient:          m.network,
+				primaryIP:              make(map[string]string),
+				terminating:            int32(0),
+				warmIPTarget:           1,
+				enablePrefixDelegation: true,
+				includeCooldownIPs:     tt.includeCooldownIPs,
+				numNetworkCards:        1,
+			}
+			mockContext.dataStoreAccess = testDatastoreWithCooldown(true, tt.includeCooldownIPs)
+			ds := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard)
+
+			// add a prefix to the datastore and churn all 16 of its IPs, leaving them in cooldown
+			_ = ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0))
+			_, ipnet, _ := net.ParseCIDR("10.1.1.0/28")
+			_ = ds.AddIPv4CidrToStore("eni-1", *ipnet, true)
+			assignAndUnassignPodIPs(t, ds, 16)
+
+			// The pool must grow by one prefix to satisfy WARM_IP_TARGET=1 while all IPs are in
+			// cooldown, but only if cooldown IPs are counted as unavailable
+			short, over, warmIPTargetDefined := mockContext.datastoreTargetState(nil, defaultNetworkCard)
+			assert.True(t, warmIPTargetDefined)
+			assert.Equal(t, tt.wantShortOnePrefix, short)
+			assert.Equal(t, 0, over)
+
+			// add a second (free) prefix and raise the warm IP target to a full prefix
+			_, ipnet, _ = net.ParseCIDR("10.1.2.0/28")
+			_ = ds.AddIPv4CidrToStore("eni-1", *ipnet, true)
+			mockContext.warmIPTarget = 16
+
+			// The free prefix is only over WARM_IP_TARGET=16 if the churned prefix's cooldown IPs
+			// count towards the warm pool
+			short, over, warmIPTargetDefined = mockContext.datastoreTargetState(nil, defaultNetworkCard)
+			assert.True(t, warmIPTargetDefined)
+			assert.Equal(t, 0, short)
+			assert.Equal(t, tt.wantOverTwoPrefixes, over)
+		})
+	}
+}
+
+func TestGetWarmPrefixTargetStateWithCooldownIPs(t *testing.T) {
+	tests := []struct {
+		name               string
+		includeCooldownIPs bool
+		wantShort          int
+	}{
+		{"prefix with cooldown IPs counted as free", false, 0},
+		{"prefix with cooldown IPs not counted as free", true, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := setup(t)
+			defer m.ctrl.Finish()
+
+			mockContext := &IPAMContext{
+				awsClient:              m.awsutils,
+				networkClient:          m.network,
+				primaryIP:              make(map[string]string),
+				terminating:            int32(0),
+				warmPrefixTarget:       1,
+				enablePrefixDelegation: true,
+				includeCooldownIPs:     tt.includeCooldownIPs,
+				numNetworkCards:        1,
+			}
+			mockContext.dataStoreAccess = testDatastoreWithCooldown(true, tt.includeCooldownIPs)
+			ds := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard)
+
+			// add a prefix to the datastore
+			_ = ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0))
+			_, ipnet, _ := net.ParseCIDR("10.1.1.0/28")
+			_ = ds.AddIPv4CidrToStore("eni-1", *ipnet, true)
+
+			short, warmPrefixTargetDefined := mockContext.datastorePrefixTargetState(defaultNetworkCard)
+			assert.True(t, warmPrefixTargetDefined)
+			assert.Equal(t, 0, short)
+
+			// churn one pod IP, leaving it in cooldown. The prefix only satisfies
+			// WARM_PREFIX_TARGET=1 if its cooldown IP does not make it un-free.
+			assignAndUnassignPodIPs(t, ds, 1)
+
+			short, warmPrefixTargetDefined = mockContext.datastorePrefixTargetState(defaultNetworkCard)
+			assert.True(t, warmPrefixTargetDefined)
+			assert.Equal(t, tt.wantShort, short)
+		})
+	}
+}
+
+func TestIPAMContext_nodeIPPoolTooLowWithCooldownIPs(t *testing.T) {
+	tests := []struct {
+		name               string
+		enablePD           bool
+		includeCooldownIPs bool
+		want               bool
+	}{
+		{"secondary IP mode, cooldown IPs counted as available", false, false, false},
+		{"secondary IP mode, cooldown IPs counted as unavailable", false, true, true},
+		{"prefix delegation, cooldown IPs counted as available", true, false, false},
+		{"prefix delegation, cooldown IPs counted as unavailable", true, true, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := setup(t)
+			defer m.ctrl.Finish()
+
+			c := &IPAMContext{
+				awsClient:              m.awsutils,
+				networkClient:          m.network,
+				useCustomNetworking:    false,
+				enablePrefixDelegation: tt.enablePD,
+				includeCooldownIPs:     tt.includeCooldownIPs,
+				maxENI:                 4,
+				maxPods:                500,
+				numNetworkCards:        1,
+			}
+			c.dataStoreAccess = testDatastoreWithCooldown(tt.enablePD, tt.includeCooldownIPs)
+			ds := c.dataStoreAccess.GetDataStore(defaultNetworkCard)
+
+			// Fill the pool to exactly the warm target, then put one IP in cooldown. The pool is
+			// only too low if the cooldown IP is counted as unavailable.
+			_ = ds.AddENI(primaryENIid, 0, true, false, false, networkutils.CalculateRouteTableId(0, 0))
+			if tt.enablePD {
+				// WARM_PREFIX_TARGET=1 needs 16 available IPs
+				c.warmPrefixTarget = 1
+				c.maxIPsPerENI = 256
+				c.maxPrefixesPerENI = 16
+				_, ipnet, _ := net.ParseCIDR(prefix01)
+				_ = ds.AddIPv4CidrToStore(primaryENIid, *ipnet, true)
+			} else {
+				// WARM_ENI_TARGET=1 with 3 IPs per ENI needs 3 available IPs
+				c.warmENITarget = 1
+				c.maxIPsPerENI = 3
+				for _, ipAddress := range []string{ipaddr01, ipaddr02, ipaddr03} {
+					ipv4Addr := net.IPNet{IP: net.ParseIP(ipAddress), Mask: net.IPv4Mask(255, 255, 255, 255)}
+					_ = ds.AddIPv4CidrToStore(primaryENIid, ipv4Addr, false)
+				}
+			}
+			assignAndUnassignPodIPs(t, ds, 1)
+
+			decisions := c.isDatastorePoolTooLow()
+			assert.NotNil(t, decisions)
+			assert.Equal(t, tt.want, decisions[defaultNetworkCard].IsLow)
+		})
+	}
+}
+
 func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 	m := setup(t)
 	defer m.ctrl.Finish()
@@ -1507,13 +1775,13 @@ func TestIPAMContext_nodePrefixPoolTooLow(t *testing.T) {
 
 func testDatastore() *datastore.DataStoreAccess {
 	return &datastore.DataStoreAccess{
-		DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false, defaultNetworkCard)},
+		DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false, false, defaultNetworkCard)},
 	}
 }
 
 func testDatastorewithPrefix() *datastore.DataStoreAccess {
 	return &datastore.DataStoreAccess{
-		DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), true, defaultNetworkCard)},
+		DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), true, false, defaultNetworkCard)},
 	}
 }
 
@@ -2272,7 +2540,7 @@ func TestIPAMContext_enableSecurityGroupsForPods(t *testing.T) {
 		enableIPv4: true,
 		enableIPv6: false,
 		dataStoreAccess: &datastore.DataStoreAccess{
-			DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false, defaultNetworkCard)},
+			DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false, false, defaultNetworkCard)},
 		},
 		awsClient:       m.awsutils,
 		networkClient:   m.network,
@@ -2465,7 +2733,7 @@ func TestIsConfigValid(t *testing.T) {
 				enablePodENI:           tt.fields.podENIEnabled,
 				useCustomNetworking:    tt.fields.customNetworkingEnabled,
 				dataStoreAccess: &datastore.DataStoreAccess{
-					DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NullCheckpoint{}, tt.fields.prefixDelegationEnabled, defaultNetworkCard)},
+					DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NullCheckpoint{}, tt.fields.prefixDelegationEnabled, false, defaultNetworkCard)},
 				},
 				numNetworkCards: 1,
 			}

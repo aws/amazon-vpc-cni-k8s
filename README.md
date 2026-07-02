@@ -345,6 +345,30 @@ private IPs, which may be throttled, especially at scaling-related times.
 1. If `MINIMUM_IP_TARGET` is set, `WARM_ENI_TARGET` will be ignored. Please utilize `WARM_IP_TARGET` instead.
 2. If `MINIMUM_IP_TARGET` is set and `WARM_IP_TARGET` is not set, `WARM_IP_TARGET` is assumed to be 0, which leads to the number of IPs attached to the node will be the value of `MINIMUM_IP_TARGET`. This configuration will prevent future ENIs/IPs from being allocated. It is strongly recommended that `WARM_IP_TARGET` should be set greater than 0 when `MINIMUM_IP_TARGET` is set.
 
+#### `INCLUDE_COOLDOWN_IPS_IN_POOL_SIZE` (v1.22.0+)
+
+Type: Boolean as a String
+
+Default: `false`
+
+Specifies whether IP addresses in cooldown are considered unavailable when `ipamd` calculates the size of the IP address pool. When a pod
+is deleted, its IP address remains in cooldown for `IP_COOLDOWN_PERIOD` seconds and cannot be assigned to a new pod until the cooldown
+expires. By default, `ipamd` still counts these addresses as available when evaluating `WARM_IP_TARGET`, `WARM_PREFIX_TARGET` and
+`WARM_ENI_TARGET`, so during periods of high pod churn the pool can appear to have free IP addresses even though none of them are
+assignable, delaying pool scale-up and causing pod IP assignment failures.
+
+When set to `true`:
+
+1. IP addresses in cooldown are not counted as available, so `ipamd` allocates additional IP addresses (or /28 prefixes when
+`ENABLE_PREFIX_DELEGATION` is set to `true`) to maintain the warm targets during pod churn.
+2. IP addresses and prefixes containing addresses in cooldown are not considered free when scaling down, so they are not released back
+to EC2, and ENIs holding them are not deleted, until their cooldown expires.
+
+**Note:** `MINIMUM_IP_TARGET` is unaffected by this setting, as addresses in cooldown still count towards the total number of addresses
+allocated to the node.
+**Note:** During sustained pod churn, this setting causes the pool to scale up and later scale back down as cooldowns expire, which may
+increase the number of EC2 API calls.
+
 #### `MAX_ENI`
 
 Type: Integer

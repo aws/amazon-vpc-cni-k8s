@@ -42,7 +42,7 @@ func TestServer_VersionCheck(t *testing.T) {
 		warmENITarget:   1,
 		warmIPTarget:    3,
 		networkClient:   m.network,
-		dataStoreAccess: datastore.InitializeDataStores([]bool{false}, "test", false, log),
+		dataStoreAccess: datastore.InitializeDataStores([]bool{false}, "test", false, false, log),
 	}
 
 	m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return([]string{}, nil).AnyTimes()
@@ -480,7 +480,7 @@ func TestServer_AddNetwork(t *testing.T) {
 			}
 			var dsList []*datastore.DataStore
 			for i := 0; i < tt.fields.managedNetworkCards; i++ {
-				dsList = append(dsList, datastore.NewDataStore(log, datastore.NullCheckpoint{}, tt.fields.prefixDelegationEnabled, i))
+				dsList = append(dsList, datastore.NewDataStore(log, datastore.NullCheckpoint{}, tt.fields.prefixDelegationEnabled, false, i))
 			}
 
 			dsAccess := &datastore.DataStoreAccess{DataStores: dsList}
