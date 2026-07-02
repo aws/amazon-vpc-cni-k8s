@@ -1273,6 +1273,203 @@ func TestWarmENIInteractions(t *testing.T) {
 	assert.Equal(t, 3, ds.GetENIs())
 }
 
+func TestAssignableAddresses(t *testing.T) {
+	stats := DataStoreStats{
+		TotalIPs:    16,
+		AssignedIPs: 3,
+		CooldownIPs: 2,
+	}
+	assert.Equal(t, 13, stats.AvailableAddresses())
+	assert.Equal(t, 11, stats.AssignableAddresses())
+}
+
+// clearCooldowns marks every unassigned IP on the ENI as being out of its cooldown period
+func clearCooldowns(ds *DataStore, eniID string) {
+	for _, cidr := range ds.eniPool[eniID].AvailableIPv4Cidrs {
+		for _, addr := range cidr.IPAddresses {
+			addr.UnassignedTime = time.Time{}
+		}
+	}
+}
+
+func TestGetFreePrefixesWithCooldownIPs(t *testing.T) {
+	tests := []struct {
+		name               string
+		includeCooldownIPs bool
+		wantFreePrefixes   int
+	}{
+		{"cooldown IPs counted as available", false, 2},
+		{"cooldown IPs counted as unavailable", true, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ds := NewDataStore(Testlog, NullCheckpoint{}, true, tt.includeCooldownIPs, defaultNetworkCard)
+
+			_ = ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0))
+			_, ipnet, _ := net.ParseCIDR("10.0.0.0/28")
+			_ = ds.AddIPv4CidrToStore("eni-1", *ipnet, true)
+			_, ipnet, _ = net.ParseCIDR("10.0.1.0/28")
+			_ = ds.AddIPv4CidrToStore("eni-1", *ipnet, true)
+			assert.Equal(t, 2, ds.GetFreePrefixes())
+
+			// Assign a pod IP and release it, leaving one prefix with an IP in cooldown
+			key := IPAMKey{"net0", "sandbox-1", "eth0"}
+			_, _, _, err := ds.AssignPodIPv4Address(key, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
+			assert.NoError(t, err)
+			assert.Equal(t, 1, ds.GetFreePrefixes())
+			_, _, _, _, _, err = ds.UnassignPodIPAddress(key)
+			assert.NoError(t, err)
+
+			assert.Equal(t, tt.wantFreePrefixes, ds.GetFreePrefixes())
+
+			// Once the cooldown expires, both prefixes are free again
+			clearCooldowns(ds, "eni-1")
+			assert.Equal(t, 2, ds.GetFreePrefixes())
+		})
+	}
+}
+
+func TestFindFreeableCidrsWithCooldownIPs(t *testing.T) {
+	tests := []struct {
+		name               string
+		isPDEnabled        bool
+		includeCooldownIPs bool
+		wantFreeable       int
+	}{
+		{"secondary IP mode, cooldown IPs counted as available", false, false, 2},
+		{"secondary IP mode, cooldown IPs counted as unavailable", false, true, 1},
+		{"prefix delegation, cooldown IPs counted as available", true, false, 2},
+		{"prefix delegation, cooldown IPs counted as unavailable", true, true, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ds := NewDataStore(Testlog, NullCheckpoint{}, tt.isPDEnabled, tt.includeCooldownIPs, defaultNetworkCard)
+
+			_ = ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0))
+			if tt.isPDEnabled {
+				_, ipnet, _ := net.ParseCIDR("10.0.0.0/28")
+				_ = ds.AddIPv4CidrToStore("eni-1", *ipnet, true)
+				_, ipnet, _ = net.ParseCIDR("10.0.1.0/28")
+				_ = ds.AddIPv4CidrToStore("eni-1", *ipnet, true)
+			} else {
+				ipv4Addr := net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
+				_ = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
+				ipv4Addr = net.IPNet{IP: net.ParseIP("1.1.1.2"), Mask: net.IPv4Mask(255, 255, 255, 255)}
+				_ = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
+			}
+			assert.Len(t, ds.FindFreeableCidrs("eni-1"), 2)
+
+			// Assign a pod IP and release it, leaving one Cidr with an IP in cooldown
+			key := IPAMKey{"net0", "sandbox-1", "eth0"}
+			_, _, _, err := ds.AssignPodIPv4Address(key, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
+			assert.NoError(t, err)
+			assert.Len(t, ds.FindFreeableCidrs("eni-1"), 1)
+			_, _, _, _, _, err = ds.UnassignPodIPAddress(key)
+			assert.NoError(t, err)
+
+			assert.Len(t, ds.FindFreeableCidrs("eni-1"), tt.wantFreeable)
+
+			// Once the cooldown expires, both Cidrs are freeable again
+			clearCooldowns(ds, "eni-1")
+			assert.Len(t, ds.FindFreeableCidrs("eni-1"), 2)
+		})
+	}
+}
+
+// TestRemoveUnusedENIFromStoreWithCooldownIPs verifies that when cooldown IPs are included in pool
+// size calculations, an ENI is not removed if WARM_IP_TARGET is only met by counting IPs in cooldown
+// on the remaining ENIs.
+func TestRemoveUnusedENIFromStoreWithCooldownIPs(t *testing.T) {
+	tests := []struct {
+		name               string
+		includeCooldownIPs bool
+		wantRemovedENI     string
+	}{
+		{"cooldown IPs counted as warm", false, "eni-2"},
+		{"cooldown IPs not counted as warm", true, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ds := NewDataStore(Testlog, NullCheckpoint{}, false, tt.includeCooldownIPs, defaultNetworkCard)
+
+			// Add two IPs to the primary ENI and put one of them in cooldown. The pod is assigned
+			// before the secondary ENI exists, so its IP is guaranteed to be on the primary ENI.
+			_ = ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0))
+			ipv4Addr := net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
+			_ = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
+			ipv4Addr = net.IPNet{IP: net.ParseIP("1.1.1.2"), Mask: net.IPv4Mask(255, 255, 255, 255)}
+			_ = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
+			key := IPAMKey{"net0", "sandbox-1", "eth0"}
+			_, _, _, err := ds.AssignPodIPv4Address(key, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
+			assert.NoError(t, err)
+			_, _, _, _, _, err = ds.UnassignPodIPAddress(key)
+			assert.NoError(t, err)
+
+			// Add a secondary ENI with one free IP
+			_ = ds.AddENI("eni-2", 2, false, false, false, networkutils.CalculateRouteTableId(2, 0))
+			ipv4Addr = net.IPNet{IP: net.ParseIP("1.1.2.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
+			_ = ds.AddIPv4CidrToStore("eni-2", ipv4Addr, false)
+			ds.eniPool["eni-2"].createTime = time.Time{}
+
+			// eni-1 has one free IP and one IP in cooldown. Removing eni-2 only leaves WARM_IP_TARGET=2
+			// satisfied if the IP in cooldown counts as warm.
+			assert.Equal(t, tt.wantRemovedENI, ds.RemoveUnusedENIFromStore(2, 0, 0))
+
+			// Once the cooldown expires, eni-2 is no longer needed for the warm IP target
+			if tt.includeCooldownIPs {
+				clearCooldowns(ds, "eni-1")
+				assert.Equal(t, "eni-2", ds.RemoveUnusedENIFromStore(2, 0, 0))
+			}
+		})
+	}
+}
+
+// TestRemoveUnusedENIFromStoreWarmPrefixesWithCooldownIPs verifies that when cooldown IPs are included
+// in pool size calculations, an ENI is not removed if WARM_PREFIX_TARGET is only met by counting a
+// prefix with IPs in cooldown on the remaining ENIs.
+func TestRemoveUnusedENIFromStoreWarmPrefixesWithCooldownIPs(t *testing.T) {
+	tests := []struct {
+		name               string
+		includeCooldownIPs bool
+		wantRemovedENI     string
+	}{
+		{"prefix with cooldown IPs counted as free", false, "eni-2"},
+		{"prefix with cooldown IPs not counted as free", true, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ds := NewDataStore(Testlog, NullCheckpoint{}, true, tt.includeCooldownIPs, defaultNetworkCard)
+
+			// Add a prefix to the primary ENI and put one of its IPs in cooldown. The pod is assigned
+			// before the secondary ENI exists, so its IP is guaranteed to be on the primary ENI.
+			_ = ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0))
+			_, ipnet, _ := net.ParseCIDR("10.0.0.0/28")
+			_ = ds.AddIPv4CidrToStore("eni-1", *ipnet, true)
+			key := IPAMKey{"net0", "sandbox-1", "eth0"}
+			_, _, _, err := ds.AssignPodIPv4Address(key, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
+			assert.NoError(t, err)
+			_, _, _, _, _, err = ds.UnassignPodIPAddress(key)
+			assert.NoError(t, err)
+
+			// Add a secondary ENI with one free prefix
+			_ = ds.AddENI("eni-2", 2, false, false, false, networkutils.CalculateRouteTableId(2, 0))
+			_, ipnet, _ = net.ParseCIDR("10.0.1.0/28")
+			_ = ds.AddIPv4CidrToStore("eni-2", *ipnet, true)
+			ds.eniPool["eni-2"].createTime = time.Time{}
+
+			// eni-1's prefix has an IP in cooldown. Removing eni-2 only leaves WARM_PREFIX_TARGET=1
+			// satisfied if eni-1's prefix counts as free.
+			assert.Equal(t, tt.wantRemovedENI, ds.RemoveUnusedENIFromStore(0, 0, 1))
+
+			// Once the cooldown expires, eni-2 is no longer needed for the warm prefix target
+			if tt.includeCooldownIPs {
+				clearCooldowns(ds, "eni-1")
+				assert.Equal(t, "eni-2", ds.RemoveUnusedENIFromStore(0, 0, 1))
+			}
+		})
+	}
+}
+
 func TestDataStore_normalizeCheckpointDataByPodVethExistence(t *testing.T) {
 	containerAddr := &net.IPNet{
 		IP:   net.ParseIP("192.168.1.1"),
