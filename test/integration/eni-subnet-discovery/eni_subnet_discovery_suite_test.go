@@ -49,6 +49,7 @@ var (
 	cidrRange              *net.IPNet
 	cidrBlockAssociationID string
 	createdSubnet          string
+	rtAssociationID        string
 	primaryInstance        ec2types.Instance
 	useIPv6                bool
 )
@@ -205,7 +206,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	By("associating the route table with the newly created subnet")
-	err = f.CloudServices.EC2().AssociateRouteTableToSubnet(context.TODO(), clusterVPCConfig.PublicRouteTableID, subnetID)
+	rtAssociationID, err = f.CloudServices.EC2().AssociateRouteTableToSubnet(context.TODO(), clusterVPCConfig.PublicRouteTableID, subnetID)
 	Expect(err).ToNot(HaveOccurred())
 
 	By("try detaching all ENIs by setting WARM_ENI_TARGET to 0")
@@ -231,6 +232,13 @@ var _ = AfterSuite(func() {
 		utils.AwsNodeName, map[string]string{"WARM_ENI_TARGET": "1"})
 
 	var errs prometheus.MultiError
+
+	if rtAssociationID != "" {
+		By(fmt.Sprintf("disassociating route table association %s", rtAssociationID))
+		if err := f.CloudServices.EC2().DisassociateRouteTable(context.TODO(), rtAssociationID); err != nil {
+			errs.Append(err)
+		}
+	}
 
 	By(fmt.Sprintf("deleting the subnet %s", createdSubnet))
 	if err := f.CloudServices.EC2().DeleteSubnet(context.TODO(), createdSubnet); err != nil {
