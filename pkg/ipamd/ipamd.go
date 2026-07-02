@@ -2172,7 +2172,8 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 }
 
 // datastoreTargetState determines the number of IPs `short` or `over` our WARM_IP_TARGET, accounting for the MINIMUM_IP_TARGET.
-// With prefix delegation, this function determines the number of Prefixes `short` or `over`
+// With prefix delegation, this function determines the number of Prefixes `short` or `over`.
+// IPs in cooldown are not counted as available, since they cannot be assigned to pods until their cooldown expires.
 func (c *IPAMContext) datastoreTargetState(stats *datastore.DataStoreStats, networkCard int) (short int, over int, enabled bool) {
 	warmIPTarget := c.warmIPTarget
 	minimumIPTarget := c.minimumIPTarget
@@ -2215,7 +2216,8 @@ func (c *IPAMContext) datastoreTargetState(stats *datastore.DataStoreStats, netw
 		// Over will have number of IPs more than needed but with PD we would have allocated in chunks of /28
 		// Say assigned = 1, warm ip target = 16, this will need 2 prefixes. But over will return 15.
 		// Hence we need to check if 'over' number of IPs are needed to maintain the warm targets
-		prefixNeededForWarmIP := datastore.DivCeil(stats.AssignedIPs+c.warmIPTarget, numIPsPerPrefix)
+		// IPs in cooldown occupy prefix space but cannot be assigned, so they count towards the prefixes needed
+		prefixNeededForWarmIP := datastore.DivCeil(stats.AssignedIPs+stats.CooldownIPs+c.warmIPTarget, numIPsPerPrefix)
 		prefixNeededForMinIP := datastore.DivCeil(c.minimumIPTarget, numIPsPerPrefix)
 
 		// over will be number of prefixes over than needed but could be spread across used prefixes,
