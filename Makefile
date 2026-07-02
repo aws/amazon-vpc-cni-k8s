@@ -288,7 +288,7 @@ docker-metrics-test:     ## Run metrics helper unit test suite in a container.
 		make metrics-unit-test
 
 # Fetch the CNI plugins
-plugins: FETCH_VERSION=1.9.0
+plugins: FETCH_VERSION=1.9.1
 plugins: FETCH_URL=https://github.com/containernetworking/plugins/archive/refs/tags/v$(FETCH_VERSION).tar.gz
 plugins: VISIT_URL=https://github.com/containernetworking/plugins/tree/v$(FETCH_VERSION)/plugins/
 plugins:   ## Fetch the CNI plugins

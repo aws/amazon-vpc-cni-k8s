@@ -595,25 +595,10 @@ func (c *IPAMContext) nodeInit(ctx context.Context) error {
 		if err := c.awsClient.RefreshSGIDs(ctx, primaryENIMac, c.dataStoreAccess); err != nil {
 			return err
 		}
-
-		// Also refresh custom security groups for secondary subnets
-		// Custom security groups are only relevant when subnet discovery is enabled and custom networking is disabled.
-		// When custom networking is enabled, ENIConfig defines the security groups for secondary ENIs,
-		// and auto-discovered SGs should not overwrite them.
-		if c.useSubnetDiscovery && !c.useCustomNetworking {
-			if err := c.awsClient.RefreshCustomSGIDs(ctx, c.dataStoreAccess); err != nil {
-				return err
-			}
-		}
-
-		// Refresh security groups and VPC CIDR blocks in the background
+		// Refresh security groups in the background
 		// Ignoring errors since we will retry in 30s
 		go wait.Forever(func() {
 			c.awsClient.RefreshSGIDs(ctx, primaryENIMac, c.dataStoreAccess)
-			// Also refresh custom security groups for secondary subnets
-			if c.useSubnetDiscovery && !c.useCustomNetworking {
-				c.awsClient.RefreshCustomSGIDs(ctx, c.dataStoreAccess)
-			}
 		}, 30*time.Second)
 	}
 
@@ -1299,18 +1284,18 @@ func (c *IPAMContext) setupENI(ctx context.Context, eni string, eniMetadata awsu
 		return errors.Wrapf(err, "failed to add ENI %s to data store", eni)
 	}
 
-	// Check if this ENI (primary or secondary) is in an excluded subnet and mark it for exclusion
-	if c.useSubnetDiscovery {
-		if _, err := c.excludedENIBasedOnSubnetTags(ctx, eni, eniMetadata); err != nil {
-			return fmt.Errorf("checking to excluded configured subnet, error: %w", err)
-		}
-	}
-
 	// Store the addressable IP for the ENI
 	if c.enableIPv6 {
 		c.primaryIP[eni] = eniMetadata.PrimaryIPv6Address()
 	} else {
 		c.primaryIP[eni] = eniMetadata.PrimaryIPv4Address()
+	}
+
+	// Check if this ENI (primary or secondary) is in an excluded subnet and mark it for exclusion
+	if c.useSubnetDiscovery {
+		if _, err := c.excludedENIBasedOnSubnetTags(ctx, eni, eniMetadata); err != nil {
+			return fmt.Errorf("checking to excluded configured subnet, error: %w", err)
+		}
 	}
 
 	if c.enableIPv6 {
@@ -2129,6 +2114,8 @@ func EnablePodIPAnnotation() bool {
 // filterUnmanagedENIs filters out ENIs marked with the "node.k8s.amazonaws.com/no_manage" tag
 func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutils.ENIMetadata {
 	numFiltered := 0
+	// Use a local slice to recount from scratch, avoiding accumulation across repeated calls.
+	unmanagedENI := make([]int, len(c.unmanagedENI))
 	ret := make([]awsutils.ENIMetadata, 0, len(enis))
 
 	for _, eni := range enis {
@@ -2146,7 +2133,7 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 					log.Debugf("Skipping ENI %s: IPv6 Mode is enabled and VPC CNI will only ENIs created by it in v6 PD mode",
 						eni.ENIID)
 					numFiltered++
-					c.unmanagedENI[eni.NetworkCard] += 1
+					unmanagedENI[eni.NetworkCard] += 1
 					continue
 				} else if isUnmanagedNIC {
 					log.Debugf("Skipping ENI %s: since it is on unmanaged network card index %d", eni.ENIID, eni.NetworkCard)
@@ -2154,14 +2141,14 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 				} else if isEfaOnlyENI {
 					log.Debugf("Skipping ENI %s: since it is EFA only ENI on network card index %d", eni.ENIID, eni.NetworkCard)
 					numFiltered++
-					c.unmanagedENI[eni.NetworkCard] += 1
+					unmanagedENI[eni.NetworkCard] += 1
 					continue
 				}
 			}
 		} else if isUnmanagedENI {
 			log.Debugf("Skipping ENI %s: since it is unmanaged", eni.ENIID)
 			numFiltered++
-			c.unmanagedENI[eni.NetworkCard] += 1
+			unmanagedENI[eni.NetworkCard] += 1
 			continue
 		} else if isUnmanagedNIC {
 			log.Debugf("Skipping ENI %s: since it is on unmanaged network card index %d", eni.ENIID, eni.NetworkCard)
@@ -2169,12 +2156,17 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 		} else if isEfaOnlyENI {
 			log.Debugf("Skipping ENI %s: since it is EFA only ENI on network card index %d", eni.ENIID, eni.NetworkCard)
 			numFiltered++
-			c.unmanagedENI[eni.NetworkCard] += 1
+			unmanagedENI[eni.NetworkCard] += 1
 			continue
 		}
 
 		ret = append(ret, eni)
 	}
+
+	for networkCard, unmanagedENIs := range unmanagedENI {
+		c.unmanagedENI[networkCard] = unmanagedENIs
+	}
+
 	c.updateIPStats(numFiltered)
 	return ret
 }
