@@ -2682,7 +2682,7 @@ func (cache *EC2InstanceMetadataCache) IsSubnetExcluded(ctx context.Context, sub
 		}
 	}
 
-	// Subnet not found in VPC
-	log.Warnf("IsSubnetExcluded: subnet %s not found in VPC", subnetID)
-	return false, fmt.Errorf("subnet %s not found in VPC", subnetID)
+	// Subnet not found in VPC — treat as not excluded (e.g. HyperPod cross-account subnets)
+	log.Warnf("IsSubnetExcluded: subnet %s not found in VPC, treating as not excluded", subnetID)
+	return false, nil
 }
