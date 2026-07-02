@@ -47,6 +47,7 @@ import (
 
 const (
 	ipamdAddress            = "127.0.0.1:50051"
+	ipamdSocketPath         = "/var/run/aws-node/ipamd.sock"
 	dummyInterfacePrefix    = "dummy"
 	npAgentConnTimeout      = 2
 	npaSocketPath           = "/var/run/aws-node/npa.sock"
@@ -136,6 +137,32 @@ func LoadNetConf(bytes []byte) (*NetConf, logger.Logger, error) {
 	return &conf, log, nil
 }
 
+// dialIPAMD connects to the IPAMD gRPC server. It tries the Unix socket first
+// (secure path), then falls back to TCP for backward compatibility during upgrades.
+func dialIPAMD(grpcClient grpcwrapper.GRPC, log logger.Logger) (*grpc.ClientConn, error) {
+	return dialIPAMDWithSocketPath(grpcClient, log, ipamdSocketPath)
+}
+
+func dialIPAMDWithSocketPath(grpcClient grpcwrapper.GRPC, log logger.Logger, socketPath string) (*grpc.ClientConn, error) {
+	// Try Unix socket first (secure)
+	if _, err := os.Stat(socketPath); err == nil {
+		conn, err := grpcClient.Dial("unix://"+socketPath, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err == nil {
+			log.Debugf("Connected to IPAMD via Unix socket: %s", socketPath)
+			return conn, nil
+		}
+		log.Warnf("Unix socket exists but dial failed (%v), trying TCP fallback", err)
+	}
+
+	// TODO: Remove TCP fallback once all nodes run the socket-based IPAMD.
+	log.Debugf("Falling back to TCP connection: %s", ipamdAddress)
+	conn, err := grpcClient.Dial(ipamdAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, err
+	}
+	return conn, nil
+}
+
 func cmdAdd(args *skel.CmdArgs) error {
 	return add(args, typeswrapper.New(), grpcwrapper.New(), rpcwrapper.New(), driver.New())
 }
@@ -177,8 +204,8 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 
 	log.Debugf("pod requires multi-nic attachment: %t", requiresMultiNICAttachment)
 
-	// Set up a connection to the ipamD server.
-	conn, err := grpcClient.Dial(ipamdAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	// Set up a connection to the ipamD server via Unix socket (preferred) or TCP fallback.
+	conn, err := dialIPAMD(grpcClient, log)
 	if err != nil {
 		log.Errorf("Failed to connect to backend server for container %s: %v",
 			args.ContainerID, err)
@@ -395,8 +422,8 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	}
 
 	// notify local IP address manager to free secondary IP
-	// Set up a connection to the server.
-	conn, err := grpcClient.Dial(ipamdAddress, grpc.WithInsecure())
+	// Set up a connection to the server via Unix socket (preferred) or TCP fallback.
+	conn, err := dialIPAMD(grpcClient, log)
 	if err != nil {
 		log.Errorf("Failed to connect to backend server for container %s: %v",
 			args.ContainerID, err)

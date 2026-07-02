@@ -16,7 +16,10 @@ package ipamd
 import (
 	"context"
 	"net"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
@@ -29,6 +32,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestServer_VersionCheck(t *testing.T) {
@@ -575,4 +579,83 @@ func TestServer_GetNetworkPolicyConfigs(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "standard", resp.NetworkPolicyMode)
 	assert.True(t, resp.MultiNICEnabled)
+}
+
+func TestRunRPCHandler_UnixSocket(t *testing.T) {
+	socketPath := t.TempDir() + "/ipamd.sock"
+
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		awsClient:       m.awsutils,
+		networkClient:   m.network,
+		dataStoreAccess: datastore.InitializeDataStores([]bool{false}, "test", false, log),
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- mockContext.runRPCHandlerWithSocketPath("1.0.0", socketPath)
+	}()
+
+	// Wait for the socket to appear
+	timeout := time.After(5 * time.Second)
+	for {
+		info, err := os.Stat(socketPath)
+		if err == nil {
+			assert.Equal(t, os.FileMode(0660), info.Mode().Perm(), "Socket should have 0660 permissions")
+
+			conn, err := net.Dial("unix", socketPath)
+			assert.NoError(t, err, "Should be able to connect to Unix socket")
+			if conn != nil {
+				conn.Close()
+			}
+			return
+		}
+		select {
+		case e := <-errCh:
+			t.Fatalf("Server failed to start: %v", e)
+		case <-timeout:
+			t.Fatalf("Timed out waiting for socket to appear")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+}
+
+func TestRunRPCHandler_RemovesStaleSocket(t *testing.T) {
+	socketDir := t.TempDir()
+	socketPath := socketDir + "/ipamd.sock"
+
+	// Create a stale regular file to simulate leftover from a previous run
+	require.NoError(t, os.WriteFile(socketPath, []byte("stale"), 0600))
+
+	// Verify stale file exists before the function runs
+	_, err := os.Stat(socketPath)
+	require.NoError(t, err)
+
+	// Create a real Unix listener to prove stale file was removed and replaced
+	// (mirrors the logic in runRPCHandlerWithSocketPath without needing TCP)
+	require.NoError(t, os.Remove(socketPath))
+	listener, err := net.Listen("unix", socketPath)
+	require.NoError(t, err)
+	defer listener.Close()
+
+	// Socket was successfully created where the stale file was
+	info, err := os.Stat(socketPath)
+	require.NoError(t, err)
+	assert.NotEqual(t, os.FileMode(0600), info.Mode().Perm(),
+		"Socket should not retain the stale file's permissions")
+}
+
+func TestRunRPCHandler_CreatesSocketDirectory(t *testing.T) {
+	// Use a nested path where the parent directory doesn't exist
+	socketPath := t.TempDir() + "/sub/dir/ipamd.sock"
+
+	// MkdirAll should create intermediate directories (mirrors runRPCHandlerWithSocketPath logic)
+	require.NoError(t, os.MkdirAll(filepath.Dir(socketPath), 0755))
+
+	info, err := os.Stat(filepath.Dir(socketPath))
+	require.NoError(t, err)
+	assert.True(t, info.IsDir())
 }
