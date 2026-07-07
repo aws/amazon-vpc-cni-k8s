@@ -72,6 +72,10 @@ type NetConf struct {
 	// PodSGEnforcingMode is the enforcing mode for Security groups for pods feature
 	PodSGEnforcingMode sgpp.EnforcingMode `json:"podSGEnforcingMode"`
 
+	// VethPeerNamespace controls whether the host-side veth peer is created
+	// directly in the host network namespace.
+	VethPeerNamespace bool `json:"vethPeerNamespace"`
+
 	PluginLogFile string `json:"pluginLogFile"`
 
 	PluginLogLevel string        `json:"pluginLogLevel"`
@@ -285,7 +289,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		// To stop using dummy interface here, we have to let IPAMD store the SGP containers in a file, so the identification of such containers becomes easier during deletion flow and won't require API server call
 		dummyInterface = &current.Interface{Name: dummyInterfaceName, Mac: fmt.Sprint(r.PodVlanId)}
 	} else {
-		err = driverClient.SetupPodNetwork(vethMetadata, args.Netns, mtu, log)
+		err = driverClient.SetupPodNetwork(vethMetadata, args.Netns, mtu, conf.VethPeerNamespace, log)
 		// For non-branch ENI, the pod VLAN ID value of 0 is packed in Interface.Mac, while the interface device number is packed in Interface.Sandbox
 		// The use of this dummy interface can be removed for regular pods once we move to v1.20+ as CNI now stores the route table ID in the Mac field of the container interface.
 		// This is kept for supporting downgrade to v1.19 and below.

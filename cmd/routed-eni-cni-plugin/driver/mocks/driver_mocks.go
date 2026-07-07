@@ -65,17 +65,17 @@ func (mr *MockNetworkAPIsMockRecorder) SetupBranchENIPodNetwork(arg0, arg1, arg2
 }
 
 // SetupPodNetwork mocks base method.
-func (m *MockNetworkAPIs) SetupPodNetwork(arg0 []driver.VirtualInterfaceMetadata, arg1 string, arg2 int, arg3 logger.Logger) error {
+func (m *MockNetworkAPIs) SetupPodNetwork(arg0 []driver.VirtualInterfaceMetadata, arg1 string, arg2 int, arg3 bool, arg4 logger.Logger) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SetupPodNetwork", arg0, arg1, arg2, arg3)
+	ret := m.ctrl.Call(m, "SetupPodNetwork", arg0, arg1, arg2, arg3, arg4)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // SetupPodNetwork indicates an expected call of SetupPodNetwork.
-func (mr *MockNetworkAPIsMockRecorder) SetupPodNetwork(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
+func (mr *MockNetworkAPIsMockRecorder) SetupPodNetwork(arg0, arg1, arg2, arg3, arg4 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupPodNetwork", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupPodNetwork), arg0, arg1, arg2, arg3)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupPodNetwork", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupPodNetwork), arg0, arg1, arg2, arg3, arg4)
 }
 
 // TeardownBranchENIPodNetwork mocks base method.

@@ -441,6 +441,14 @@ Default: `eni`
 
 Specifies the veth prefix used to generate the host-side veth device name for the CNI. The prefix can be at most 4 characters long. The prefixes `eth`, `vlan`, and `lo` are reserved by the CNI plugin and cannot be specified. We recommend using prefix name not shared by any other network interfaces on the worker node instance.
 
+#### `AWS_VPC_K8S_CNI_VETH_PEER_NAMESPACE`
+
+Type: Boolean as a String
+
+Default: `false`
+
+Specifies whether the CNI creates the host-side veth peer directly in the host network namespace. The default value preserves the existing behavior of creating both ends in the pod network namespace and moving the host-side peer to the host network namespace.
+
 #### `ADDITIONAL_ENI_TAGS` (v1.6.0+)
 
 Type: String

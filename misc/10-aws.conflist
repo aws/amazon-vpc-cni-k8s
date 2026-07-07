@@ -7,6 +7,7 @@
       "name": "aws-cni",
       "type": "aws-cni",
       "vethPrefix": "__VETHPREFIX__",
+      "vethPeerNamespace": __VETHPEERNAMESPACE__,
       "mtu": "__MTU__",
       "podSGEnforcingMode": "__PODSGENFORCINGMODE__",
       "pluginLogFile": "__PLUGINLOGFILE__",

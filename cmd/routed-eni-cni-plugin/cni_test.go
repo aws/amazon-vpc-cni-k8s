@@ -123,7 +123,57 @@ func TestCmdAdd(t *testing.T) {
 	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAllocationMetadata: addrs, NetworkPolicyMode: "none"}
 	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
 
-	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), gomock.Any()).Return(nil)
+	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), false, gomock.Any()).Return(nil)
+
+	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil).Times(1)
+
+	err := add(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
+	assert.Nil(t, err)
+}
+
+func TestCmdAddWithVethPeerNamespace(t *testing.T) {
+	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
+	defer ctrl.Finish()
+
+	stdinData, _ := json.Marshal(map[string]interface{}{
+		"cniVersion":        cniVersionStr,
+		"name":              cniName,
+		"type":              cniType,
+		"vethPeerNamespace": true,
+	})
+
+	cmdArgs := &skel.CmdArgs{ContainerID: containerID,
+		Netns:     netNS,
+		IfName:    ifName,
+		StdinData: stdinData}
+
+	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
+
+	conn, _ := grpc.Dial("unix://"+ipamdSocketPath, grpc.WithInsecure())
+
+	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
+	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
+	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
+
+	npConn, _ := grpc.Dial("unix://"+npaSocketPath, grpc.WithInsecure())
+	mocksGRPC.EXPECT().DialContext(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(npConn, nil).Times(1)
+
+	mockNP := mock_rpc.NewMockNPBackendClient(ctrl)
+	mocksRPC.EXPECT().NewNPBackendClient(npConn).Return(mockNP).Times(1)
+
+	enforceNpReply := &rpc.EnforceNpReply{Success: true}
+	mockNP.EXPECT().EnforceNpToPod(gomock.Any(), gomock.Any()).Return(enforceNpReply, nil).Times(1)
+
+	addrs := []*rpc.IPAllocationMetadata{{
+		IPv4Addr:     ipAddr,
+		DeviceNumber: devNum,
+		RouteTableId: devNum + 1,
+	}}
+
+	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAllocationMetadata: addrs, NetworkPolicyMode: "none"}
+	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
+
+	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), true, gomock.Any()).Return(nil)
 
 	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil).Times(1)
 
@@ -168,7 +218,7 @@ func TestCmdAddWithNPenabled(t *testing.T) {
 	enforceNpReply := &rpc.EnforceNpReply{Success: true}
 	mockNP.EXPECT().EnforceNpToPod(gomock.Any(), gomock.Any()).Return(enforceNpReply, nil)
 
-	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), gomock.Any()).Return(nil)
+	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), false, gomock.Any()).Return(nil)
 
 	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil)
 
@@ -213,7 +263,7 @@ func TestCmdAddWithNPenabledWithErr(t *testing.T) {
 	enforceNpReply := &rpc.EnforceNpReply{Success: false}
 	mockNP.EXPECT().EnforceNpToPod(gomock.Any(), gomock.Any()).Return(enforceNpReply, errors.New("Error on EnforceNpReply"))
 
-	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), gomock.Any()).Return(nil)
+	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), false, gomock.Any()).Return(nil)
 
 	err := add(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
 	assert.Error(t, err)
@@ -279,7 +329,7 @@ func TestCmdAddErrSetupPodNetwork(t *testing.T) {
 	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAllocationMetadata: addrs, NetworkPolicyMode: "none"}
 	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
 
-	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), gomock.Any()).Return(errors.New("error on SetupPodNetwork"))
+	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), false, gomock.Any()).Return(errors.New("error on SetupPodNetwork"))
 
 	// when SetupPodNetwork fails, expect to return IP back to datastore
 	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPAllocationMetadata: addrs}
@@ -318,7 +368,7 @@ func TestCmdAddWithNetworkPolicyModeUnset(t *testing.T) {
 	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAllocationMetadata: addrs, NetworkPolicyMode: ""}
 	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
 
-	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), gomock.Any()).Return(nil)
+	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), false, gomock.Any()).Return(nil)
 
 	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil).Times(1)
 
@@ -405,7 +455,7 @@ func TestCmdAddForMultiNICAttachment(t *testing.T) {
 			ContainerVethName: "mNicIf1",
 		},
 	}
-	mocksNetwork.EXPECT().SetupPodNetwork(vethMetadata, cmdArgs.Netns, gomock.Any(), gomock.Any()).Return(nil)
+	mocksNetwork.EXPECT().SetupPodNetwork(vethMetadata, cmdArgs.Netns, gomock.Any(), false, gomock.Any()).Return(nil)
 
 	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil).Times(1)
 
@@ -1779,6 +1829,28 @@ func TestLoadNetConf(t *testing.T) {
 			},
 		},
 		{
+			name: "custom veth peer namespace",
+			args: args{
+				input: map[string]interface{}{
+					"cniVersion":        "0.4.0",
+					"name":              "test-cni",
+					"type":              "aws-cni",
+					"vethPeerNamespace": true,
+				},
+				expectConf: &NetConf{
+					NetConf: types.NetConf{
+						CNIVersion: "0.4.0",
+						Name:       "test-cni",
+						Type:       "aws-cni",
+					},
+					MTU:                "9001",
+					VethPrefix:         "eni",
+					VethPeerNamespace:  true,
+					PodSGEnforcingMode: sgpp.DefaultEnforcingMode,
+				},
+			},
+		},
+		{
 			name: "vethPrefix too long",
 			args: args{
 				input: map[string]interface{}{
@@ -1824,6 +1896,7 @@ func TestLoadNetConf(t *testing.T) {
 				if tt.args.expectConf != nil {
 					assert.Equal(t, tt.args.expectConf.MTU, conf.MTU)
 					assert.Equal(t, tt.args.expectConf.VethPrefix, conf.VethPrefix)
+					assert.Equal(t, tt.args.expectConf.VethPeerNamespace, conf.VethPeerNamespace)
 					assert.Equal(t, tt.args.expectConf.PodSGEnforcingMode, conf.PodSGEnforcingMode)
 					assert.Equal(t, tt.args.expectConf.NetConf.CNIVersion, conf.NetConf.CNIVersion)
 					assert.Equal(t, tt.args.expectConf.NetConf.Name, conf.NetConf.Name)

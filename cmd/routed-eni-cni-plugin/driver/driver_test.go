@@ -16,6 +16,7 @@ package driver
 import (
 	"fmt"
 	"net"
+	"reflect"
 	"syscall"
 	"testing"
 
@@ -42,9 +43,11 @@ var testLogCfg = logger.Configuration{
 var testLogger = logger.New(&testLogCfg)
 
 type vethMatcher struct {
-	contVethName string
-	flags        net.Flags
-	mtu          int
+	contVethName       string
+	flags              net.Flags
+	mtu                int
+	checkPeerNamespace bool
+	peerNamespace      interface{}
 }
 
 func (m vethMatcher) Matches(x interface{}) bool {
@@ -53,7 +56,14 @@ func (m vethMatcher) Matches(x interface{}) bool {
 		return false
 	}
 	attrs := veth.Attrs()
-	return attrs.Name == m.contVethName && attrs.Flags == m.flags && attrs.MTU == m.mtu
+	if attrs.Name != m.contVethName || attrs.Flags != m.flags || attrs.MTU != m.mtu {
+		return false
+	}
+	if !m.checkPeerNamespace {
+		return true
+	}
+	netlinkVeth, ok := x.(*netlink.Veth)
+	return ok && reflect.DeepEqual(netlinkVeth.PeerNamespace, m.peerNamespace)
 }
 
 func (m vethMatcher) String() string {
@@ -404,7 +414,7 @@ func Test_linuxNetwork_SetupPodNetwork(t *testing.T) {
 				},
 			}
 
-			err := n.SetupPodNetwork(vIfMetadata, tt.args.netnsPath, tt.args.mtu, testLogger)
+			err := n.SetupPodNetwork(vIfMetadata, tt.args.netnsPath, tt.args.mtu, false, testLogger)
 			if tt.wantErr != nil {
 				assert.EqualError(t, err, tt.wantErr.Error())
 			} else {
@@ -3522,6 +3532,81 @@ func Test_createVethPairContext_run(t *testing.T) {
 	}
 }
 
+func Test_createVethPairContext_runWithPeerNamespace(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ipAddr := &net.IPNet{
+		IP:   net.ParseIP("192.168.120.1"),
+		Mask: net.CIDRMask(32, 32),
+	}
+	hostMACAddr := net.HardwareAddr("00:00:5e:00:53:af")
+	contVeth := &netlink.Veth{
+		LinkAttrs: netlink.LinkAttrs{
+			Name:  "eth0",
+			Index: 1,
+		},
+	}
+
+	netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
+	netLink.EXPECT().LinkAdd(vethMatcher{
+		contVethName:       "eth0",
+		flags:              net.FlagUp,
+		mtu:                9001,
+		checkPeerNamespace: true,
+		peerNamespace:      netlink.NsFd(3),
+	}).Return(nil)
+	netLink.EXPECT().LinkByName("eth0").Return(contVeth, nil)
+	netLink.EXPECT().LinkSetUp(contVeth).Return(nil)
+	netLink.EXPECT().RouteReplace(&netlink.Route{
+		LinkIndex: contVeth.Attrs().Index,
+		Scope:     netlink.SCOPE_LINK,
+		Table:     254,
+		Dst: &net.IPNet{
+			IP:   net.IPv4(169, 254, 1, 1),
+			Mask: net.CIDRMask(32, 32),
+		},
+	}).Return(nil)
+	netLink.EXPECT().RouteAdd(&netlink.Route{
+		LinkIndex: contVeth.Attrs().Index,
+		Scope:     netlink.SCOPE_UNIVERSE,
+		Table:     254,
+		Dst: &net.IPNet{
+			IP:   net.IPv4zero,
+			Mask: net.CIDRMask(0, 32),
+		},
+		Gw: net.IPv4(169, 254, 1, 1),
+	}).Return(nil)
+	netLink.EXPECT().AddrAdd(contVeth, &netlink.Addr{
+		IPNet: ipAddr,
+	}).Return(nil)
+	netLink.EXPECT().NeighAdd(&netlink.Neigh{
+		LinkIndex:    contVeth.Attrs().Index,
+		State:        netlink.NUD_PERMANENT,
+		IP:           net.IPv4(169, 254, 1, 1),
+		HardwareAddr: hostMACAddr,
+	}).Return(nil)
+
+	procSys := mock_procsyswrapper.NewMockProcSys(ctrl)
+	hostNS := mock_ns.NewMockNetNS(ctrl)
+	hostNS.EXPECT().Fd().Return(uintptr(3))
+
+	createVethContext := &createVethPairContext{
+		contVethName: "eth0",
+		hostVethName: "eni8ea2c11fe35",
+		ipAddr:       ipAddr,
+		mtu:          9001,
+		netLink:      netLink,
+		procSys:      procSys,
+		index:        0,
+		hostMACAddr:  hostMACAddr,
+		usePeerNS:    true,
+		log:          testLogger,
+	}
+
+	assert.NoError(t, createVethContext.run(hostNS))
+}
+
 func Test_linuxNetwork_setupVeth(t *testing.T) {
 	hostVethWithIndex9 := &netlink.Veth{
 		LinkAttrs: netlink.LinkAttrs{
@@ -3937,7 +4022,7 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 				ns:      ns,
 				procSys: procSys,
 			}
-			got, err := n.setupVeth(tt.args.hostVethName, tt.args.contVethName, tt.args.netnsPath, nil, tt.args.mtu, testLogger, 0)
+			got, err := n.setupVeth(tt.args.hostVethName, tt.args.contVethName, tt.args.netnsPath, nil, tt.args.mtu, false, testLogger, 0)
 			if tt.wantErr != nil {
 				assert.EqualError(t, err, tt.wantErr.Error())
 			} else {

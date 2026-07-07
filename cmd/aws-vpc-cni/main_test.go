@@ -27,6 +27,48 @@ func TestGenerateJSON(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestGenerateJSONVethPeerNamespaceDefault(t *testing.T) {
+	assert.NoError(t, os.Unsetenv(envVethPeerNamespace))
+
+	tmpfile, err := os.CreateTemp("", "temp-aws-vpc-cni.conflist")
+	assert.NoError(t, err)
+	defer os.Remove(tmpfile.Name())
+
+	err = generateJSON(awsConflist, tmpfile.Name(), getPrimaryIPMock)
+	assert.NoError(t, err)
+
+	var jsonData map[string]interface{}
+	jsonFile, err := os.ReadFile(tmpfile.Name())
+	assert.NoError(t, err)
+
+	err = json.Unmarshal(jsonFile, &jsonData)
+	assert.NoError(t, err)
+
+	plugins, _ := jsonData["plugins"].([]interface{})
+	assert.Equal(t, false, plugins[0].(map[string]interface{})["vethPeerNamespace"])
+}
+
+func TestGenerateJSONVethPeerNamespaceEnabled(t *testing.T) {
+	t.Setenv(envVethPeerNamespace, "true")
+
+	tmpfile, err := os.CreateTemp("", "temp-aws-vpc-cni.conflist")
+	assert.NoError(t, err)
+	defer os.Remove(tmpfile.Name())
+
+	err = generateJSON(awsConflist, tmpfile.Name(), getPrimaryIPMock)
+	assert.NoError(t, err)
+
+	var jsonData map[string]interface{}
+	jsonFile, err := os.ReadFile(tmpfile.Name())
+	assert.NoError(t, err)
+
+	err = json.Unmarshal(jsonFile, &jsonData)
+	assert.NoError(t, err)
+
+	plugins, _ := jsonData["plugins"].([]interface{})
+	assert.Equal(t, true, plugins[0].(map[string]interface{})["vethPeerNamespace"])
+}
+
 // Validate that generateJSON runs without error when bandwidth plugin is added to the default conflist
 func TestGenerateJSONPlusBandwidth(t *testing.T) {
 	_ = os.Setenv(envEnBandwidthPlugin, "true")
