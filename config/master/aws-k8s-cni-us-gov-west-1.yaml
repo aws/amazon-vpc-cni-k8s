@@ -218,7 +218,7 @@ spec:
             exec:
               command:
               - /app/grpc-health-probe
-              - -addr=:50051
+              - -addr=unix:///var/run/aws-node/ipamd.sock
               - -connect-timeout=5s
               - -rpc-timeout=5s
             initialDelaySeconds: 60
@@ -227,7 +227,7 @@ spec:
             exec:
               command:
               - /app/grpc-health-probe
-              - -addr=:50051
+              - -addr=unix:///var/run/aws-node/ipamd.sock
               - -connect-timeout=5s
               - -rpc-timeout=5s
             initialDelaySeconds: 1
