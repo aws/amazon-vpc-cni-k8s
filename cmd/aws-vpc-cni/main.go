@@ -181,7 +181,7 @@ type Range struct {
 // Wait for IPAMD health check to pass. Note that if IPAMD fails to start, wait happens indefinitely until liveness probe kills pod
 func waitForIPAM() bool {
 	for {
-		cmd := exec.Command("./grpc-health-probe", "-addr", "127.0.0.1:50051", ">", "/dev/null", "2>&1")
+		cmd := exec.Command("./grpc-health-probe", "-addr", "unix:///var/run/aws-node/ipamd.sock")
 		if err := cmd.Run(); err == nil {
 			return true
 		}
