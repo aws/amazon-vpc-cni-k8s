@@ -19,7 +19,7 @@ import (
 )
 
 type InstallationManager interface {
-	InstallCNIMetricsHelper(image string, tag string, clusterId string, region string) error
+	InstallCNIMetricsHelper(image string, tag string, clusterId string, region string, roleArn string) error
 	UnInstallCNIMetricsHelper() error
 	InstallTigeraOperator(version string) error
 	UninstallTigeraOperator() error
@@ -33,7 +33,7 @@ type defaultInstallationManager struct {
 	releaseManager helm.ReleaseManager
 }
 
-func (d *defaultInstallationManager) InstallCNIMetricsHelper(image string, tag string, clusterId string, region string) error {
+func (d *defaultInstallationManager) InstallCNIMetricsHelper(image string, tag string, clusterId string, region string, saRoleArn string) error {
 	values := map[string]interface{}{
 		"env": map[string]interface{}{
 			"AWS_CLUSTER_ID": clusterId,
@@ -46,6 +46,14 @@ func (d *defaultInstallationManager) InstallCNIMetricsHelper(image string, tag s
 
 	if region != "" {
 		values["env"].(map[string]interface{})["AWS_REGION"] = region
+	}
+
+	if saRoleArn != "" {
+		values["serviceAccount"] = map[string]interface{}{
+			"annotations": map[string]interface{}{
+				"eks.amazonaws.com/role-arn": saRoleArn,
+			},
+		}
 	}
 
 	projectRoot := utils.GetProjectRoot()
