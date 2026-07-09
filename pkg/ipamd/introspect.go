@@ -128,6 +128,24 @@ func eniV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Requ
 		for _, ds := range ipam.dataStoreAccess.DataStores {
 			eniInfos[ds.GetNetworkCard()] = ds.GetENIInfos()
 		}
+		// Scrub sensitive fields that could be used to construct malicious gRPC calls.
+		// ContainerID and IfName are attack prerequisites for DelNetwork.
+		for _, info := range eniInfos {
+			for _, eni := range info.ENIs {
+				for _, cidr := range eni.AvailableIPv4Cidrs {
+					for _, addr := range cidr.IPAddresses {
+						addr.IPAMKey.ContainerID = ""
+						addr.IPAMKey.IfName = ""
+					}
+				}
+				for _, cidr := range eni.IPv6Cidrs {
+					for _, addr := range cidr.IPAddresses {
+						addr.IPAMKey.ContainerID = ""
+						addr.IPAMKey.IfName = ""
+					}
+				}
+			}
+		}
 		responseJSON, err := json.Marshal(eniInfos)
 		if err != nil {
 			log.Errorf("Failed to marshal ENI data: %v", err)
