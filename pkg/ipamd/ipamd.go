@@ -2353,7 +2353,6 @@ func (c *IPAMContext) AnnotatePod(podName string, podNamespace string, key strin
 			if err == nil && pod == nil {
 				log.Warnf("get a nil pod for pod name %s and namespace %s", podName, podNamespace)
 			}
-			// since the GetPod() error has been decorated, we have to check key words
 			// releasedIP is not empty meaning del path
 			if releasedIP != "" && err != nil && k8serror.IsNotFound(err) {
 				return nil
