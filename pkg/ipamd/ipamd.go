@@ -2335,7 +2335,7 @@ func (c *IPAMContext) GetPod(podName, namespace string) (*corev1.Pod, error) {
 	}
 	err := c.k8sClient.Get(ctx, podKey, &pod)
 	if err != nil {
-		return nil, fmt.Errorf("error while trying to retrieve pod info: %s", err.Error())
+		return nil, err
 	}
 	return &pod, nil
 }
