@@ -28,6 +28,7 @@ import (
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	autoscalingtypes "github.com/aws/aws-sdk-go-v2/service/autoscaling/types"
 	cloudformationtypes "github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -390,13 +391,22 @@ func TerminateInstances(f *framework.Framework) error {
 		return fmt.Errorf("failed to set desired capacity to 0 on %s: %v", asgName, err)
 	}
 
-	// Wait until ASG has actually finished terminating its instances before scaling
+	// Wait until the ASG has no InService instances before scaling back up.
+	// Terminating instances linger in the ASG's Instances list (e.g. Terminating,
+	// Terminating:Wait) until fully reaped, so checking len(Instances)==0 can time
+	// out even though the scale-down succeeded. Treat InService as the only
+	// "still up" state.
 	if err := wait.PollUntilContextTimeout(context.TODO(), 10*time.Second, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
 		asgs, derr := f.CloudServices.AutoScaling().DescribeAutoScalingGroup(ctx, asgName)
 		if derr != nil || len(asgs) == 0 {
 			return false, nil
 		}
-		return len(asgs[0].Instances) == 0, nil
+		for _, inst := range asgs[0].Instances {
+			if inst.LifecycleState == autoscalingtypes.LifecycleStateInService {
+				return false, nil
+			}
+		}
+		return true, nil
 	}); err != nil {
 		return fmt.Errorf("timed out waiting for ASG %s to scale to 0: %v", asgName, err)
 	}

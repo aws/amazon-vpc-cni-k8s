@@ -15,7 +15,7 @@ jobs:
       - name: Checkout latest commit in the PR
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # refs/tags/v7.0.0
       - name: Set up Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # refs/tags/v6.4.0
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # refs/tags/v6.5.0
         with:
           go-version: "1.26"
           check-latest: true
@@ -38,7 +38,7 @@ jobs:
       - name: Unit test
         run: make unit-test
       - name: Upload code coverage
-        uses: codecov/codecov-action@79066c46f8dcdf8d7355f820dbac958c5b4cb9d3 # refs/tags/v4.5.0
+        uses: codecov/codecov-action@e28ff129e5465c2c0dcc6f003fc735cb6ae0c673 # refs/tags/v4.5.0
         with:
             token: ${{ secrets.CODECOV_TOKEN }}
   docker-build-arch:
