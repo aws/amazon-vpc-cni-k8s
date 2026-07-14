@@ -149,6 +149,22 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 			return errors.Wrapf(err, "setup NS network: failed to set link %q up", createVethContext.hostVethName)
 		}
 		hostHardwareAddr = hostVeth.Attrs().HardwareAddr
+	} else {
+		// The container end only has carrier when both veth ends are up, and the
+		// IPv6 DAD wait below needs carrier. Bring the host end up now; net.FlagUp
+		// at create time is not reliably applied on all platforms.
+		if err := hostNS.Do(func(ns.NetNS) error {
+			hv, err := createVethContext.netLink.LinkByName(createVethContext.hostVethName)
+			if err != nil {
+				return errors.Wrapf(err, "setup NS network: failed to find host link %q", createVethContext.hostVethName)
+			}
+			if err := createVethContext.netLink.LinkSetUp(hv); err != nil {
+				return errors.Wrapf(err, "setup NS network: failed to set host link %q up", createVethContext.hostVethName)
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
 	}
 
 	contVeth, err := createVethContext.netLink.LinkByName(createVethContext.contVethName)

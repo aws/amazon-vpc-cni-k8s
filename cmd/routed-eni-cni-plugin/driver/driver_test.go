@@ -28,6 +28,7 @@ import (
 	mock_procsyswrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/procsyswrapper/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
+	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/golang/mock/gomock"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
@@ -3547,6 +3548,12 @@ func Test_createVethPairContext_runWithPeerNamespace(t *testing.T) {
 			Index: 1,
 		},
 	}
+	hostVeth := &netlink.Veth{
+		LinkAttrs: netlink.LinkAttrs{
+			Name:  "eni8ea2c11fe35",
+			Index: 9,
+		},
+	}
 
 	netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
 	netLink.EXPECT().LinkAdd(vethMatcher{
@@ -3556,6 +3563,8 @@ func Test_createVethPairContext_runWithPeerNamespace(t *testing.T) {
 		checkPeerNamespace: true,
 		peerNamespace:      netlink.NsFd(3),
 	}).Return(nil)
+	netLink.EXPECT().LinkByName("eni8ea2c11fe35").Return(hostVeth, nil)
+	netLink.EXPECT().LinkSetUp(hostVeth).Return(nil)
 	netLink.EXPECT().LinkByName("eth0").Return(contVeth, nil)
 	netLink.EXPECT().LinkSetUp(contVeth).Return(nil)
 	netLink.EXPECT().RouteReplace(&netlink.Route{
@@ -3590,6 +3599,110 @@ func Test_createVethPairContext_runWithPeerNamespace(t *testing.T) {
 	procSys := mock_procsyswrapper.NewMockProcSys(ctrl)
 	hostNS := mock_ns.NewMockNetNS(ctrl)
 	hostNS.EXPECT().Fd().Return(uintptr(3))
+	hostNS.EXPECT().Do(gomock.Any()).DoAndReturn(func(toRun func(ns.NetNS) error) error {
+		return toRun(nil)
+	})
+
+	createVethContext := &createVethPairContext{
+		contVethName: "eth0",
+		hostVethName: "eni8ea2c11fe35",
+		ipAddr:       ipAddr,
+		mtu:          9001,
+		netLink:      netLink,
+		procSys:      procSys,
+		index:        0,
+		hostMACAddr:  hostMACAddr,
+		usePeerNS:    true,
+		log:          testLogger,
+	}
+
+	assert.NoError(t, createVethContext.run(hostNS))
+}
+
+// Regression test: with PeerNamespace enabled the host end must be brought up
+// before the IPv6 DAD wait. The container end only has carrier when both veth
+// ends are up, and DAD cannot complete without carrier, so bringing the host
+// end up after the wait deadlocks IPv6 pod setup until the wait times out.
+func Test_createVethPairContext_runWithPeerNamespaceIPv6(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ipAddr := &net.IPNet{
+		IP:   net.ParseIP("2001:db8:3333:4444:5555:6666:7777:8888"),
+		Mask: net.CIDRMask(128, 128),
+	}
+	gw := net.ParseIP("fe80::1")
+	hostMACAddr := net.HardwareAddr("00:00:5e:00:53:af")
+	contVeth := &netlink.Veth{
+		LinkAttrs: netlink.LinkAttrs{
+			Name:  "eth0",
+			Index: 1,
+		},
+	}
+	hostVeth := &netlink.Veth{
+		LinkAttrs: netlink.LinkAttrs{
+			Name:  "eni8ea2c11fe35",
+			Index: 9,
+		},
+	}
+
+	netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
+	netLink.EXPECT().LinkAdd(vethMatcher{
+		contVethName:       "eth0",
+		flags:              net.FlagUp,
+		mtu:                9001,
+		checkPeerNamespace: true,
+		peerNamespace:      netlink.NsFd(3),
+	}).Return(nil)
+	netLink.EXPECT().LinkByName("eni8ea2c11fe35").Return(hostVeth, nil)
+	hostLinkUp := netLink.EXPECT().LinkSetUp(hostVeth).Return(nil)
+	// LinkByName("eth0") is called by run() and again by the DAD wait.
+	netLink.EXPECT().LinkByName("eth0").Return(contVeth, nil).Times(2)
+	netLink.EXPECT().LinkSetUp(contVeth).Return(nil)
+	netLink.EXPECT().RouteReplace(&netlink.Route{
+		LinkIndex: contVeth.Attrs().Index,
+		Scope:     netlink.SCOPE_LINK,
+		Table:     254,
+		Dst: &net.IPNet{
+			IP:   gw,
+			Mask: net.CIDRMask(128, 128),
+		},
+	}).Return(nil)
+	netLink.EXPECT().RouteAdd(&netlink.Route{
+		LinkIndex: contVeth.Attrs().Index,
+		Scope:     netlink.SCOPE_UNIVERSE,
+		Table:     254,
+		Dst: &net.IPNet{
+			IP:   net.IPv6zero,
+			Mask: net.CIDRMask(0, 128),
+		},
+		Gw: gw,
+	}).Return(nil)
+	netLink.EXPECT().AddrAdd(contVeth, &netlink.Addr{
+		IPNet: ipAddr,
+	}).Return(nil)
+	netLink.EXPECT().NeighAdd(&netlink.Neigh{
+		LinkIndex:    contVeth.Attrs().Index,
+		State:        netlink.NUD_PERMANENT,
+		IP:           gw,
+		HardwareAddr: hostMACAddr,
+	}).Return(nil)
+	// The DAD wait polls until no address is tentative; the host-end bring-up
+	// must come first or the address can never leave tentative on a real node.
+	addrList := netLink.EXPECT().AddrList(contVeth, netlink.FAMILY_V6).Return([]netlink.Addr{
+		{IPNet: ipAddr, Flags: 0},
+	}, nil)
+	gomock.InOrder(hostLinkUp, addrList)
+
+	procSys := mock_procsyswrapper.NewMockProcSys(ctrl)
+	procSys.EXPECT().Set("net/ipv6/conf/eth0/disable_ipv6", "0").Return(nil)
+	procSys.EXPECT().Set("net/ipv6/conf/lo/disable_ipv6", "0").Return(nil)
+
+	hostNS := mock_ns.NewMockNetNS(ctrl)
+	hostNS.EXPECT().Fd().Return(uintptr(3))
+	hostNS.EXPECT().Do(gomock.Any()).DoAndReturn(func(toRun func(ns.NetNS) error) error {
+		return toRun(nil)
+	})
 
 	createVethContext := &createVethPairContext{
 		contVethName: "eth0",
