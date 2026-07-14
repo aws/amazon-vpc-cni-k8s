@@ -15,9 +15,11 @@ package eni_subnet_discovery
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,6 +27,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/smithy-go"
 
 	"github.com/apparentlymart/go-cidr/cidr"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
@@ -49,6 +52,7 @@ var (
 	cidrRange              *net.IPNet
 	cidrBlockAssociationID string
 	createdSubnet          string
+	rtAssociationID        string
 	primaryInstance        ec2types.Instance
 	useIPv6                bool
 )
@@ -205,7 +209,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	By("associating the route table with the newly created subnet")
-	err = f.CloudServices.EC2().AssociateRouteTableToSubnet(context.TODO(), clusterVPCConfig.PublicRouteTableID, subnetID)
+	rtAssociationID, err = f.CloudServices.EC2().AssociateRouteTableToSubnet(context.TODO(), clusterVPCConfig.PublicRouteTableID, subnetID)
 	Expect(err).ToNot(HaveOccurred())
 
 	By("try detaching all ENIs by setting WARM_ENI_TARGET to 0")
@@ -232,42 +236,48 @@ var _ = AfterSuite(func() {
 
 	var errs prometheus.MultiError
 
-	By(fmt.Sprintf("deleting the subnet %s", createdSubnet))
-	if err := f.CloudServices.EC2().DeleteSubnet(context.TODO(), createdSubnet); err != nil {
-		errs.Append(err)
-	}
-
-	// Wait for subnet deletion to complete before trying to disassociate CIDR
-	By("waiting for subnet deletion to complete")
-	time.Sleep(time.Second * 30)
-
-	By("disassociating the CIDR range from the VPC")
-	if cidrBlockAssociationID != "" {
-		// Retry CIDR disassociation a few times in case subnet deletion is still in progress
-		maxRetries := 5
-		for i := 0; i < maxRetries; i++ {
-			if err := f.CloudServices.EC2().DisAssociateVPCCIDRBlock(context.TODO(), cidrBlockAssociationID); err != nil {
-				if i == maxRetries-1 {
-					// Last retry failed, append error
-					errs.Append(err)
-				} else {
-					// Wait and retry
-					By(fmt.Sprintf("CIDR disassociation failed (attempt %d/%d), retrying in 15 seconds", i+1, maxRetries))
-					time.Sleep(time.Second * 15)
-				}
-			} else {
-				// Success, break out of retry loop
-				break
-			}
+	if rtAssociationID != "" {
+		By(fmt.Sprintf("disassociating route table association %s", rtAssociationID))
+		if err := f.CloudServices.EC2().DisassociateRouteTable(context.TODO(), rtAssociationID); err != nil && !isNotFound(err) {
+			errs.Append(err)
 		}
 	}
 
-	// Only fail if there were actual errors, not just retry attempts
-	if errs.MaybeUnwrap() != nil {
-		GinkgoWriter.Printf("WARNING: Some cleanup operations failed: %v\n", errs.MaybeUnwrap())
-		// Don't fail the test suite for cleanup issues, just log them
+	// DeleteSubnet fails with DependencyViolation until the CNI drains the
+	// secondary ENIs. Poll so teardown waits for the drain, bounded so it cannot hang.
+	// A NotFound means the subnet is already gone (e.g. deleted by a concurrent
+	// sweeper), which is the desired end state, so treat it as success.
+	By(fmt.Sprintf("deleting the subnet %s", createdSubnet))
+	Eventually(func() error {
+		if err := f.CloudServices.EC2().DeleteSubnet(context.TODO(), createdSubnet); err != nil && !isNotFound(err) {
+			return err
+		}
+		return nil
+	}).WithTimeout(5*time.Minute).WithPolling(15*time.Second).Should(Succeed(),
+		"subnet %s could not be deleted within 5m; it will leak and pin the VPC stack", createdSubnet)
+
+	if cidrBlockAssociationID != "" {
+		By("disassociating the CIDR range from the VPC")
+		Eventually(func() error {
+			if err := f.CloudServices.EC2().DisAssociateVPCCIDRBlock(context.TODO(), cidrBlockAssociationID); err != nil && !isNotFound(err) {
+				return err
+			}
+			return nil
+		}).WithTimeout(90*time.Second).WithPolling(15*time.Second).Should(Succeed(),
+			"CIDR %s could not be disassociated from the VPC within 90s", cidrRange.String())
 	}
+
+	// Fail the suite on a cleanup error rather than swallowing it, so leaks surface in CI.
+	Expect(errs.MaybeUnwrap()).ToNot(HaveOccurred(), "cleanup operations failed")
 })
+
+func isNotFound(err error) bool {
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		return strings.HasSuffix(apiErr.ErrorCode(), ".NotFound")
+	}
+	return false
+}
 
 // staleSubnetTag is applied to all subnets created by this test suite so that
 // cleanupStaleSubnetsInCIDR only removes resources it owns.

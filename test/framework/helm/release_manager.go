@@ -14,26 +14,26 @@
 package helm
 
 import (
-	"fmt"
 	"log"
 	"time"
 
-	"helm.sh/helm/v3/pkg/action"
-	"helm.sh/helm/v3/pkg/chart/loader"
-	"helm.sh/helm/v3/pkg/cli"
-	"helm.sh/helm/v3/pkg/getter"
-	"helm.sh/helm/v3/pkg/helmpath"
-	"helm.sh/helm/v3/pkg/release"
-	"helm.sh/helm/v3/pkg/repo"
+	"helm.sh/helm/v4/pkg/action"
+	"helm.sh/helm/v4/pkg/chart/loader"
+	"helm.sh/helm/v4/pkg/cli"
+	"helm.sh/helm/v4/pkg/getter"
+	"helm.sh/helm/v4/pkg/helmpath"
+	"helm.sh/helm/v4/pkg/kube"
+	"helm.sh/helm/v4/pkg/release"
+	repo "helm.sh/helm/v4/pkg/repo/v1"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
 
 type ReleaseManager interface {
 	InstallUnPackagedRelease(chart string, releaseName string, namespace string,
-		values map[string]interface{}) (*release.Release, error)
+		values map[string]interface{}) (release.Releaser, error)
 	UninstallRelease(namespace string, releaseName string) (*release.UninstallReleaseResponse, error)
 	InstallPackagedRelease(chart string, releaseName string, version string, namespace string,
-		values map[string]interface{}) (*release.Release, error)
+		values map[string]interface{}) (release.Releaser, error)
 }
 
 type defaultReleaseManager struct {
@@ -45,12 +45,12 @@ func NewDefaultReleaseManager(kubeConfig string) ReleaseManager {
 }
 
 func (d *defaultReleaseManager) InstallUnPackagedRelease(chart string, releaseName string, namespace string,
-	values map[string]interface{}) (*release.Release, error) {
+	values map[string]interface{}) (release.Releaser, error) {
 	actionConfig := d.obtainActionConfig(namespace)
 
 	installAction := action.NewInstall(actionConfig)
 	installAction.Namespace = namespace
-	installAction.Wait = true
+	installAction.WaitStrategy = kube.StatusWatcherStrategy
 	installAction.ReleaseName = releaseName
 	installAction.Timeout = time.Minute
 
@@ -58,11 +58,11 @@ func (d *defaultReleaseManager) InstallUnPackagedRelease(chart string, releaseNa
 }
 
 func (d *defaultReleaseManager) InstallPackagedRelease(chart string, releaseName string, version string, namespace string,
-	values map[string]interface{}) (*release.Release, error) {
+	values map[string]interface{}) (release.Releaser, error) {
 	entry := &repo.Entry{
 		Name:                  "projectcalico",
 		URL:                   "https://docs.tigera.io/calico/charts",
-		InsecureSkipTLSverify: true,
+		InsecureSkipTLSVerify: true,
 	}
 	setting := cli.New()
 	r, err := repo.NewChartRepository(entry, getter.All(setting))
@@ -80,11 +80,11 @@ func (d *defaultReleaseManager) InstallPackagedRelease(chart string, releaseName
 	client.Namespace = namespace
 	cp, err := client.ChartPathOptions.LocateChart(chart, setting)
 	chartReq, err := loader.Load(cp)
-	release, err := client.Run(chartReq, values)
-	return release, err
+	rel, err := client.Run(chartReq, values)
+	return rel, err
 }
 
-func installCharts(installAction *action.Install, chart string, values map[string]interface{}) (*release.Release, error) {
+func installCharts(installAction *action.Install, chart string, values map[string]interface{}) (release.Releaser, error) {
 	cp, err := installAction.ChartPathOptions.LocateChart(chart, cli.New())
 	if err != nil {
 		return nil, err
@@ -102,6 +102,7 @@ func (d *defaultReleaseManager) UninstallRelease(namespace string, releaseName s
 	actionConfig := d.obtainActionConfig(namespace)
 
 	uninstallAction := action.NewUninstall(actionConfig)
+	uninstallAction.WaitStrategy = kube.StatusWatcherStrategy
 	return uninstallAction.Run(releaseName)
 }
 
@@ -110,9 +111,8 @@ func (d *defaultReleaseManager) obtainActionConfig(namespace string) *action.Con
 	cfgFlag.KubeConfig = &d.kubeConfig
 	cfgFlag.Namespace = &namespace
 	actionConfig := new(action.Configuration)
-	actionConfig.Init(cfgFlag, namespace, "secrets", func(format string, v ...interface{}) {
-		message := fmt.Sprintf(format, v...)
-		log.Println(message)
-	})
+	if err := actionConfig.Init(cfgFlag, namespace, "secrets"); err != nil {
+		log.Printf("failed to initialize helm action config: %v", err)
+	}
 	return actionConfig
 }

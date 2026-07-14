@@ -14,11 +14,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout latest commit in the PR
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # refs/tags/v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # refs/tags/v7.0.0
       - name: Set up Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # refs/tags/v6.4.0
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # refs/tags/v6.5.0
         with:
-          go-version: "1.25"
+          go-version: "1.26"
       - name: Set up tools
         run: |
           # Install ginkgo version from go.mod
@@ -26,7 +26,7 @@ jobs:
           curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
           sudo mv /tmp/eksctl /usr/local/bin/
       - name: Set up AWS credentials
-        uses: aws-actions/configure-aws-credentials@5579c002bb4778aa43395ef1df492868a9a1c83f # refs/tags/v4.0.2
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # refs/tags/v4.0.2
         with:
           role-to-assume: ${{ secrets.OSS_TEST_ROLE_ARN }}
           role-duration-seconds: 14400 # 4 hours
