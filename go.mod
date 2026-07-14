@@ -27,7 +27,7 @@ require (
 	github.com/google/nftables v0.3.1-0.20251119083706-1db35da82052 // pinned post-v0.3.0: fixes expr.Ct SREG unmarshal (https://github.com/google/nftables/issues/300)
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/onsi/ginkgo/v2 v2.32.0
-	github.com/onsi/gomega v1.40.0
+	github.com/onsi/gomega v1.42.1
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
