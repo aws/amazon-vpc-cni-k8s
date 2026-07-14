@@ -69,7 +69,7 @@ func WaitForAddressesToBeStable(netLink netlinkwrapper.NetLink, ifName string, t
 			return nil
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("link %s still has tentative addresses after %d seconds",
+			return fmt.Errorf("link %s still has tentative addresses after %s",
 				ifName,
 				timeout)
 		}
