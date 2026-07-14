@@ -50,6 +50,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
 	rcv1alpha1 "github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1alpha1"
+	k8serror "k8s.io/apimachinery/pkg/api/errors"
 )
 
 // The package ipamd is a long running daemon which manages a warm pool of available IP addresses.
@@ -2354,7 +2355,7 @@ func (c *IPAMContext) AnnotatePod(podName string, podNamespace string, key strin
 			}
 			// since the GetPod() error has been decorated, we have to check key words
 			// releasedIP is not empty meaning del path
-			if releasedIP != "" && err != nil && strings.Contains(err.Error(), "not found") {
+			if releasedIP != "" && err != nil && k8serror.IsNotFound(err) {
 				return nil
 			}
 			return err
