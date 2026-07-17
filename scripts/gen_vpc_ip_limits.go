@@ -371,6 +371,124 @@ func addManualLimits(limitMap map[string]vpc.InstanceTypeLimits) map[string]vpc.
 			},
 			IsBareMetal: true,
 		},
+		// f1 and p3 instances were retired on Dec 20, 2025. Remove after Dec 2026.
+		"f1.2xlarge": {
+			ENILimit:                4,
+			IPv4Limit:               15,
+			HypervisorType:          strconv.Quote("xen"),
+			DefaultNetworkCardIndex: 0,
+			NetworkCards: []vpc.NetworkCard{
+				{
+					MaximumNetworkInterfaces: 4,
+					NetworkCardIndex:         0,
+				},
+			},
+			IsBareMetal: false,
+		},
+		"f1.4xlarge": {
+			ENILimit:                8,
+			IPv4Limit:               30,
+			HypervisorType:          strconv.Quote("xen"),
+			DefaultNetworkCardIndex: 0,
+			NetworkCards: []vpc.NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex:         0,
+				},
+			},
+			IsBareMetal: false,
+		},
+		"f1.16xlarge": {
+			ENILimit:                8,
+			IPv4Limit:               50,
+			HypervisorType:          strconv.Quote("xen"),
+			DefaultNetworkCardIndex: 0,
+			NetworkCards: []vpc.NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex:         0,
+				},
+			},
+			IsBareMetal: false,
+		},
+		"p3.2xlarge": {
+			ENILimit:                4,
+			IPv4Limit:               15,
+			HypervisorType:          strconv.Quote("xen"),
+			DefaultNetworkCardIndex: 0,
+			NetworkCards: []vpc.NetworkCard{
+				{
+					MaximumNetworkInterfaces: 4,
+					NetworkCardIndex:         0,
+				},
+			},
+			IsBareMetal: false,
+		},
+		"p3.8xlarge": {
+			ENILimit:                8,
+			IPv4Limit:               30,
+			HypervisorType:          strconv.Quote("xen"),
+			DefaultNetworkCardIndex: 0,
+			NetworkCards: []vpc.NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex:         0,
+				},
+			},
+			IsBareMetal: false,
+		},
+		"p3.16xlarge": {
+			ENILimit:                8,
+			IPv4Limit:               30,
+			HypervisorType:          strconv.Quote("xen"),
+			DefaultNetworkCardIndex: 0,
+			NetworkCards: []vpc.NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex:         0,
+				},
+			},
+			IsBareMetal: false,
+		},
+		// c7i.32xlarge, dl1.24xlarge is missing from the EC2 API, but is documented. Remove after July 2027
+		"c7i.32xlarge": {
+			ENILimit:                15,
+			IPv4Limit:               50,
+			HypervisorType:          strconv.Quote("nitro"),
+			DefaultNetworkCardIndex: 0,
+			NetworkCards: []vpc.NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex:         0,
+				},
+			},
+			IsBareMetal: false,
+		},
+		"dl1.24xlarge": {
+			ENILimit:                15,
+			IPv4Limit:               50,
+			HypervisorType:          strconv.Quote("nitro"),
+			DefaultNetworkCardIndex: 0,
+			NetworkCards: []vpc.NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex:         0,
+				},
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex:         1,
+				},
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex:         2,
+				},
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex:         3,
+				},
+			},
+			IsBareMetal: false,
+		},
 	}
 	for instanceType, instanceLimits := range manuallyAddedLimits {
 		val, ok := limitMap[instanceType]
@@ -413,20 +531,20 @@ package vpc
 // https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-eni.html#AvailableIpPerENI
 var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 {{- range $key, $value := .ENILimits}}
-	"{{$key}}":	   {
-		ENILimit: {{.ENILimit}}, 
-		IPv4Limit: {{.IPv4Limit}}, 
+	"{{$key}}": {
+		ENILimit:                {{.ENILimit}},
+		IPv4Limit:               {{.IPv4Limit}},
 		DefaultNetworkCardIndex: {{.DefaultNetworkCardIndex}},
 		NetworkCards: []NetworkCard{
 			{{- range .NetworkCards}}
-				{
-					MaximumNetworkInterfaces: {{.MaximumNetworkInterfaces}},
-					NetworkCardIndex: {{.NetworkCardIndex}},
-				},
-			{{end}}
+			{
+				MaximumNetworkInterfaces: {{.MaximumNetworkInterfaces}},
+				NetworkCardIndex:         {{.NetworkCardIndex}},
+			},
+			{{- end}}
 		},
 		HypervisorType: {{.HypervisorType}},
-		IsBareMetal: {{.IsBareMetal}},
+		IsBareMetal:    {{.IsBareMetal}},
 	},
 {{- end }}
 }

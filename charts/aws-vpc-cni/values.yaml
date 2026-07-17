@@ -8,7 +8,7 @@ nameOverride: aws-node
 
 init:
   image:
-    tag: v1.21.1
+    tag: v1.22.2
     domain: amazonaws.com
     region: us-west-2
     endpoint: ecr
@@ -29,7 +29,7 @@ init:
 nodeAgent:
   enabled: true
   image:
-    tag: v1.3.1
+    tag: v1.3.5
     domain: amazonaws.com
     region: us-west-2
     endpoint: ecr
@@ -73,7 +73,7 @@ nodeAgent:
     timeoutSeconds: 10
 
 image:
-  tag: v1.21.1
+  tag: v1.22.2
   domain: amazonaws.com
   region: us-west-2
   endpoint: ecr
@@ -109,7 +109,7 @@ env:
   ENABLE_IPv4: "true"
   ENABLE_IPv6: "false"
   ENABLE_SUBNET_DISCOVERY: "true"
-  VPC_CNI_VERSION: "v1.21.1"
+  VPC_CNI_VERSION: "v1.22.2"
   NETWORK_POLICY_ENFORCING_MODE: "standard"
   ENABLE_IMDS_ONLY_MODE: "false"
   ENABLE_MULTI_NIC: "false"
@@ -185,7 +185,7 @@ livenessProbe:
   exec:
     command:
       - /app/grpc-health-probe
-      - '-addr=:50051'
+      - '-addr=unix:///var/run/aws-node/ipamd.sock'
       - '-connect-timeout=5s'
       - '-rpc-timeout=5s'
   initialDelaySeconds: 60
@@ -196,7 +196,7 @@ readinessProbe:
   exec:
     command:
       - /app/grpc-health-probe
-      - '-addr=:50051'
+      - '-addr=unix:///var/run/aws-node/ipamd.sock'
       - '-connect-timeout=5s'
       - '-rpc-timeout=5s'
   initialDelaySeconds: 1

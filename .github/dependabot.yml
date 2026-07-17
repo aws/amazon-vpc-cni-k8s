@@ -27,5 +27,15 @@ updates:
       interval: "monthly"
   - package-ecosystem: "github-actions"
     directory: "/"
+    groups:
+      aws-deps:
+        patterns:
+        - "aws-actions/*"
+      other-deps:
+        patterns:
+        - "actions/*"
+        - "docker/*"
+        - "codecov/*"
+        - "peter-evans/*"
     schedule:
       interval: "weekly"

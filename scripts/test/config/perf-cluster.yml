@@ -9,6 +9,17 @@ metadata:
   name: CLUSTER_NAME_PLACEHOLDER
   region: us-west-2
 
+autoModeConfig:
+  enabled: false
+
+addons:
+  - name: vpc-cni
+  - name: kube-proxy
+  - name: coredns
+    configurationValues: "{\"podDisruptionBudget\": {\"enabled\": false}}"
+  - name: metrics-server
+    configurationValues: "{\"podDisruptionBudget\": {\"enabled\": false}}"
+
 managedNodeGroups:
   - name: cni-test-single-node-mng
     ami: AMI_ID_PLACEHOLDER

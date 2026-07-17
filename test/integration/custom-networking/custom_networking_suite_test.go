@@ -51,13 +51,14 @@ var (
 	cidrRange              *net.IPNet
 	cidrBlockAssociationID string
 	// Security Group that will be used in ENIConfig
-	customNetworkingSGID         string
-	customNetworkingSGOpenPort   = 8080
-	customNetworkingSubnetIDList []string
-	corednsSGOpenPort            = 53
-	primaryENISGID               string
-	primaryENISGList             []string
-	clusterSGID                  string
+	customNetworkingSGID             string
+	customNetworkingSGOpenPort       = 8080
+	customNetworkingSubnetIDList     []string
+	customNetworkingRTAssociationIDs []string
+	corednsSGOpenPort                = 53
+	primaryENISGID                   string
+	primaryENISGList                 []string
+	clusterSGID                      string
 	// List of ENIConfig per Availability Zone
 	eniConfigList        []*v1alpha1.ENIConfig
 	eniConfigBuilderList []*manifest.ENIConfigBuilder
@@ -168,7 +169,7 @@ var _ = BeforeSuite(func() {
 		subnetID := *createSubnetOutput.Subnet.SubnetId
 
 		By("associating the route table with the newly created subnet")
-		err = f.CloudServices.EC2().AssociateRouteTableToSubnet(context.TODO(), clusterVPCConfig.PublicRouteTableID, subnetID)
+		rtAssociationID, err := f.CloudServices.EC2().AssociateRouteTableToSubnet(context.TODO(), clusterVPCConfig.PublicRouteTableID, subnetID)
 		Expect(err).ToNot(HaveOccurred())
 
 		eniConfigBuilder := manifest.NewENIConfigBuilder().
@@ -180,6 +181,7 @@ var _ = BeforeSuite(func() {
 
 		// For updating/deleting later
 		customNetworkingSubnetIDList = append(customNetworkingSubnetIDList, subnetID)
+		customNetworkingRTAssociationIDs = append(customNetworkingRTAssociationIDs, rtAssociationID)
 		eniConfigBuilderList = append(eniConfigBuilderList, eniConfigBuilder)
 		eniConfigList = append(eniConfigList, eniConfig.DeepCopy())
 
@@ -235,6 +237,11 @@ var _ = AfterSuite(func() {
 
 	By("deleting security group")
 	errs.Append(f.CloudServices.EC2().DeleteSecurityGroup(context.TODO(), customNetworkingSGID))
+
+	for _, associationID := range customNetworkingRTAssociationIDs {
+		By(fmt.Sprintf("disassociating route table association %s", associationID))
+		errs.Append(f.CloudServices.EC2().DisassociateRouteTable(context.TODO(), associationID))
+	}
 
 	for _, subnet := range customNetworkingSubnetIDList {
 		By(fmt.Sprintf("deleting the subnet %s", subnet))

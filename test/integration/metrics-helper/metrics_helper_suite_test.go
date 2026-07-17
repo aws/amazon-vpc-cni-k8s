@@ -25,6 +25,7 @@ import (
 	k8sUtil "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 
+	"github.com/aws/aws-sdk-go-v2/service/eks"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -38,8 +39,8 @@ var (
 	imageTag string
 	// CNIMetricsHelper policy ARN
 	policyARN string
-	// Node Group role where the CNI Metrics Policy is attached
-	ngRoleName string
+	// IRSA role name created for the metrics helper service account
+	irsaRoleName string
 	// CNI Metrics is published with node group name as dimension
 	ngName string
 	// node name which has CW publish metric privileges
@@ -55,7 +56,7 @@ const (
 // Parse optional flags for setting the cni metrics helper image
 func init() {
 	flag.StringVar(&imageRepository, "cni-metrics-helper-image-repo", "602401143452.dkr.ecr.us-west-2.amazonaws.com/cni-metrics-helper", "CNI Metrics Helper Image Repository")
-	flag.StringVar(&imageTag, "cni-metrics-helper-image-tag", "v1.11.2", "CNI Metrics Helper Image Tag")
+	flag.StringVar(&imageTag, "cni-metrics-helper-image-tag", "v1.22.3", "CNI Metrics Helper Image Tag")
 
 	// Order in which we try fetch the keys and use it as CLUSTER_ID dimension
 	clusterIDKeys = []string{
@@ -93,7 +94,7 @@ var _ = BeforeSuite(func() {
 	}
 	Expect(instanceID).ToNot(Equal(""), "expected to find a non-tainted node")
 
-	By("getting the nodegroup name and instance profile")
+	By("getting the nodegroup name from instance tags")
 	instance, err := f.CloudServices.EC2().DescribeInstance(context.TODO(), instanceID)
 	Expect(err).ToNot(HaveOccurred())
 
@@ -121,16 +122,14 @@ var _ = BeforeSuite(func() {
 	}
 	_, _ = fmt.Fprintf(GinkgoWriter, "cluster name: %s\n", ngName)
 
-	By("getting the node instance role")
-	instanceProfileRoleName := strings.Split(*instance.IamInstanceProfile.Arn, "instance-profile/")[1]
-	instanceProfileOutput, err := f.CloudServices.IAM().GetInstanceProfile(context.TODO(), instanceProfileRoleName)
+	By("getting the cluster OIDC issuer URL")
+	describeClusterOutput, err := f.CloudServices.EKS().DescribeCluster(context.TODO(), f.Options.ClusterName)
 	Expect(err).ToNot(HaveOccurred())
+	oidcIssuer := getOIDCIssuer(describeClusterOutput)
+	// Strip the https:// prefix to get the OIDC provider host path
+	oidcProvider := strings.TrimPrefix(oidcIssuer, "https://")
 
-	ngRoleName = *instanceProfileOutput.InstanceProfile.Roles[0].RoleName
-	By("attaching CNIMetricsHelperPolicy to the node IAM role")
-
-	// We should ideally use the PathPrefix argument to list the policy, but this is returning an empty list. So workaround by listing local policies & filter
-	// SO issue: https://stackoverflow.com/questions/66287626/aws-cli-list-policies-to-find-a-policy-with-a-specific-name
+	By("looking up the CNIMetricsHelperPolicy ARN")
 	policyList, err := f.CloudServices.IAM().ListPolicies(context.TODO(), "Local")
 	Expect(err).ToNot(HaveOccurred())
 
@@ -140,20 +139,58 @@ var _ = BeforeSuite(func() {
 			break
 		}
 	}
+	Expect(policyARN).ToNot(Equal(""), "CNIMetricsHelperPolicy not found")
 
-	err = f.CloudServices.IAM().AttachRolePolicy(context.TODO(), policyARN, ngRoleName)
-	Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("unable to attach arn: %s role: %s", policyARN, ngRoleName))
+	By("creating an IRSA role for cni-metrics-helper")
+	// Extract partition and account ID from the policy ARN (arn:<PARTITION>:iam::<ACCOUNT_ID>:policy/...)
+	arnParts := strings.Split(policyARN, ":")
+	Expect(len(arnParts)).To(BeNumerically(">=", 5), fmt.Sprintf("unexpected ARN format: %s", policyARN))
+	partition := arnParts[1]
+	accountID := arnParts[4]
+	Expect(partition).ToNot(BeEmpty(), fmt.Sprintf("partition is empty in ARN: %s", policyARN))
+	Expect(accountID).ToNot(BeEmpty(), fmt.Sprintf("account ID is empty in ARN: %s", policyARN))
+	irsaRoleName = "cni-metrics-helper-irsa-" + f.Options.ClusterName
+	// IAM role names have a 64-character limit
+	if len(irsaRoleName) > 64 {
+		irsaRoleName = irsaRoleName[:64]
+	}
+
+	trustPolicy := fmt.Sprintf(`{
+		"Version": "2012-10-17",
+		"Statement": [{
+			"Effect": "Allow",
+			"Principal": {
+				"Federated": "arn:%s:iam::%s:oidc-provider/%s"
+			},
+			"Action": "sts:AssumeRoleWithWebIdentity",
+			"Condition": {
+				"StringEquals": {
+					"%s:sub": "system:serviceaccount:kube-system:cni-metrics-helper",
+					"%s:aud": "sts.amazonaws.com"
+				}
+			}
+		}]
+	}`, partition, accountID, oidcProvider, oidcProvider, oidcProvider)
+
+	createRoleOutput, err := f.CloudServices.IAM().CreateRole(context.TODO(), irsaRoleName, trustPolicy)
+	Expect(err).ToNot(HaveOccurred())
+	roleARN := *createRoleOutput.Role.Arn
+	_, _ = fmt.Fprintf(GinkgoWriter, "created IRSA role: %s\n", roleARN)
+
+	By("attaching CNIMetricsHelperPolicy to the IRSA role")
+	err = f.CloudServices.IAM().AttachRolePolicy(context.TODO(), policyARN, irsaRoleName)
+	Expect(err).ToNot(HaveOccurred())
 
 	By("updating the aws-nodes to restart the metric count")
 	k8sUtil.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
 		utils.AwsNodeName, map[string]string{"SOME_NON_EXISTENT_VAR": "0"})
 
-	By("installing cni-metrics-helper using helm")
-	err = f.InstallationManager.InstallCNIMetricsHelper(imageRepository, imageTag, ngName)
+	By("installing cni-metrics-helper using helm with IRSA")
+	err = f.InstallationManager.InstallCNIMetricsHelper(imageRepository, imageTag, ngName, f.Options.AWSRegion, roleARN)
 	Expect(err).ToNot(HaveOccurred())
 
 	By("waiting for the metrics helper to publish initial metrics")
-	time.Sleep(time.Minute * 3)
+	time.Sleep(time.Minute * 1)
 })
 
 var _ = AfterSuite(func() {
@@ -161,9 +198,19 @@ var _ = AfterSuite(func() {
 	err := f.InstallationManager.UnInstallCNIMetricsHelper()
 	Expect(err).ToNot(HaveOccurred())
 
-	By("detaching role policy from the node IAM Role")
-	err = f.CloudServices.IAM().DetachRolePolicy(context.TODO(), policyARN, ngRoleName)
-	Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("unable to detach %s %s", policyARN, ngRoleName))
+	if irsaRoleName != "" && policyARN != "" {
+		By("detaching policy from the IRSA role")
+		if err := f.CloudServices.IAM().DetachRolePolicy(context.TODO(), policyARN, irsaRoleName); err != nil {
+			_, _ = fmt.Fprintf(GinkgoWriter, "warning: failed to detach policy: %v\n", err)
+		}
+	}
+
+	if irsaRoleName != "" {
+		By("deleting the IRSA role")
+		if err := f.CloudServices.IAM().DeleteRole(context.TODO(), irsaRoleName); err != nil {
+			_, _ = fmt.Fprintf(GinkgoWriter, "warning: failed to delete IRSA role: %v\n", err)
+		}
+	}
 
 	k8sUtil.RemoveVarFromDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
 		utils.AwsNodeName, map[string]struct{}{"SOME_NON_EXISTENT_VAR": {}})
@@ -171,3 +218,14 @@ var _ = AfterSuite(func() {
 	By("deleting test namespace")
 	_ = f.K8sResourceManagers.NamespaceManager().DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
 })
+
+// getOIDCIssuer extracts the OIDC issuer URL from DescribeCluster output,
+// failing the test with a clear message if OIDC is not configured.
+func getOIDCIssuer(output *eks.DescribeClusterOutput) string {
+	Expect(output.Cluster).ToNot(BeNil(), "DescribeCluster returned nil Cluster")
+	Expect(output.Cluster.Identity).ToNot(BeNil(), "Cluster.Identity is nil")
+	Expect(output.Cluster.Identity.Oidc).ToNot(BeNil(), "Cluster.Identity.Oidc is nil")
+	Expect(output.Cluster.Identity.Oidc.Issuer).ToNot(BeNil(),
+		"OIDC Issuer is nil - ensure OIDC is enabled on the cluster")
+	return *output.Cluster.Identity.Oidc.Issuer
+}

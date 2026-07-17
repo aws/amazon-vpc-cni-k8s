@@ -24,6 +24,7 @@ import (
 
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/vpc"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
@@ -58,9 +59,12 @@ var _ = Describe("ENI Subnet Selection Test", func() {
 				Args([]string{"3600"}).
 				Build()
 
+			// Overflow past one ENI so a secondary ENI is forced into the discovered subnet.
+			replicas := computeReplicasForBothSubnets(string(primaryInstance.InstanceType))
+
 			deploymentBuilder := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 				Container(container).
-				Replicas(50).
+				Replicas(replicas).
 				PodLabel(podLabelKey, podLabelVal).
 				NodeName(*primaryInstance.PrivateDnsName).
 				Build()
@@ -132,6 +136,9 @@ var _ = Describe("ENI Subnet Selection Test", func() {
 				Context("missing ec2:DescribeSubnets permission,", func() {
 					var role string
 					var EKSCNIPolicyV4ARN string
+					// Unique per-run name: IAM policy names are account-global, so a fixed name
+					// collides with a leftover policy from a prior run (CreatePolicy -> 409).
+					eksCNIPolicyV4Name := fmt.Sprintf("AmazonEKS_CNI_Policy_V4-%d", time.Now().Unix())
 					BeforeEach(func() {
 						By("getting the iam role")
 						podList, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector(AwsNodeLabelKey, utils.AwsNodeName)
@@ -157,8 +164,8 @@ var _ = Describe("ENI Subnet Selection Test", func() {
 
 						eksCNIPolicyV4Data := string(eksCNIPolicyV4Bytes)
 
-						By("Creating and attaching policy AmazonEKS_CNI_Policy_V4")
-						output, err := f.CloudServices.IAM().CreatePolicy(context.TODO(), "AmazonEKS_CNI_Policy_V4", eksCNIPolicyV4Data)
+						By(fmt.Sprintf("Creating and attaching policy %s", eksCNIPolicyV4Name))
+						output, err := f.CloudServices.IAM().CreatePolicy(context.TODO(), eksCNIPolicyV4Name, eksCNIPolicyV4Data)
 						Expect(err).ToNot(HaveOccurred())
 						EKSCNIPolicyV4ARN = *output.Policy.Arn
 						err = f.CloudServices.IAM().AttachRolePolicy(context.TODO(), EKSCNIPolicyV4ARN, role)
@@ -175,12 +182,15 @@ var _ = Describe("ENI Subnet Selection Test", func() {
 						err = f.CloudServices.IAM().AttachRolePolicy(context.TODO(), EKSCNIPolicyARN, role)
 						Expect(err).ToNot(HaveOccurred())
 
-						By("Detaching and deleting policy AmazonEKS_CNI_Policy_V4")
-						err = f.CloudServices.IAM().DetachRolePolicy(context.TODO(), EKSCNIPolicyV4ARN, role)
-						Expect(err).ToNot(HaveOccurred())
-
-						err = f.CloudServices.IAM().DeletePolicy(context.TODO(), EKSCNIPolicyV4ARN)
-						Expect(err).ToNot(HaveOccurred())
+						// Best-effort cleanup: a leaked unique policy is harmless, and failing here
+						// would mask the actual test result.
+						By(fmt.Sprintf("Detaching and deleting policy %s", eksCNIPolicyV4Name))
+						if err := f.CloudServices.IAM().DetachRolePolicy(context.TODO(), EKSCNIPolicyV4ARN, role); err != nil {
+							GinkgoWriter.Printf("WARNING: failed to detach policy %s: %v\n", eksCNIPolicyV4Name, err)
+						}
+						if err := f.CloudServices.IAM().DeletePolicy(context.TODO(), EKSCNIPolicyV4ARN); err != nil {
+							GinkgoWriter.Printf("WARNING: failed to delete policy %s: %v\n", eksCNIPolicyV4Name, err)
+						}
 
 						// Sleep to allow time for CNI policy detachment
 						time.Sleep(10 * time.Second)
@@ -286,6 +296,24 @@ var _ = Describe("ENI Subnet Selection Test", func() {
 		})
 	})
 })
+
+// podsPerENI returns the usable pod IPs on one ENI for the instance type (IPv4Limit-1;
+// the ENI's primary IP is not assigned to pods), read from the CNI's static limits DB.
+func podsPerENI(instanceType string) int {
+	ipv4Limit, err := vpc.GetIPv4Limit(instanceType)
+	Expect(err).ToNot(HaveOccurred(), "no IPv4 limit in CNI limits DB for instance type %q", instanceType)
+	Expect(ipv4Limit).To(BeNumerically(">", 1), "IPv4 limit for instance type %q must be > 1", instanceType)
+	return ipv4Limit - 1
+}
+
+// computeReplicasForBothSubnets returns 1.5x one ENI's worth of pods, so they fill the
+// primary ENI and overflow onto a secondary ENI (pods are assigned from the primary ENI
+// first). This distributes pods across both the primary and discovered subnets with a
+// margin beyond the exact one-ENI boundary.
+func computeReplicasForBothSubnets(instanceType string) int {
+	perENI := podsPerENI(instanceType)
+	return (3*perENI + 1) / 2 // ceil(1.5 * perENI)
+}
 
 func checkSecondaryENISubnets(expectNewCidr bool) {
 	instance, err := f.CloudServices.EC2().DescribeInstance(context.TODO(), *primaryInstance.InstanceId)

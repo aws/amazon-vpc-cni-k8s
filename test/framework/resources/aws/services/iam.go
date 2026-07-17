@@ -37,6 +37,8 @@ type IAM interface {
 	DetachRolePolicy(ctx context.Context, policyARN string, roleName string) error
 	CreatePolicy(ctx context.Context, policyName string, policyDocument string) (*iam.CreatePolicyOutput, error)
 	DeletePolicy(ctx context.Context, policyARN string) error
+	CreateRole(ctx context.Context, roleName string, assumeRolePolicyDocument string) (*iam.CreateRoleOutput, error)
+	DeleteRole(ctx context.Context, roleName string) error
 	GetInstanceProfile(ctx context.Context, instanceProfileName string) (*iam.GetInstanceProfileOutput, error)
 	GetRolePolicy(ctx context.Context, policyName string, role string) (*iam.GetRolePolicyOutput, error)
 	PutRolePolicy(ctx context.Context, policyDocument string, policyName string, roleName string) error
@@ -81,7 +83,30 @@ func (d *defaultIAM) DeletePolicy(ctx context.Context, policyARN string) error {
 	return err
 }
 
-func (d *defaultIAM) GetRolePolicy(ctx context.Context, role string, policyName string) (*iam.GetRolePolicyOutput, error) {
+func (d *defaultIAM) CreateRole(ctx context.Context, roleName string, assumeRolePolicyDocument string) (*iam.CreateRoleOutput, error) {
+	createRoleInput := &iam.CreateRoleInput{
+		RoleName:                 aws.String(roleName),
+		AssumeRolePolicyDocument: aws.String(assumeRolePolicyDocument),
+		Description:              aws.String("IRSA role for CNI metrics-helper"),
+		Tags: []types.Tag{
+			{
+				Key:   aws.String("created-by"),
+				Value: aws.String("amazon-vpc-cni-k8s-integration-tests"),
+			},
+		},
+	}
+	return d.client.CreateRole(ctx, createRoleInput)
+}
+
+func (d *defaultIAM) DeleteRole(ctx context.Context, roleName string) error {
+	deleteRoleInput := &iam.DeleteRoleInput{
+		RoleName: aws.String(roleName),
+	}
+	_, err := d.client.DeleteRole(ctx, deleteRoleInput)
+	return err
+}
+
+func (d *defaultIAM) GetRolePolicy(ctx context.Context, policyName string, role string) (*iam.GetRolePolicyOutput, error) {
 	rolePolicyInput := &iam.GetRolePolicyInput{
 		RoleName:   aws.String(role),
 		PolicyName: aws.String(policyName),
@@ -110,7 +135,18 @@ func (d *defaultIAM) ListPolicies(ctx context.Context, scope string) (*iam.ListP
 	listPolicyInput := &iam.ListPoliciesInput{
 		Scope: types.PolicyScopeType(scope),
 	}
-	return d.client.ListPolicies(ctx, listPolicyInput)
+	// ListPolicies is paginated (max 100 per page). Accumulate all pages so callers
+	// that scan for a policy by name don't miss matches beyond the first page.
+	aggregated := &iam.ListPoliciesOutput{}
+	paginator := iam.NewListPoliciesPaginator(d.client, listPolicyInput)
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+		aggregated.Policies = append(aggregated.Policies, page.Policies...)
+	}
+	return aggregated, nil
 }
 
 func NewIAM(cfg aws.Config) IAM {
