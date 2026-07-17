@@ -3564,7 +3564,7 @@ func Test_createVethPairContext_runWithPeerNamespace(t *testing.T) {
 		peerNamespace:      netlink.NsFd(3),
 	}).Return(nil)
 	netLink.EXPECT().LinkByName("eni8ea2c11fe35").Return(hostVeth, nil)
-	netLink.EXPECT().LinkSetUp(hostVeth).Return(nil)
+	hostLinkUp := netLink.EXPECT().LinkSetUp(hostVeth).Return(nil)
 	netLink.EXPECT().LinkByName("eth0").Return(contVeth, nil)
 	netLink.EXPECT().LinkSetUp(contVeth).Return(nil)
 	netLink.EXPECT().RouteReplace(&netlink.Route{
@@ -3597,6 +3597,13 @@ func Test_createVethPairContext_runWithPeerNamespace(t *testing.T) {
 	}).Return(nil)
 
 	procSys := mock_procsyswrapper.NewMockProcSys(ctrl)
+	// Host-side IPv6 sysctls are applied inside the host namespace, before the
+	// host end is brought up.
+	ra := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_ra", "0").Return(nil)
+	redirects := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_redirects", "1").Return(nil)
+	forwarding := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/forwarding", "0").Return(nil)
+	gomock.InOrder(ra, redirects, forwarding, hostLinkUp)
+
 	hostNS := mock_ns.NewMockNetNS(ctrl)
 	hostNS.EXPECT().Fd().Return(uintptr(3))
 	hostNS.EXPECT().Do(gomock.Any()).DoAndReturn(func(toRun func(ns.NetNS) error) error {
@@ -3697,6 +3704,12 @@ func Test_createVethPairContext_runWithPeerNamespaceIPv6(t *testing.T) {
 	procSys := mock_procsyswrapper.NewMockProcSys(ctrl)
 	procSys.EXPECT().Set("net/ipv6/conf/eth0/disable_ipv6", "0").Return(nil)
 	procSys.EXPECT().Set("net/ipv6/conf/lo/disable_ipv6", "0").Return(nil)
+	// Host-side IPv6 sysctls must precede the host-end bring-up: the host end
+	// must never be up while still accepting router advertisements.
+	ra := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_ra", "0").Return(nil)
+	redirects := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_redirects", "1").Return(nil)
+	forwarding := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/forwarding", "0").Return(nil)
+	gomock.InOrder(ra, redirects, forwarding, hostLinkUp)
 
 	hostNS := mock_ns.NewMockNetNS(ctrl)
 	hostNS.EXPECT().Fd().Return(uintptr(3))

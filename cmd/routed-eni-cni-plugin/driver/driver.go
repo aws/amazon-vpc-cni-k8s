@@ -152,11 +152,17 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	} else {
 		// The container end only has carrier when both veth ends are up, and the
 		// IPv6 DAD wait below needs carrier. Bring the host end up now; net.FlagUp
-		// at create time is not reliably applied on all platforms.
+		// at create time is not reliably applied on all platforms. The IPv6
+		// sysctls must be applied before the link comes up, matching the move
+		// path where the moved link arrives down: the host end must never be up
+		// while still accepting router advertisements from the pod side.
 		if err := hostNS.Do(func(ns.NetNS) error {
 			hv, err := createVethContext.netLink.LinkByName(createVethContext.hostVethName)
 			if err != nil {
 				return errors.Wrapf(err, "setup NS network: failed to find host link %q", createVethContext.hostVethName)
+			}
+			if err := setHostVethV6Sysctls(createVethContext.procSys, createVethContext.hostVethName, createVethContext.log); err != nil {
+				return err
 			}
 			if err := createVethContext.netLink.LinkSetUp(hv); err != nil {
 				return errors.Wrapf(err, "setup NS network: failed to set host link %q up", createVethContext.hostVethName)
@@ -415,6 +421,32 @@ func (n *linuxNetwork) TeardownBranchENIPodNetwork(vethMetadata VirtualInterface
 }
 
 // setupVeth sets up veth for the pod.
+// setHostVethV6Sysctls hardens the host-side veth for IPv6: accept_ra=0,
+// accept_redirects=1, forwarding=0. Must be applied before the link is
+// brought up so the host end never accepts router advertisements from the
+// pod side.
+func setHostVethV6Sysctls(procSys procsyswrapper.ProcSys, hostVethName string, log logger.Logger) error {
+	if err := procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_ra", hostVethName), "0"); err != nil {
+		if !os.IsNotExist(err) {
+			return errors.Wrapf(err, "failed to disable IPv6 router advertisements")
+		}
+		log.Debugf("Ignoring '%v' writing to accept_ra: Assuming kernel lacks IPv6 support", err)
+	}
+	if err := procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_redirects", hostVethName), "1"); err != nil {
+		if !os.IsNotExist(err) {
+			return errors.Wrapf(err, "failed to disable IPv6 ICMP redirects")
+		}
+		log.Debugf("Ignoring '%v' writing to accept_redirects: Assuming kernel lacks IPv6 support", err)
+	}
+	if err := procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/forwarding", hostVethName), "0"); err != nil {
+		if !os.IsNotExist(err) {
+			return errors.Wrapf(err, "failed to disable IPv6 forwarding")
+		}
+		log.Debugf("Ignoring '%v' writing to forwarding: Assuming kernel lacks IPv6 support", err)
+	}
+	return nil
+}
+
 func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netnsPath string, ipAddr *net.IPNet, mtu int, useVethPeerNamespace bool, log logger.Logger, index int) (netlink.Link, error) {
 	// Clean up if hostVeth exists.
 	if oldHostVeth, err := n.netLink.LinkByName(hostVethName); err == nil {
@@ -441,27 +473,8 @@ func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netns
 		return nil, errors.Wrapf(err, "failed to find hostVeth %s", hostVethName)
 	}
 
-	// For IPv6, host veth sysctls must be set to:
-	// 1. accept_ra=0
-	// 2. accept_redirects=1
-	// 3. forwarding=0
-	if err := n.procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_ra", hostVethName), "0"); err != nil {
-		if !os.IsNotExist(err) {
-			return nil, errors.Wrapf(err, "failed to disable IPv6 router advertisements")
-		}
-		log.Debugf("Ignoring '%v' writing to accept_ra: Assuming kernel lacks IPv6 support", err)
-	}
-	if err := n.procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_redirects", hostVethName), "1"); err != nil {
-		if !os.IsNotExist(err) {
-			return nil, errors.Wrapf(err, "failed to disable IPv6 ICMP redirects")
-		}
-		log.Debugf("Ignoring '%v' writing to accept_redirects: Assuming kernel lacks IPv6 support", err)
-	}
-	if err := n.procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/forwarding", hostVethName), "0"); err != nil {
-		if !os.IsNotExist(err) {
-			return nil, errors.Wrapf(err, "failed to disable IPv6 forwarding")
-		}
-		log.Debugf("Ignoring '%v' writing to forwarding: Assuming kernel lacks IPv6 support", err)
+	if err := setHostVethV6Sysctls(n.procSys, hostVethName, log); err != nil {
+		return nil, err
 	}
 	log.Debugf("Successfully set IPv6 sysctls on hostVeth %s", hostVethName)
 
