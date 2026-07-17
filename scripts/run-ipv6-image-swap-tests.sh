@@ -67,12 +67,14 @@ function verify_cni_images() {
   running_cni=$(kubectl get daemonset aws-node -n kube-system -o jsonpath='{.spec.template.spec.containers[?(@.name=="aws-node")].image}')
   running_init=$(kubectl get daemonset aws-node -n kube-system -o jsonpath='{.spec.template.spec.initContainers[?(@.name=="aws-vpc-cni-init")].image}')
   if [[ "$running_cni" != "$AMAZON_K8S_CNI" || "$running_init" != "$AMAZON_K8S_CNI_INIT" ]]; then
-    echo "ERROR ($phase): aws-node is not running the build image (managed-addon reconciler may have reverted it)."
-    echo "  aws-node         running=$running_cni expected=$AMAZON_K8S_CNI"
-    echo "  aws-vpc-cni-init running=$running_init expected=$AMAZON_K8S_CNI_INIT"
+    # This inspects the DaemonSet spec (not live pod status); post-swap check_ds_rollout has already
+    # reconciled pods to spec, so a spec-level revert by the managed addon is what we're catching.
+    echo "ERROR ($phase): aws-node DaemonSet is no longer configured with the build image (managed-addon reconciler may have reverted it)."
+    echo "  aws-node         spec=$running_cni expected=$AMAZON_K8S_CNI"
+    echo "  aws-vpc-cni-init spec=$running_init expected=$AMAZON_K8S_CNI_INIT"
     exit 1
   fi
-  echo "verified aws-node is running the build image ($phase)"
+  echo "verified aws-node DaemonSet is configured with the build image ($phase)"
 }
 
 # Compile and run the IPv6 suite from source (the run-cni-release-tests.sh pattern) rather than a
