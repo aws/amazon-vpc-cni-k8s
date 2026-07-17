@@ -58,7 +58,7 @@ type VirtualInterfaceMetadata struct {
 // NetworkAPIs defines network API calls
 type NetworkAPIs interface {
 	// SetupPodNetwork sets up pod network for normal ENI based pods
-	SetupPodNetwork(vethMetadata []VirtualInterfaceMetadata, netnsPath string, mtu int, useVethPeerNamespace bool, log logger.Logger) error
+	SetupPodNetwork(vethMetadata []VirtualInterfaceMetadata, netnsPath string, mtu int, log logger.Logger) error
 	// TeardownPodNetwork clean up pod network for normal ENI based pods
 	TeardownPodNetwork(vethMetadata []VirtualInterfaceMetadata, log logger.Logger) error
 	// SetupBranchENIPodNetwork sets up pod network for branch ENI based pods
@@ -96,10 +96,9 @@ type createVethPairContext struct {
 	index        int
 	log          logger.Logger
 	hostMACAddr  net.HardwareAddr
-	usePeerNS    bool
 }
 
-func newCreateVethPairContext(contVethName string, hostVethName string, ipAddr *net.IPNet, mtu int, index int, hostMACAddr net.HardwareAddr, usePeerNS bool, log logger.Logger) *createVethPairContext {
+func newCreateVethPairContext(contVethName string, hostVethName string, ipAddr *net.IPNet, mtu int, index int, hostMACAddr net.HardwareAddr, log logger.Logger) *createVethPairContext {
 	return &createVethPairContext{
 		contVethName: contVethName,
 		hostVethName: hostVethName,
@@ -110,7 +109,6 @@ func newCreateVethPairContext(contVethName string, hostVethName string, ipAddr *
 		procSys:      procsyswrapper.NewProcSys(),
 		index:        index,
 		hostMACAddr:  hostMACAddr,
-		usePeerNS:    usePeerNS,
 		log:          log,
 	}
 }
@@ -125,37 +123,25 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 		},
 		PeerName:         createVethContext.hostVethName,
 		PeerHardwareAddr: createVethContext.hostMACAddr,
-	}
-	if createVethContext.usePeerNS {
-		veth.PeerNamespace = netlink.NsFd(int(hostNS.Fd()))
+		// Create the host end directly in the host namespace so it is
+		// registered exactly once. Creating both ends here and moving one out
+		// serializes concurrent pod creation on the kernel's rcu_barrier in
+		// __dev_change_net_namespace.
+		PeerNamespace: netlink.NsFd(int(hostNS.Fd())),
 	}
 
 	if err := createVethContext.netLink.LinkAdd(veth); err != nil {
 		return err
 	}
 
-	var hostVeth netlink.Link
 	hostHardwareAddr := createVethContext.hostMACAddr
-	if !createVethContext.usePeerNS {
-		var err error
-		hostVeth, err = createVethContext.netLink.LinkByName(createVethContext.hostVethName)
-		if err != nil {
-			return errors.Wrapf(err, "setup NS network: failed to find link %q", createVethContext.hostVethName)
-		}
-
-		// Explicitly set the veth to UP state, because netlink doesn't always do that on all the platforms with net.FlagUp.
-		// veth won't get a link local address unless it's set to UP state.
-		if err = createVethContext.netLink.LinkSetUp(hostVeth); err != nil {
-			return errors.Wrapf(err, "setup NS network: failed to set link %q up", createVethContext.hostVethName)
-		}
-		hostHardwareAddr = hostVeth.Attrs().HardwareAddr
-	} else {
+	{
 		// The container end only has carrier when both veth ends are up, and the
 		// IPv6 DAD wait below needs carrier. Bring the host end up now; net.FlagUp
 		// at create time is not reliably applied on all platforms. The IPv6
-		// sysctls must be applied before the link comes up, matching the move
-		// path where the moved link arrives down: the host end must never be up
-		// while still accepting router advertisements from the pod side.
+		// sysctls must be applied before the link comes up: the host end must
+		// never be up while still accepting router advertisements from the pod
+		// side.
 		if err := hostNS.Do(func(ns.NetNS) error {
 			hv, err := createVethContext.netLink.LinkByName(createVethContext.hostVethName)
 			if err != nil {
@@ -290,25 +276,18 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 		}
 	}
 
-	if !createVethContext.usePeerNS {
-		// Now that the everything has been successfully set up in the container, move the "host" end of the
-		// veth into the host namespace.
-		if err = createVethContext.netLink.LinkSetNsFd(hostVeth, int(hostNS.Fd())); err != nil {
-			return errors.Wrap(err, "setup NS network: failed to move veth to host netns")
-		}
-	}
 	return nil
 }
 
 // SetupPodNetwork wires up linux networking for a pod's network
 // we expect v4Addr and v6Addr to have correct IPAddress Family.
-func (n *linuxNetwork) SetupPodNetwork(vethMetadata []VirtualInterfaceMetadata, netnsPath string, mtu int, useVethPeerNamespace bool, log logger.Logger) error {
+func (n *linuxNetwork) SetupPodNetwork(vethMetadata []VirtualInterfaceMetadata, netnsPath string, mtu int, log logger.Logger) error {
 	for index, vethData := range vethMetadata {
 
 		log.Debugf("SetupPodNetwork: hostVethName=%s, contVethName=%s, netnsPath=%s, ipAddr=%v, routeTableNumber=%d, mtu=%d",
 			vethData.HostVethName, vethData.ContainerVethName, netnsPath, vethData.IPAddress, vethData.RouteTable, mtu)
 
-		hostVeth, err := n.setupVeth(vethData.HostVethName, vethData.ContainerVethName, netnsPath, vethData.IPAddress, mtu, useVethPeerNamespace, log, index)
+		hostVeth, err := n.setupVeth(vethData.HostVethName, vethData.ContainerVethName, netnsPath, vethData.IPAddress, mtu, log, index)
 		if err != nil {
 			return errors.Wrapf(err, "SetupPodNetwork: failed to setup veth pair")
 		}
@@ -355,7 +334,7 @@ func (n *linuxNetwork) SetupBranchENIPodNetwork(vethMetadata VirtualInterfaceMet
 	log.Debugf("SetupBranchENIPodNetwork: hostVethName=%s, contVethName=%s, netnsPath=%s, ipAddr=%v, vlanID=%d, eniMAC=%s, subnetGW=%s, parentIfIndex=%d, mtu=%d, podSGEnforcingMode=%v",
 		vethMetadata.HostVethName, vethMetadata.ContainerVethName, netnsPath, vethMetadata.IPAddress, vlanID, eniMAC, subnetGW, parentIfIndex, mtu, podSGEnforcingMode)
 
-	hostVeth, err := n.setupVeth(vethMetadata.HostVethName, vethMetadata.ContainerVethName, netnsPath, vethMetadata.IPAddress, mtu, false, log, 0)
+	hostVeth, err := n.setupVeth(vethMetadata.HostVethName, vethMetadata.ContainerVethName, netnsPath, vethMetadata.IPAddress, mtu, log, 0)
 	if err != nil {
 		return errors.Wrapf(err, "SetupBranchENIPodNetwork: failed to setup veth pair")
 	}
@@ -447,7 +426,7 @@ func setHostVethV6Sysctls(procSys procsyswrapper.ProcSys, hostVethName string, l
 	return nil
 }
 
-func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netnsPath string, ipAddr *net.IPNet, mtu int, useVethPeerNamespace bool, log logger.Logger, index int) (netlink.Link, error) {
+func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netnsPath string, ipAddr *net.IPNet, mtu int, log logger.Logger, index int) (netlink.Link, error) {
 	// Clean up if hostVeth exists.
 	if oldHostVeth, err := n.netLink.LinkByName(hostVethName); err == nil {
 		if err = n.netLink.LinkDel(oldHostVeth); err != nil {
@@ -463,25 +442,16 @@ func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netns
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to parse unique generated mac addr %s", macAddrStr)
 	}
-	createVethContext := newCreateVethPairContext(contVethName, hostVethName, ipAddr, mtu, index, macAddr, useVethPeerNamespace, log)
+	createVethContext := newCreateVethPairContext(contVethName, hostVethName, ipAddr, mtu, index, macAddr, log)
 	if err := n.ns.WithNetNSPath(netnsPath, createVethContext.run); err != nil {
 		return nil, errors.Wrap(err, "failed to setup veth network")
 	}
 
+	// The IPv6 sysctls and bring-up of the host end happen inside the pod
+	// namespace closure, before the link comes up.
 	hostVeth, err := n.netLink.LinkByName(hostVethName)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to find hostVeth %s", hostVethName)
-	}
-
-	if err := setHostVethV6Sysctls(n.procSys, hostVethName, log); err != nil {
-		return nil, err
-	}
-	log.Debugf("Successfully set IPv6 sysctls on hostVeth %s", hostVethName)
-
-	// Explicitly set the veth to UP state, because netlink doesn't always do that on all the platforms with net.FlagUp.
-	// veth won't get a link local address unless it's set to UP state.
-	if err = n.netLink.LinkSetUp(hostVeth); err != nil {
-		return nil, errors.Wrapf(err, "failed to setup hostVeth %s", hostVethName)
 	}
 	return hostVeth, nil
 }

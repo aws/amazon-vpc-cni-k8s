@@ -84,7 +84,6 @@ const (
 	defaultIPCooldownPeriod      = 30
 	defaultDisablePodV6          = false
 	defaultEnableMultiNICSupport = false
-	defaultVethPeerNamespace     = false
 
 	envHostCniBinPath        = "HOST_CNI_BIN_PATH"
 	envHostCniConfDirPath    = "HOST_CNI_CONFDIR_PATH"
@@ -109,7 +108,6 @@ const (
 	envIPCooldownPeriod      = "IP_COOLDOWN_PERIOD"
 	envDisablePodV6          = "DISABLE_POD_V6"
 	envEnableMultiNICSupport = "ENABLE_MULTI_NIC"
-	envVethPeerNamespace     = "AWS_VPC_K8S_CNI_VETH_PEER_NAMESPACE"
 )
 
 // NetConfList describes an ordered list of networks.
@@ -144,8 +142,6 @@ type NetConf struct {
 	NodeIP net.IP `json:"nodeIP,omitempty"`
 
 	VethPrefix string `json:"vethPrefix,omitempty"`
-
-	VethPeerNamespace bool `json:"vethPeerNamespace,omitempty"`
 
 	PodSGEnforcingMode string `json:"podSGEnforcingMode,omitempty"`
 
@@ -264,7 +260,6 @@ func generateJSON(jsonFile string, outFile string, getPrimaryIP func(ipv4 bool) 
 		}
 	}
 	vethPrefix := utils.GetEnv(envVethPrefix, defaultVethPrefix)
-	vethPeerNamespace := utils.GetBoolAsStringEnvVar(envVethPeerNamespace, defaultVethPeerNamespace)
 	// Derive pod MTU from ENI MTU by default (note that values have already been validated)
 	eniMTU := utils.GetEnv(envEniMTU, strconv.Itoa(defaultMTU))
 	// If pod MTU environment variable is set, overwrite ENI MTU.
@@ -276,7 +271,6 @@ func generateJSON(jsonFile string, outFile string, getPrimaryIP func(ipv4 bool) 
 
 	netconf := string(byteValue)
 	netconf = strings.Replace(netconf, "__VETHPREFIX__", vethPrefix, -1)
-	netconf = strings.Replace(netconf, "__VETHPEERNAMESPACE__", strconv.FormatBool(vethPeerNamespace), -1)
 	netconf = strings.Replace(netconf, "__MTU__", podMTU, -1)
 	netconf = strings.Replace(netconf, "__PODSGENFORCINGMODE__", podSGEnforcingMode, -1)
 	netconf = strings.Replace(netconf, "__PLUGINLOGFILE__", pluginLogFile, -1)

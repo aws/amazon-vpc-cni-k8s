@@ -251,8 +251,6 @@ spec:
               value: "prng"
             - name: AWS_VPC_K8S_CNI_VETHPREFIX
               value: "eni"
-            - name: AWS_VPC_K8S_CNI_VETH_PEER_NAMESPACE
-              value: "false"
             - name: AWS_VPC_K8S_PLUGIN_LOG_FILE
               value: "/var/log/aws-routed-eni/plugin.log"
             - name: AWS_VPC_K8S_PLUGIN_LOG_LEVEL

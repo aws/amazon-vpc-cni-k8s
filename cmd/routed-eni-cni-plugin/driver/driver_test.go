@@ -161,11 +161,6 @@ func Test_linuxNetwork_SetupPodNetwork(t *testing.T) {
 						link:     hostVethWithIndex9,
 					},
 				},
-				linkSetupCalls: []linkSetupCall{
-					{
-						link: hostVethWithIndex9,
-					},
-				},
 				routeReplaceCalls: []routeReplaceCall{
 					{
 						route: &netlink.Route{
@@ -184,20 +179,6 @@ func Test_linuxNetwork_SetupPodNetwork(t *testing.T) {
 				withNetNSPathCalls: []withNetNSPathCall{
 					{
 						netNSPath: "/proc/42/ns/net",
-					},
-				},
-				procSysSetCalls: []procSysSetCall{
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_ra",
-						value: "0",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
-						value: "1",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
-						value: "0",
 					},
 				},
 			},
@@ -224,11 +205,6 @@ func Test_linuxNetwork_SetupPodNetwork(t *testing.T) {
 						link:     hostVethWithIndex9,
 					},
 				},
-				linkSetupCalls: []linkSetupCall{
-					{
-						link: hostVethWithIndex9,
-					},
-				},
 				routeReplaceCalls: []routeReplaceCall{
 					{
 						route: &netlink.Route{
@@ -250,20 +226,6 @@ func Test_linuxNetwork_SetupPodNetwork(t *testing.T) {
 				withNetNSPathCalls: []withNetNSPathCall{
 					{
 						netNSPath: "/proc/42/ns/net",
-					},
-				},
-				procSysSetCalls: []procSysSetCall{
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_ra",
-						value: "0",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
-						value: "1",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
-						value: "0",
 					},
 				},
 			},
@@ -317,11 +279,6 @@ func Test_linuxNetwork_SetupPodNetwork(t *testing.T) {
 						link:     hostVethWithIndex9,
 					},
 				},
-				linkSetupCalls: []linkSetupCall{
-					{
-						link: hostVethWithIndex9,
-					},
-				},
 				routeReplaceCalls: []routeReplaceCall{
 					{
 						route: &netlink.Route{
@@ -336,20 +293,6 @@ func Test_linuxNetwork_SetupPodNetwork(t *testing.T) {
 				withNetNSPathCalls: []withNetNSPathCall{
 					{
 						netNSPath: "/proc/42/ns/net",
-					},
-				},
-				procSysSetCalls: []procSysSetCall{
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_ra",
-						value: "0",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
-						value: "1",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
-						value: "0",
 					},
 				},
 			},
@@ -415,7 +358,7 @@ func Test_linuxNetwork_SetupPodNetwork(t *testing.T) {
 				},
 			}
 
-			err := n.SetupPodNetwork(vIfMetadata, tt.args.netnsPath, tt.args.mtu, false, testLogger)
+			err := n.SetupPodNetwork(vIfMetadata, tt.args.netnsPath, tt.args.mtu, testLogger)
 			if tt.wantErr != nil {
 				assert.EqualError(t, err, tt.wantErr.Error())
 			} else {
@@ -738,9 +681,6 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 				},
 				linkSetupCalls: []linkSetupCall{
 					{
-						link: hostVethWithIndex9,
-					},
-					{
 						link: vlanLinkPostAddWithIndex11,
 					},
 				},
@@ -791,18 +731,6 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 					},
 				},
 				procSysSetCalls: []procSysSetCall{
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_ra",
-						value: "0",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
-						value: "1",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
-						value: "0",
-					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/accept_ra",
 						value: "0",
@@ -855,9 +783,6 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 				},
 				linkSetupCalls: []linkSetupCall{
 					{
-						link: hostVethWithIndex9,
-					},
-					{
 						link: vlanLinkPostAddWithIndex11,
 					},
 				},
@@ -908,18 +833,6 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 					},
 				},
 				procSysSetCalls: []procSysSetCall{
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_ra",
-						value: "0",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
-						value: "1",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
-						value: "0",
-					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/accept_ra",
 						value: "0",
@@ -972,9 +885,6 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 				},
 				linkSetupCalls: []linkSetupCall{
 					{
-						link: hostVethWithIndex9,
-					},
-					{
 						link: vlanLinkPostAddWithIndex11,
 					},
 				},
@@ -1025,18 +935,6 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 					},
 				},
 				procSysSetCalls: []procSysSetCall{
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_ra",
-						value: "0",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
-						value: "1",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
-						value: "0",
-					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/accept_ra",
 						value: "0",
@@ -1089,9 +987,6 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 				},
 				linkSetupCalls: []linkSetupCall{
 					{
-						link: hostVethWithIndex9,
-					},
-					{
 						link: vlanLinkPostAddWithIndex11,
 					},
 				},
@@ -1142,18 +1037,6 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 					},
 				},
 				procSysSetCalls: []procSysSetCall{
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_ra",
-						value: "0",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
-						value: "1",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
-						value: "0",
-					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/accept_ra",
 						value: "0",
@@ -1224,11 +1107,6 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 						link:     hostVethWithIndex9,
 					},
 				},
-				linkSetupCalls: []linkSetupCall{
-					{
-						link: hostVethWithIndex9,
-					},
-				},
 				ruleDelCalls: []ruleDelCall{
 					{
 						rule: oldFromHostVethRule,
@@ -1238,20 +1116,6 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 				withNetNSPathCalls: []withNetNSPathCall{
 					{
 						netNSPath: "/proc/42/ns/net",
-					},
-				},
-				procSysSetCalls: []procSysSetCall{
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_ra",
-						value: "0",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
-						value: "1",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
-						value: "0",
 					},
 				},
 			},
@@ -1292,11 +1156,6 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 						err:  errors.New("some error"),
 					},
 				},
-				linkSetupCalls: []linkSetupCall{
-					{
-						link: hostVethWithIndex9,
-					},
-				},
 				ruleDelCalls: []ruleDelCall{
 					{
 						rule: oldFromHostVethRule,
@@ -1306,20 +1165,6 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 				withNetNSPathCalls: []withNetNSPathCall{
 					{
 						netNSPath: "/proc/42/ns/net",
-					},
-				},
-				procSysSetCalls: []procSysSetCall{
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_ra",
-						value: "0",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
-						value: "1",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
-						value: "0",
 					},
 				},
 			},
@@ -1361,9 +1206,6 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 					},
 				},
 				linkSetupCalls: []linkSetupCall{
-					{
-						link: hostVethWithIndex9,
-					},
 					{
 						link: vlanLinkPostAddWithIndex11,
 					},
@@ -1408,18 +1250,6 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 					},
 				},
 				procSysSetCalls: []procSysSetCall{
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_ra",
-						value: "0",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
-						value: "1",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
-						value: "0",
-					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/accept_ra",
 						value: "0",
@@ -1473,9 +1303,6 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 				},
 				linkSetupCalls: []linkSetupCall{
 					{
-						link: hostVethWithIndex9,
-					},
-					{
 						link: vlanLinkPostAddWithIndex11,
 					},
 				},
@@ -1519,18 +1346,6 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 					},
 				},
 				procSysSetCalls: []procSysSetCall{
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_ra",
-						value: "0",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
-						value: "1",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
-						value: "0",
-					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/accept_ra",
 						value: "0",
@@ -2075,18 +1890,10 @@ func Test_createVethPairContext_run(t *testing.T) {
 		neigh *netlink.Neigh
 		err   error
 	}
-	type linkSetNsFdCall struct {
-		link netlink.Link
-		fd   int
-		err  error
-	}
 	type procSysSetCall struct {
 		key   string
 		value string
 		err   error
-	}
-	type nsFDCall struct {
-		fd uintptr
 	}
 	type ruleAddCall struct {
 		rule *netlink.Rule
@@ -2102,9 +1909,7 @@ func Test_createVethPairContext_run(t *testing.T) {
 		addrAddCalls      []addrAddCall
 		addrListCalls     []addrListCall
 		neighAddCalls     []neighAddCall
-		linkSetNsFdCalls  []linkSetNsFdCall
 		procSysSetCalls   []procSysSetCall
-		nsFDCalls         []nsFDCall
 		linkRuleAddCalls  []ruleAddCall
 	}
 	type args struct {
@@ -2201,18 +2006,7 @@ func Test_createVethPairContext_run(t *testing.T) {
 						},
 					},
 				},
-				linkSetNsFdCalls: []linkSetNsFdCall{
-					{
-						link: hostVethWithIndex9,
-						fd:   3,
-					},
-				},
 				procSysSetCalls: []procSysSetCall{},
-				nsFDCalls: []nsFDCall{
-					{
-						fd: uintptr(3),
-					},
-				},
 			},
 			args: args{
 				contVethName: "eth0",
@@ -2306,18 +2100,7 @@ func Test_createVethPairContext_run(t *testing.T) {
 						},
 					},
 				},
-				linkSetNsFdCalls: []linkSetNsFdCall{
-					{
-						link: hostVethWithIndex9,
-						fd:   3,
-					},
-				},
 				procSysSetCalls: []procSysSetCall{},
-				nsFDCalls: []nsFDCall{
-					{
-						fd: uintptr(3),
-					},
-				},
 				linkRuleAddCalls: []ruleAddCall{
 					{
 						rule: &netlink.Rule{
@@ -2442,12 +2225,6 @@ func Test_createVethPairContext_run(t *testing.T) {
 						},
 					},
 				},
-				linkSetNsFdCalls: []linkSetNsFdCall{
-					{
-						link: hostVethWithIndex9,
-						fd:   3,
-					},
-				},
 				procSysSetCalls: []procSysSetCall{
 					{
 						key:   "net/ipv6/conf/eth0/disable_ipv6",
@@ -2456,11 +2233,6 @@ func Test_createVethPairContext_run(t *testing.T) {
 					{
 						key:   "net/ipv6/conf/lo/disable_ipv6",
 						value: "0",
-					},
-				},
-				nsFDCalls: []nsFDCall{
-					{
-						fd: uintptr(3),
 					},
 				},
 			},
@@ -2574,12 +2346,6 @@ func Test_createVethPairContext_run(t *testing.T) {
 						},
 					},
 				},
-				linkSetNsFdCalls: []linkSetNsFdCall{
-					{
-						link: hostVethWithIndex9,
-						fd:   3,
-					},
-				},
 				procSysSetCalls: []procSysSetCall{
 					{
 						key:   "net/ipv6/conf/mNicIf1/disable_ipv6",
@@ -2588,11 +2354,6 @@ func Test_createVethPairContext_run(t *testing.T) {
 					{
 						key:   "net/ipv6/conf/lo/disable_ipv6",
 						value: "0",
-					},
-				},
-				nsFDCalls: []nsFDCall{
-					{
-						fd: uintptr(3),
 					},
 				},
 
@@ -2682,7 +2443,7 @@ func Test_createVethPairContext_run(t *testing.T) {
 				},
 				mtu: 9001,
 			},
-			wantErr: errors.New("setup NS network: failed to find link \"eni8ea2c11fe35\": some error"),
+			wantErr: errors.New("setup NS network: failed to find host link \"eni8ea2c11fe35\": some error"),
 			index:   0,
 		},
 		{
@@ -2722,7 +2483,7 @@ func Test_createVethPairContext_run(t *testing.T) {
 				},
 				mtu: 9001,
 			},
-			wantErr: errors.New("setup NS network: failed to set link \"eni8ea2c11fe35\" up: some error"),
+			wantErr: errors.New("setup NS network: failed to set host link \"eni8ea2c11fe35\" up: some error"),
 			index:   0,
 		},
 		{
@@ -3130,112 +2891,6 @@ func Test_createVethPairContext_run(t *testing.T) {
 			index:   0,
 		},
 		{
-			name: "failed to move hostVeth to host netNS",
-			fields: fields{
-				linkByNameCalls: []linkByNameCall{
-					{
-						linkName: "eni8ea2c11fe35",
-						link:     hostVethWithIndex9,
-					},
-					{
-						linkName: "eth0",
-						link:     contVethWithIndex1,
-					},
-				},
-				linkAddCalls: []linkAddCall{
-					{
-						link: &netlink.Veth{
-							LinkAttrs: netlink.LinkAttrs{
-								Name:  "eth0",
-								Flags: net.FlagUp,
-								MTU:   9001,
-							},
-							PeerName: "eni8ea2c11fe35",
-						},
-					},
-				},
-				linkSetupCalls: []linkSetupCall{
-					{
-						link: hostVethWithIndex9,
-					},
-					{
-						link: contVethWithIndex1,
-					},
-				},
-				routeReplaceCalls: []routeReplaceCall{
-					{
-						route: &netlink.Route{
-							LinkIndex: contVethWithIndex1.Attrs().Index,
-							Scope:     netlink.SCOPE_LINK,
-							Table:     254,
-							Dst: &net.IPNet{
-								IP:   net.IPv4(169, 254, 1, 1),
-								Mask: net.CIDRMask(32, 32),
-							},
-						},
-					},
-				},
-				routeAddCalls: []routeAddCall{
-					{
-						route: &netlink.Route{
-							LinkIndex: contVethWithIndex1.Attrs().Index,
-							Scope:     netlink.SCOPE_UNIVERSE,
-							Table:     254,
-							Dst: &net.IPNet{
-								IP:   net.IPv4zero,
-								Mask: net.CIDRMask(0, 32),
-							},
-							Gw: net.IPv4(169, 254, 1, 1),
-						},
-					},
-				},
-				addrAddCalls: []addrAddCall{
-					{
-						link: contVethWithIndex1,
-						addr: &netlink.Addr{
-							IPNet: &net.IPNet{
-								IP:   net.ParseIP("192.168.120.1"),
-								Mask: net.CIDRMask(32, 32),
-							},
-						},
-					},
-				},
-				neighAddCalls: []neighAddCall{
-					{
-						neigh: &netlink.Neigh{
-							LinkIndex:    contVethWithIndex1.Attrs().Index,
-							State:        netlink.NUD_PERMANENT,
-							IP:           net.IPv4(169, 254, 1, 1),
-							HardwareAddr: hostVethWithIndex9.Attrs().HardwareAddr,
-						},
-					},
-				},
-				linkSetNsFdCalls: []linkSetNsFdCall{
-					{
-						link: hostVethWithIndex9,
-						fd:   3,
-						err:  errors.New("some error"),
-					},
-				},
-				nsFDCalls: []nsFDCall{
-					{
-						fd: uintptr(3),
-					},
-				},
-			},
-			args: args{
-				contVethName: "eth0",
-				hostVethName: "eni8ea2c11fe35",
-				ipAddr: &net.IPNet{
-					IP:   net.ParseIP("192.168.120.1"),
-					Mask: net.CIDRMask(32, 32),
-				},
-				mtu: 9001,
-			},
-			wantErr: errors.New("setup NS network: failed to move veth to host netns: some error"),
-			index:   0,
-		},
-		{
 			name: "failed to enable IPv6 on eth0",
 			fields: fields{
 				linkByNameCalls: []linkByNameCall{
@@ -3495,9 +3150,6 @@ func Test_createVethPairContext_run(t *testing.T) {
 			for _, call := range tt.fields.neighAddCalls {
 				netLink.EXPECT().NeighAdd(call.neigh).Return(call.err)
 			}
-			for _, call := range tt.fields.linkSetNsFdCalls {
-				netLink.EXPECT().LinkSetNsFd(call.link, call.fd).Return(call.err)
-			}
 			for _, call := range tt.fields.linkRuleAddCalls {
 				netLink.EXPECT().NewRule().Return(call.rule)
 				netLink.EXPECT().RuleAdd(call.rule).Return(call.err)
@@ -3507,11 +3159,14 @@ func Test_createVethPairContext_run(t *testing.T) {
 			for _, call := range tt.fields.procSysSetCalls {
 				procSys.EXPECT().Set(call.key, call.value).Return(call.err)
 			}
+			// The host-side IPv6 sysctls run inside hostNS.Do; their exact keys
+			// and ordering are pinned by the PeerNamespace tests below.
+			procSys.EXPECT().Set(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 			hostNS := mock_ns.NewMockNetNS(ctrl)
-			for _, call := range tt.fields.nsFDCalls {
-				// we just assume the createVethContext executes, the logic of createVethContext will be tested by createVethContext itself.
-				hostNS.EXPECT().Fd().Return(call.fd)
-			}
+			hostNS.EXPECT().Fd().Return(uintptr(3)).AnyTimes()
+			hostNS.EXPECT().Do(gomock.Any()).DoAndReturn(func(toRun func(ns.NetNS) error) error {
+				return toRun(nil)
+			}).AnyTimes()
 
 			createVethContext := &createVethPairContext{
 				contVethName: tt.args.contVethName,
@@ -3521,6 +3176,7 @@ func Test_createVethPairContext_run(t *testing.T) {
 				netLink:      netLink,
 				procSys:      procSys,
 				index:        tt.index,
+				hostMACAddr:  net.HardwareAddr("00:00:5e:00:53:af"),
 				log:          testLogger,
 			}
 			err := createVethContext.run(hostNS)
@@ -3619,7 +3275,6 @@ func Test_createVethPairContext_runWithPeerNamespace(t *testing.T) {
 		procSys:      procSys,
 		index:        0,
 		hostMACAddr:  hostMACAddr,
-		usePeerNS:    true,
 		log:          testLogger,
 	}
 
@@ -3726,10 +3381,109 @@ func Test_createVethPairContext_runWithPeerNamespaceIPv6(t *testing.T) {
 		procSys:      procSys,
 		index:        0,
 		hostMACAddr:  hostMACAddr,
-		usePeerNS:    true,
 		log:          testLogger,
 	}
 
+	assert.NoError(t, createVethContext.run(hostNS))
+}
+
+// The host-side sysctls run inside hostNS.Do before the link comes up; a real
+// failure there must fail the ADD.
+func Test_createVethPairContext_runHostSysctlFailure(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	hostVeth := &netlink.Veth{
+		LinkAttrs: netlink.LinkAttrs{
+			Name:  "eni8ea2c11fe35",
+			Index: 9,
+		},
+	}
+	netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
+	netLink.EXPECT().LinkAdd(gomock.Any()).Return(nil)
+	netLink.EXPECT().LinkByName("eni8ea2c11fe35").Return(hostVeth, nil)
+
+	procSys := mock_procsyswrapper.NewMockProcSys(ctrl)
+	procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_ra", "0").Return(errors.New("some error"))
+
+	hostNS := mock_ns.NewMockNetNS(ctrl)
+	hostNS.EXPECT().Fd().Return(uintptr(3))
+	hostNS.EXPECT().Do(gomock.Any()).DoAndReturn(func(toRun func(ns.NetNS) error) error {
+		return toRun(nil)
+	})
+
+	createVethContext := &createVethPairContext{
+		contVethName: "eth0",
+		hostVethName: "eni8ea2c11fe35",
+		ipAddr: &net.IPNet{
+			IP:   net.ParseIP("192.168.120.1"),
+			Mask: net.CIDRMask(32, 32),
+		},
+		mtu:     9001,
+		netLink: netLink,
+		procSys: procSys,
+		log:     testLogger,
+	}
+	assert.EqualError(t, createVethContext.run(hostNS),
+		"failed to disable IPv6 router advertisements: some error")
+}
+
+// On kernels without IPv6 the sysctl files do not exist; the ENOENT must be
+// tolerated and pod setup must succeed.
+func Test_createVethPairContext_runIPv6SysctlsNotSupported(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ipAddr := &net.IPNet{
+		IP:   net.ParseIP("192.168.120.1"),
+		Mask: net.CIDRMask(32, 32),
+	}
+	hostMACAddr := net.HardwareAddr("00:00:5e:00:53:af")
+	contVeth := &netlink.Veth{
+		LinkAttrs: netlink.LinkAttrs{
+			Name:  "eth0",
+			Index: 1,
+		},
+	}
+	hostVeth := &netlink.Veth{
+		LinkAttrs: netlink.LinkAttrs{
+			Name:  "eni8ea2c11fe35",
+			Index: 9,
+		},
+	}
+
+	netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
+	netLink.EXPECT().LinkAdd(gomock.Any()).Return(nil)
+	netLink.EXPECT().LinkByName("eni8ea2c11fe35").Return(hostVeth, nil)
+	netLink.EXPECT().LinkSetUp(hostVeth).Return(nil)
+	netLink.EXPECT().LinkByName("eth0").Return(contVeth, nil)
+	netLink.EXPECT().LinkSetUp(contVeth).Return(nil)
+	netLink.EXPECT().RouteReplace(gomock.Any()).Return(nil)
+	netLink.EXPECT().RouteAdd(gomock.Any()).Return(nil)
+	netLink.EXPECT().AddrAdd(contVeth, gomock.Any()).Return(nil)
+	netLink.EXPECT().NeighAdd(gomock.Any()).Return(nil)
+
+	procSys := mock_procsyswrapper.NewMockProcSys(ctrl)
+	procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_ra", "0").Return(syscall.ENOENT)
+	procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_redirects", "1").Return(syscall.ENOENT)
+	procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/forwarding", "0").Return(syscall.ENOENT)
+
+	hostNS := mock_ns.NewMockNetNS(ctrl)
+	hostNS.EXPECT().Fd().Return(uintptr(3))
+	hostNS.EXPECT().Do(gomock.Any()).DoAndReturn(func(toRun func(ns.NetNS) error) error {
+		return toRun(nil)
+	})
+
+	createVethContext := &createVethPairContext{
+		contVethName: "eth0",
+		hostVethName: "eni8ea2c11fe35",
+		ipAddr:       ipAddr,
+		mtu:          9001,
+		netLink:      netLink,
+		procSys:      procSys,
+		hostMACAddr:  hostMACAddr,
+		log:          testLogger,
+	}
 	assert.NoError(t, createVethContext.run(hostNS))
 }
 
@@ -3797,28 +3551,9 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 						link:     hostVethWithIndex9,
 					},
 				},
-				linkSetupCalls: []linkSetupCall{
-					{
-						link: hostVethWithIndex9,
-					},
-				},
 				withNetNSPathCalls: []withNetNSPathCall{
 					{
 						netNSPath: "/proc/42/ns/net",
-					},
-				},
-				procSysSetCalls: []procSysSetCall{
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_ra",
-						value: "0",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
-						value: "1",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
-						value: "0",
 					},
 				},
 			},
@@ -3847,28 +3582,9 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 						link: hostVethWithIndex9,
 					},
 				},
-				linkSetupCalls: []linkSetupCall{
-					{
-						link: hostVethWithIndex9,
-					},
-				},
 				withNetNSPathCalls: []withNetNSPathCall{
 					{
 						netNSPath: "/proc/42/ns/net",
-					},
-				},
-				procSysSetCalls: []procSysSetCall{
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_ra",
-						value: "0",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
-						value: "1",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
-						value: "0",
 					},
 				},
 			},
@@ -3951,170 +3667,6 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 			},
 			wantErr: errors.New("failed to find hostVeth eni8ea2c11fe35: not exists"),
 		},
-		{
-			name: "failed to disable IPv6 accept_ra",
-			fields: fields{
-				linkByNameCalls: []linkByNameCall{
-					{
-						linkName: "eni8ea2c11fe35",
-						err:      errors.New("not exists"),
-					},
-					{
-						linkName: "eni8ea2c11fe35",
-						link:     hostVethWithIndex9,
-					},
-				},
-				withNetNSPathCalls: []withNetNSPathCall{
-					{
-						netNSPath: "/proc/42/ns/net",
-					},
-				},
-				procSysSetCalls: []procSysSetCall{
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_ra",
-						value: "0",
-						err:   errors.New("some error"),
-					},
-				},
-			},
-			args: args{
-				hostVethName: "eni8ea2c11fe35",
-				contVethName: "eth0",
-				netnsPath:    "/proc/42/ns/net",
-			},
-			wantErr: errors.New("failed to disable IPv6 router advertisements: some error"),
-		},
-		{
-			name: "failed to disable IPv6 accept_redirects",
-			fields: fields{
-				linkByNameCalls: []linkByNameCall{
-					{
-						linkName: "eni8ea2c11fe35",
-						err:      errors.New("not exists"),
-					},
-					{
-						linkName: "eni8ea2c11fe35",
-						link:     hostVethWithIndex9,
-					},
-				},
-				withNetNSPathCalls: []withNetNSPathCall{
-					{
-						netNSPath: "/proc/42/ns/net",
-					},
-				},
-				procSysSetCalls: []procSysSetCall{
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_ra",
-						value: "0",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
-						value: "1",
-						err:   errors.New("some error"),
-					},
-				},
-			},
-			args: args{
-				hostVethName: "eni8ea2c11fe35",
-				contVethName: "eth0",
-				netnsPath:    "/proc/42/ns/net",
-			},
-			wantErr: errors.New("failed to disable IPv6 ICMP redirects: some error"),
-		},
-		{
-			name: "failed to disable IPv6 accept_ra and accept_redirects due to lack IPv6 support",
-			fields: fields{
-				linkByNameCalls: []linkByNameCall{
-					{
-						linkName: "eni8ea2c11fe35",
-						err:      errors.New("not exists"),
-					},
-					{
-						linkName: "eni8ea2c11fe35",
-						link:     hostVethWithIndex9,
-					},
-				},
-				linkSetupCalls: []linkSetupCall{
-					{
-						link: hostVethWithIndex9,
-					},
-				},
-				withNetNSPathCalls: []withNetNSPathCall{
-					{
-						netNSPath: "/proc/42/ns/net",
-					},
-				},
-				procSysSetCalls: []procSysSetCall{
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_ra",
-						value: "0",
-						err:   syscall.ENOENT,
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
-						value: "1",
-						err:   syscall.ENOENT,
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
-						value: "0",
-						err:   syscall.ENOENT,
-					},
-				},
-			},
-			args: args{
-				hostVethName: "eni8ea2c11fe35",
-				contVethName: "eth0",
-				netnsPath:    "/proc/42/ns/net",
-			},
-			want: hostVethWithIndex9,
-		},
-		{
-			name: "failed to setUp hostVeth",
-			fields: fields{
-				linkByNameCalls: []linkByNameCall{
-					{
-						linkName: "eni8ea2c11fe35",
-						err:      errors.New("not exists"),
-					},
-					{
-						linkName: "eni8ea2c11fe35",
-						link:     hostVethWithIndex9,
-					},
-				},
-				linkSetupCalls: []linkSetupCall{
-					{
-						link: hostVethWithIndex9,
-						err:  errors.New("some error"),
-					},
-				},
-				withNetNSPathCalls: []withNetNSPathCall{
-					{
-						netNSPath: "/proc/42/ns/net",
-					},
-				},
-				procSysSetCalls: []procSysSetCall{
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_ra",
-						value: "0",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
-						value: "1",
-					},
-					{
-						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
-						value: "0",
-					},
-				},
-			},
-			args: args{
-				hostVethName: "eni8ea2c11fe35",
-				contVethName: "eth0",
-				netnsPath:    "/proc/42/ns/net",
-			},
-			wantErr: errors.New("failed to setup hostVeth eni8ea2c11fe35: some error"),
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -4148,7 +3700,7 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 				ns:      ns,
 				procSys: procSys,
 			}
-			got, err := n.setupVeth(tt.args.hostVethName, tt.args.contVethName, tt.args.netnsPath, nil, tt.args.mtu, false, testLogger, 0)
+			got, err := n.setupVeth(tt.args.hostVethName, tt.args.contVethName, tt.args.netnsPath, nil, tt.args.mtu, testLogger, 0)
 			if tt.wantErr != nil {
 				assert.EqualError(t, err, tt.wantErr.Error())
 			} else {
