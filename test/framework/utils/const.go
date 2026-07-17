@@ -26,7 +26,7 @@ const (
 	// See https://gallery.ecr.aws/eks/aws-vpc-cni-test-helper
 	TestAgentImage = "networking-e2e-test-images/aws-vpc-cni-test-helper:20231212"
 	BusyBoxImage   = "networking-e2e-test-images/busybox:latest"
-	NginxImage     = "networking-e2e-test-images/nginx:latest"
+	NginxImage     = "networking-e2e-test-images/nginx:1.31.2"
 	NetCatImage    = "networking-e2e-test-images/netcat-openbsd:v1.0"
 	CurlImage      = "networking-e2e-test-images/curlimages/curl:latest"
 
