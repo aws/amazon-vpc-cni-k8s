@@ -7,10 +7,7 @@
 # REPLACES the aws-node and aws-node-init container images with the images built by the pipeline
 # run. This way the test exercises the image under test on a real IPv6 dataplane.
 #
-# Used by the VpcCNIK8sEKSBuild "IPv6IntegrationTests" Beta-only Hydra workflow via
-# VpcCNIK8sEKSBuildHydraTests/configs/test-repo-configs-ipv6.json.
-#
-# Required environment (provided by EKSNetworkingCommonGo GitTester.Run):
+# Required environment (provided by the calling test harness):
 #   CLUSTER_NAME, REGION, KUBECONFIG (or KUBE_CONFIG_PATH), K8S_VERSION,
 #   IMAGE_TAG, REPLICATION_STACK_ACCOUNT_NUMBER, URL_SUFFIX
 # Optional:
@@ -79,8 +76,8 @@ function verify_cni_images() {
 }
 
 # Compile and run the IPv6 suite from source (the run-cni-release-tests.sh pattern) rather than a
-# prebuilt test/build/ipv6.test, since test/build/ is a gitignored artifact that GitTester's fresh
-# clone never populates (nothing here runs `make build-test-binaries`). ginkgo compiles the suite
+# prebuilt test/build/ipv6.test, since test/build/ is a gitignored artifact that a fresh clone
+# never populates (nothing here runs `make build-test-binaries`). ginkgo compiles the suite
 # in-place, so no separate build step is needed.
 function run_ginkgo_test() {
   (cd "$IPV6_TEST_DIR" && CGO_ENABLED=0 ginkgo ${EXTRA_GINKGO_FLAGS:-} -v --timeout 30m --no-color --fail-on-pending -- \
