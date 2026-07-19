@@ -250,6 +250,7 @@ type IPAMContext struct {
 	networkPolicyMode         string
 	enableMultiNICSupport     bool
 	withApiServer             bool
+	enableDynamicSNATCfg      bool
 }
 
 type kubeletConfig struct {
@@ -448,6 +449,7 @@ func New(ctx context.Context, k8sClient client.Client, withApiServer bool) (*IPA
 	c.awsClient.InitCachedPrefixDelegation(c.enablePrefixDelegation)
 	c.myNodeName = os.Getenv(envNodeName)
 	c.withApiServer = withApiServer
+	c.enableDynamicSNATCfg = utils.GetBoolAsStringEnvVar(envEnableDynamicSNATCfg, false)
 
 	if err := c.nodeInit(ctx); err != nil {
 		return nil, err
@@ -746,6 +748,23 @@ func (c *IPAMContext) updateCIDRsRulesOnChange(oldVPCCIDRs []string) []string {
 	if err != nil {
 		log.Warnf("skipping periodic update to VPC CIDRs due to error: %v", err)
 		return oldVPCCIDRs
+	}
+
+	// If dynamic SNAT config is enabled, merge ConfigMap CIDRs into the exclusion set
+	if c.enableDynamicSNATCfg && c.k8sClient != nil {
+		ctx := context.Background()
+		configMapCIDRs, cmErr := GetExcludeSNATCIDRsFromConfigMap(ctx, c.k8sClient)
+		if cmErr != nil {
+			log.Warnf("failed to read SNAT exclusion ConfigMap (keeping previous set): %v", cmErr)
+		} else if len(configMapCIDRs) > 0 {
+			// Merge ConfigMap CIDRs with the env-var CIDRs and update networkClient
+			envCIDRs := c.networkClient.GetExcludeSNATCIDRs()
+			merged := sets.NewString(envCIDRs...)
+			merged.Insert(configMapCIDRs...)
+			c.networkClient.SetExcludeSNATCIDRs(merged.List())
+			log.Debugf("Dynamic SNAT exclusion: merged %d env + %d ConfigMap CIDRs = %d total",
+				len(envCIDRs), len(configMapCIDRs), merged.Len())
+		}
 	}
 
 	old := sets.NewString(oldVPCCIDRs...)
