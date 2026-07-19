@@ -181,9 +181,16 @@ var _ = BeforeSuite(func() {
 	err = awsUtils.TerminateInstances(f)
 	Expect(err).ToNot(HaveOccurred())
 
+	// TerminateInstances only waits for EC2-level InService; wait for k8s Node
+	// readiness before indexing, or GetNodes can return an empty list and [0] panics.
+	By("waiting for replacement nodes to be ready")
+	err = f.K8sResourceManagers.NodeManager().WaitTillNodesReady(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal, numNodes)
+	Expect(err).ToNot(HaveOccurred())
+
 	By("getting target node")
 	nodeList, err = f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
 	Expect(err).ToNot(HaveOccurred())
+	Expect(nodeList.Items).ToNot(BeEmpty(), "expected at least one node after instance recycling")
 	targetNode = nodeList.Items[0]
 })
 
