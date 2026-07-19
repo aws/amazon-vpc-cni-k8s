@@ -49,6 +49,7 @@ import (
 	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	mock_awsutils "github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/mocks"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	mock_eniconfig "github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
@@ -4268,6 +4269,77 @@ func TestIPAMContext_InInsufficientCidrCoolingPeriod(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &IPAMContext{lastInsufficientCidrError: tt.lastInsufficientCidrError}
 			assert.Equal(t, tt.want, c.inInsufficientCidrCoolingPeriod())
+		})
+	}
+}
+
+func TestIPAMContext_getMaxENI(t *testing.T) {
+	intPtr := func(i int) *int { return &i }
+
+	tests := []struct {
+		name           string
+		instanceMaxENI int
+		nodeOverride   *int
+		envValue       string // empty string means unset
+		want           int
+	}{
+		{
+			name:           "no override and no env returns instance limit",
+			instanceMaxENI: 4,
+			want:           4,
+		},
+		{
+			name:           "env honored below instance limit when no override",
+			instanceMaxENI: 4,
+			envValue:       "2",
+			want:           2,
+		},
+		{
+			name:           "env at or above instance limit capped to instance",
+			instanceMaxENI: 4,
+			envValue:       "10",
+			want:           4,
+		},
+		{
+			name:           "per-node override wins over env",
+			instanceMaxENI: 4,
+			nodeOverride:   intPtr(3),
+			envValue:       "2",
+			want:           3,
+		},
+		{
+			name:           "per-node override capped to instance limit",
+			instanceMaxENI: 4,
+			nodeOverride:   intPtr(10),
+			want:           4,
+		},
+		{
+			name:           "per-node override applied when env unset",
+			instanceMaxENI: 4,
+			nodeOverride:   intPtr(2),
+			want:           2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := setup(t)
+			defer m.ctrl.Finish()
+
+			if tt.envValue != "" {
+				t.Setenv(envMaxENI, tt.envValue)
+			} else {
+				_ = os.Unsetenv(envMaxENI)
+			}
+
+			m.awsutils.EXPECT().GetENILimit().Return(tt.instanceMaxENI)
+			c := &IPAMContext{
+				awsClient:     m.awsutils,
+				nodeOverrides: eniconfig.NodeOverrides{MaxENI: tt.nodeOverride},
+			}
+			got, err := c.getMaxENI()
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
