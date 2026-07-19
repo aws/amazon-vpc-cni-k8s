@@ -90,6 +90,11 @@ const (
 	envMinimumIPTarget = "MINIMUM_IP_TARGET"
 	noMinimumIPTarget  = 0
 
+	// This environment variable specifies whether IPs in cooldown are counted as unavailable when
+	// calculating whether the IP pool is short of or over the warm/minimum targets.
+	// When it is not set, it defaults to false and IPs in cooldown are counted as available.
+	envIncludeCooldownIPs = "INCLUDE_COOLDOWN_IPS_IN_POOL_SIZE"
+
 	// This environment is used to specify the desired number of free ENIs along with all of its IP addresses
 	// always available in "warm pool".
 	// When it is not set, it is default to 1.
@@ -232,6 +237,7 @@ type IPAMContext struct {
 	warmIPTarget         int
 	minimumIPTarget      int
 	warmPrefixTarget     int
+	includeCooldownIPs   bool
 	primaryIP            map[string]string // primaryIP is a map from ENI ID to primary IP of that ENI
 	lastNodeIPPoolAction time.Time
 	lastDecreaseIPPool   time.Time
@@ -423,6 +429,7 @@ func New(ctx context.Context, k8sClient client.Client, withApiServer bool) (*IPA
 	c.warmIPTarget = getWarmIPTarget()
 	c.minimumIPTarget = getMinimumIPTarget()
 	c.warmPrefixTarget = getWarmPrefixTarget()
+	c.includeCooldownIPs = includeCooldownIPsInPoolSize()
 	c.enablePodENI = EnablePodENI()
 	c.enableManageUntaggedMode = enableManageUntaggedMode()
 	c.enablePodIPAnnotation = EnablePodIPAnnotation()
@@ -497,7 +504,7 @@ func (c *IPAMContext) nodeInit(ctx context.Context) error {
 	enis := c.filterUnmanagedENIs(metadataResult.ENIMetadata)
 
 	if c.dataStoreAccess == nil {
-		c.dataStoreAccess = datastore.InitializeDataStores(skipNetworkCards, dsBackingStorePath(), c.enablePrefixDelegation, log)
+		c.dataStoreAccess = datastore.InitializeDataStores(skipNetworkCards, dsBackingStorePath(), c.enablePrefixDelegation, c.includeCooldownIPs, log)
 	}
 
 	// check if primary ENI is excluded for ipv6 cluster
@@ -1454,6 +1461,22 @@ func getWarmPrefixTarget() int {
 	return defaultWarmPrefixTarget
 }
 
+// includeCooldownIPsInPoolSize returns whether IPs in cooldown should be counted as unavailable in
+// pool size calculations, as configured by the INCLUDE_COOLDOWN_IPS_IN_POOL_SIZE env variable
+func includeCooldownIPsInPoolSize() bool {
+	return utils.GetBoolAsStringEnvVar(envIncludeCooldownIPs, false)
+}
+
+// availableAddresses returns the number of addresses in the given stats that are considered available
+// for assignment to a pod. When INCLUDE_COOLDOWN_IPS_IN_POOL_SIZE is enabled, IPs in cooldown are not
+// counted as available, since they cannot be assigned to pods until their cooldown expires.
+func (c *IPAMContext) availableAddresses(stats *datastore.DataStoreStats) int {
+	if c.includeCooldownIPs {
+		return stats.AssignableAddresses()
+	}
+	return stats.AvailableAddresses()
+}
+
 // logPoolStats logs usage information for allocated addresses/prefixes.
 func (c *IPAMContext) logPoolStats(dataStoreStats *datastore.DataStoreStats, networkCard int) {
 	prefix := "IP pool stats for network card"
@@ -1490,7 +1513,7 @@ func (c *IPAMContext) shouldRemoveExtraENIs(stats *datastore.DataStoreStats, net
 		return true
 	}
 
-	available := stats.AvailableAddresses()
+	available := c.availableAddresses(stats)
 	var shouldRemoveExtra bool
 
 	// We need the +1 to make sure we are not going below the WARM_ENI_TARGET/WARM_PREFIX_TARGET
@@ -2172,7 +2195,9 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 }
 
 // datastoreTargetState determines the number of IPs `short` or `over` our WARM_IP_TARGET, accounting for the MINIMUM_IP_TARGET.
-// With prefix delegation, this function determines the number of Prefixes `short` or `over`
+// With prefix delegation, this function determines the number of Prefixes `short` or `over`.
+// When INCLUDE_COOLDOWN_IPS_IN_POOL_SIZE is enabled, IPs in cooldown are not counted as available, since they
+// cannot be assigned to pods until their cooldown expires.
 func (c *IPAMContext) datastoreTargetState(stats *datastore.DataStoreStats, networkCard int) (short int, over int, enabled bool) {
 	warmIPTarget := c.warmIPTarget
 	minimumIPTarget := c.minimumIPTarget
@@ -2191,7 +2216,7 @@ func (c *IPAMContext) datastoreTargetState(stats *datastore.DataStoreStats, netw
 		stats = c.dataStoreAccess.GetDataStore(networkCard).GetIPStats(ipV4AddrFamily)
 	}
 
-	available := stats.AvailableAddresses()
+	available := c.availableAddresses(stats)
 
 	// short is greater than 0 when we have fewer available IPs than the warm IP target
 	short = max(warmIPTarget-available, 0)
@@ -2215,7 +2240,12 @@ func (c *IPAMContext) datastoreTargetState(stats *datastore.DataStoreStats, netw
 		// Over will have number of IPs more than needed but with PD we would have allocated in chunks of /28
 		// Say assigned = 1, warm ip target = 16, this will need 2 prefixes. But over will return 15.
 		// Hence we need to check if 'over' number of IPs are needed to maintain the warm targets
-		prefixNeededForWarmIP := datastore.DivCeil(stats.AssignedIPs+c.warmIPTarget, numIPsPerPrefix)
+		usedIPs := stats.AssignedIPs
+		if c.includeCooldownIPs {
+			// IPs in cooldown occupy prefix space but cannot be assigned, so they count towards the prefixes needed
+			usedIPs += stats.CooldownIPs
+		}
+		prefixNeededForWarmIP := datastore.DivCeil(usedIPs+c.warmIPTarget, numIPsPerPrefix)
 		prefixNeededForMinIP := datastore.DivCeil(c.minimumIPTarget, numIPsPerPrefix)
 
 		// over will be number of prefixes over than needed but could be spread across used prefixes,
@@ -2287,6 +2317,7 @@ func GetConfigForDebug() map[string]interface{} {
 		envCustomNetworkCfg:         UseCustomNetworkCfg(),
 		envManageENIsNonSchedulable: ManageENIsOnNonSchedulableNode(),
 		envSubnetDiscovery:          UseSubnetDiscovery(),
+		envIncludeCooldownIPs:       includeCooldownIPsInPoolSize(),
 	}
 }
 
@@ -2644,7 +2675,7 @@ func (c *IPAMContext) isDatastorePoolTooLow() map[int]Decisions {
 			continue
 		}
 
-		available := stats.AvailableAddresses()
+		available := c.availableAddresses(stats)
 		poolTooLow := available < totalIPs*warmTarget || (warmTarget == 0 && available == 0)
 		if poolTooLow {
 			log.Debugf("IP pool is too low for Network Card %d: available (%d) < ENI target (%d) * addrsPerENI (%d)", networkCard, available, warmTarget, totalIPs)
