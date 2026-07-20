@@ -113,12 +113,33 @@ var _ = BeforeSuite(func() {
 })
 
 var _ = AfterSuite(func() {
-	// Restore coredns deployment
-	By("restoring coredns deployment")
-	err = f.K8sResourceManagers.DeploymentManager().UpdateAndWaitTillDeploymentIsReady(coreDNSDeploymentCopy,
-		utils.DefaultDeploymentReadyTimeout)
+	// Always delete the test namespace, even if the coredns restore below fails an
+	// assertion. Registered up front via DeferCleanup so a failed restore Expect cannot
+	// skip namespace teardown.
+	DeferCleanup(func() {
+		By("deleting test namespace")
+		Expect(f.K8sResourceManagers.NamespaceManager().
+			DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)).To(Succeed())
+	})
 
-	By("deleting test namespace")
-	f.K8sResourceManagers.NamespaceManager().
-		DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
+	// coreDNSDeploymentCopy is nil if BeforeSuite failed before capturing it; there is
+	// nothing to restore in that case.
+	if coreDNSDeploymentCopy == nil {
+		return
+	}
+
+	// Restore coredns to its original scheduling by removing the nodeSelector the
+	// BeforeSuite added. Re-fetch the live deployment first: coreDNSDeploymentCopy was
+	// captured before the pin, so its resourceVersion is stale and replaying it directly
+	// conflicts on every retry and silently no-ops (the error was previously unchecked),
+	// leaving coredns pinned to a single node. If a later suite sharing this cluster
+	// terminates that node, coredns has nowhere to schedule and cluster DNS goes down.
+	By("restoring coredns deployment")
+	coreDNSDeployment, err := f.K8sResourceManagers.DeploymentManager().
+		GetDeployment(CoreDNSDeploymentName, KubeSystemNamespace)
+	Expect(err).ToNot(HaveOccurred())
+	coreDNSDeployment.Spec.Template.Spec.NodeSelector = coreDNSDeploymentCopy.Spec.Template.Spec.NodeSelector
+	err = f.K8sResourceManagers.DeploymentManager().UpdateAndWaitTillDeploymentIsReady(coreDNSDeployment,
+		utils.DefaultDeploymentReadyTimeout)
+	Expect(err).ToNot(HaveOccurred())
 })
