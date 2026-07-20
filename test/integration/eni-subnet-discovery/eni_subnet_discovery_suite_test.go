@@ -15,11 +15,9 @@ package eni_subnet_discovery
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"net"
-	"strings"
 	"testing"
 	"time"
 
@@ -27,13 +25,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	"github.com/aws/smithy-go"
 
 	"github.com/apparentlymart/go-cidr/cidr"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	awsUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws/utils"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
+	"github.com/aws/amazon-vpc-cni-k8s/test/integration/common"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
@@ -223,61 +221,41 @@ var _ = BeforeSuite(func() {
 })
 
 var _ = AfterSuite(func() {
-	By("deleting test namespace")
-	_ = f.K8sResourceManagers.NamespaceManager().
-		DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
-
-	By("sleeping to allow CNI Plugin to delete unused ENIs")
-	time.Sleep(time.Second * 90)
-
-	By("by setting WARM_ENI_TARGET to 1")
-	k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
-		utils.AwsNodeName, map[string]string{"WARM_ENI_TARGET": "1"})
-
 	var errs prometheus.MultiError
+
+	// DeferCleanup runs after this body, even if an assertion fails: the restore
+	// cannot mask the aggregated cleanup errors below (its helper asserts
+	// internally), the failed aggregate cannot skip the restore, and it still runs
+	// after the subnet delete so the CNI drains ENIs instead of warming a new one
+	// into the subnet being deleted.
+	DeferCleanup(func() {
+		By("restoring WARM_ENI_TARGET to 1")
+		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
+			utils.AwsNodeName, map[string]string{"WARM_ENI_TARGET": "1"})
+	})
+
+	By("deleting test namespace")
+	errs.Append(f.K8sResourceManagers.NamespaceManager().
+		DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace))
 
 	if rtAssociationID != "" {
 		By(fmt.Sprintf("disassociating route table association %s", rtAssociationID))
-		if err := f.CloudServices.EC2().DisassociateRouteTable(context.TODO(), rtAssociationID); err != nil && !isNotFound(err) {
-			errs.Append(err)
-		}
+		errs.Append(common.EnsureRouteTableDisassociated(f, rtAssociationID))
 	}
 
-	// DeleteSubnet fails with DependencyViolation until the CNI drains the
-	// secondary ENIs. Poll so teardown waits for the drain, bounded so it cannot hang.
-	// A NotFound means the subnet is already gone (e.g. deleted by a concurrent
-	// sweeper), which is the desired end state, so treat it as success.
+	// WARM_ENI_TARGET stays 0 (set in BeforeSuite) until the subnet is gone; the
+	// bounded delete poll absorbs the ENI drain, no fixed sleep needed.
 	By(fmt.Sprintf("deleting the subnet %s", createdSubnet))
-	Eventually(func() error {
-		if err := f.CloudServices.EC2().DeleteSubnet(context.TODO(), createdSubnet); err != nil && !isNotFound(err) {
-			return err
-		}
-		return nil
-	}).WithTimeout(5*time.Minute).WithPolling(15*time.Second).Should(Succeed(),
-		"subnet %s could not be deleted within 5m; it will leak and pin the VPC stack", createdSubnet)
+	errs.Append(common.EnsureSubnetDeleted(f, createdSubnet))
 
 	if cidrBlockAssociationID != "" {
 		By("disassociating the CIDR range from the VPC")
-		Eventually(func() error {
-			if err := f.CloudServices.EC2().DisAssociateVPCCIDRBlock(context.TODO(), cidrBlockAssociationID); err != nil && !isNotFound(err) {
-				return err
-			}
-			return nil
-		}).WithTimeout(90*time.Second).WithPolling(15*time.Second).Should(Succeed(),
-			"CIDR %s could not be disassociated from the VPC within 90s", cidrRange.String())
+		errs.Append(common.EnsureVPCCIDRDisassociated(f, cidrBlockAssociationID, cidrRange.String()))
 	}
 
 	// Fail the suite on a cleanup error rather than swallowing it, so leaks surface in CI.
 	Expect(errs.MaybeUnwrap()).ToNot(HaveOccurred(), "cleanup operations failed")
 })
-
-func isNotFound(err error) bool {
-	var apiErr smithy.APIError
-	if errors.As(err, &apiErr) {
-		return strings.HasSuffix(apiErr.ErrorCode(), ".NotFound")
-	}
-	return false
-}
 
 // staleSubnetTag is applied to all subnets created by this test suite so that
 // cleanupStaleSubnetsInCIDR only removes resources it owns.
