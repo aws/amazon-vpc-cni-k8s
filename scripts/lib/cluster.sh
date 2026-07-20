@@ -78,7 +78,7 @@ function up-kops-cluster {
     mv kops-linux-amd64 $KOPS_BIN
     CLUSTER_NAME=kops-cni-test-cluster-${TEST_ID}.k8s.local
     export KOPS_STATE_STORE=s3://${KOPS_S3_BUCKET}
-    HOST_IMAGE_SSM_PARAMETER="ssm:/aws/service/canonical/ubuntu/server/20.04/stable/current/amd64/hvm/ebs-gp2/ami-id"
+    HOST_IMAGE_SSM_PARAMETER="ssm:/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id"
 
     SSH_KEYS=~/.ssh/devopsinuse
     if [ ! -f "$SSH_KEYS" ]
@@ -89,7 +89,16 @@ function up-kops-cluster {
         echo -e "\nSSH keys are already in place!"
     fi
 
-    # Using Ubuntu 20.04 because of https://github.com/aws/amazon-vpc-cni-k8s/issues/2103
+    # Ubuntu 22.04: kops 1.34 installs containerd 2.1.x, whose dynamically-linked
+    # release binary is "built with glibc 2.35 (Ubuntu 22.04)" and imports GLIBC_2.32/
+    # GLIBC_2.34 symbols. Ubuntu 20.04 only ships glibc 2.31, so containerd fails to
+    # exec ("version `GLIBC_2.32' not found"), kubelet can't reach the CRI socket, no
+    # control-plane apiserver comes up, and `kops validate cluster` never succeeds.
+    # 22.04 ships glibc 2.35 and satisfies it. The original 20.04 pin (#2103) worked
+    # around a veth MAC address change on 22.04's newer kernel/udev that left the CNI's
+    # static ARP entry for the gateway stale and broke pod egress; that is fixed in the
+    # CNI itself by #3354 (assigns the host-side veth MAC so udev's MACAddressPolicy
+    # leaves it untouched), so the 20.04 pin is no longer required.
     $KOPS_BIN create cluster \
     --cloud aws \
     --zones ${AWS_DEFAULT_REGION}a,${AWS_DEFAULT_REGION}b \
