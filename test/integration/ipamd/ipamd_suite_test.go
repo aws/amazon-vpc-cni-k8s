@@ -113,9 +113,7 @@ var _ = BeforeSuite(func() {
 })
 
 var _ = AfterSuite(func() {
-	// Always delete the test namespace, even if the coredns restore below fails an
-	// assertion. Registered up front via DeferCleanup so a failed restore Expect cannot
-	// skip namespace teardown.
+	// DeferCleanup so a failed coredns-restore Expect below cannot skip namespace teardown.
 	DeferCleanup(func() {
 		By("deleting test namespace")
 		Expect(f.K8sResourceManagers.NamespaceManager().
