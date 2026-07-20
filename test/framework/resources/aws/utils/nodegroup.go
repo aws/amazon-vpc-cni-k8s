@@ -374,41 +374,60 @@ func TerminateInstances(f *framework.Framework) error {
 		return nil
 	}
 
-	var instanceIDs []string
+	// Recycle every ASG backing the labeled nodes, not just the first node's.
+	// Recycling one ASG orphans other nodegroups' instances (stale networking, ENIs
+	// that pin test subnets/SGs) and scaling it to the TOTAL node count inflates it.
+	asgNames := map[string]struct{}{}
 	for _, node := range nodeList.Items {
-		instanceIDs = append(instanceIDs, k8sUtils.GetInstanceIDFromNode(node))
-	}
-	expected := int32(len(instanceIDs))
-
-	// Find the ASG owning the first instance. Assumes all nodes belong to the same ASG.
-	asgName, err := f.CloudServices.AutoScaling().GetASGForInstance(context.TODO(), instanceIDs[0])
-	if err != nil {
-		return fmt.Errorf("failed to find ASG for instance %s: %v", instanceIDs[0], err)
-	}
-
-	// Scale the ASG to 0 so it terminates all instances through its own lifecycle
-	if err := f.CloudServices.AutoScaling().SetDesiredCapacity(context.TODO(), asgName, 0); err != nil {
-		return fmt.Errorf("failed to set desired capacity to 0 on %s: %v", asgName, err)
-	}
-
-	// Wait until the ASG has no InService instances before scaling back up.
-	// Terminating instances linger in the ASG's Instances list (e.g. Terminating,
-	// Terminating:Wait) until fully reaped, so checking len(Instances)==0 can time
-	// out even though the scale-down succeeded. Treat InService as the only
-	// "still up" state.
-	if err := wait.PollUntilContextTimeout(context.TODO(), 10*time.Second, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
-		asgs, derr := f.CloudServices.AutoScaling().DescribeAutoScalingGroup(ctx, asgName)
-		if derr != nil || len(asgs) == 0 {
-			return false, nil
+		instanceID := k8sUtils.GetInstanceIDFromNode(node)
+		asgName, err := f.CloudServices.AutoScaling().GetASGForInstance(context.TODO(), instanceID)
+		if err != nil {
+			return fmt.Errorf("failed to find ASG for instance %s: %v", instanceID, err)
 		}
-		for _, inst := range asgs[0].Instances {
-			if inst.LifecycleState == autoscalingtypes.LifecycleStateInService {
+		asgNames[asgName] = struct{}{}
+	}
+
+	// Record each ASG's own desired capacity before scale-down and restore exactly
+	// that; deriving capacity from node counts mixes nodegroups.
+	originalDesired := map[string]int32{}
+	for asgName := range asgNames {
+		asgs, derr := f.CloudServices.AutoScaling().DescribeAutoScalingGroup(context.TODO(), asgName)
+		if derr != nil || len(asgs) == 0 {
+			return fmt.Errorf("failed to describe ASG %s: %v", asgName, derr)
+		}
+		originalDesired[asgName] = aws.ToInt32(asgs[0].DesiredCapacity)
+	}
+
+	// Scale every ASG to 0 first (concurrent drain), then wait on each.
+	for asgName := range asgNames {
+		fmt.Printf("scaling ASG %s to 0 (recycle)\n", asgName)
+		if err := f.CloudServices.AutoScaling().SetDesiredCapacity(context.TODO(), asgName, 0); err != nil {
+			return fmt.Errorf("failed to set desired capacity to 0 on %s: %v", asgName, err)
+		}
+	}
+
+	// Terminating instances linger in the Instances list until reaped, so wait for
+	// zero InService rather than an empty list.
+	for asgName := range asgNames {
+		var lastErr error
+		if err := wait.PollUntilContextTimeout(context.TODO(), 10*time.Second, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
+			asgs, derr := f.CloudServices.AutoScaling().DescribeAutoScalingGroup(ctx, asgName)
+			if derr != nil || len(asgs) == 0 {
+				lastErr = derr
 				return false, nil
 			}
+			for _, inst := range asgs[0].Instances {
+				if inst.LifecycleState == autoscalingtypes.LifecycleStateInService {
+					return false, nil
+				}
+			}
+			return true, nil
+		}); err != nil {
+			if lastErr != nil {
+				return fmt.Errorf("timed out waiting for ASG %s to scale to 0 (last describe error: %v): %v", asgName, lastErr, err)
+			}
+			return fmt.Errorf("timed out waiting for ASG %s to scale to 0: %v", asgName, err)
 		}
-		return true, nil
-	}); err != nil {
-		return fmt.Errorf("timed out waiting for ASG %s to scale to 0: %v", asgName, err)
 	}
 
 	// Force-delete stale Node objects so the scheduler/aws-node don't wait on wedged kubelets.
@@ -421,22 +440,35 @@ func TerminateInstances(f *framework.Framework) error {
 		_ = f.K8sResourceManagers.NodeManager().DeleteNode(&nodeList.Items[i], opts)
 	}
 
-	if err := f.CloudServices.AutoScaling().SetDesiredCapacity(context.TODO(), asgName, expected); err != nil {
-		return fmt.Errorf("failed to set desired capacity back to %d on %s: %v", expected, asgName, err)
+	// Scale every ASG back to its own original desired capacity, then wait on each.
+	for asgName, desired := range originalDesired {
+		fmt.Printf("scaling ASG %s back to %d\n", asgName, desired)
+		if err := f.CloudServices.AutoScaling().SetDesiredCapacity(context.TODO(), asgName, desired); err != nil {
+			return fmt.Errorf("failed to set desired capacity back to %d on %s: %v", desired, asgName, err)
+		}
 	}
 
-	// Wait until ASG reports `expected` instances InService.
-	return wait.PollUntilContextTimeout(context.TODO(), 10*time.Second, 8*time.Minute, true, func(ctx context.Context) (bool, error) {
-		asgs, derr := f.CloudServices.AutoScaling().DescribeAutoScalingGroup(ctx, asgName)
-		if derr != nil || len(asgs) == 0 {
-			return false, nil
-		}
-		inService := int32(0)
-		for _, inst := range asgs[0].Instances {
-			if inst.LifecycleState == "InService" {
-				inService++
+	for asgName, desired := range originalDesired {
+		var lastErr error
+		if err := wait.PollUntilContextTimeout(context.TODO(), 10*time.Second, 8*time.Minute, true, func(ctx context.Context) (bool, error) {
+			asgs, derr := f.CloudServices.AutoScaling().DescribeAutoScalingGroup(ctx, asgName)
+			if derr != nil || len(asgs) == 0 {
+				lastErr = derr
+				return false, nil
 			}
+			inService := int32(0)
+			for _, inst := range asgs[0].Instances {
+				if inst.LifecycleState == autoscalingtypes.LifecycleStateInService {
+					inService++
+				}
+			}
+			return inService >= desired, nil
+		}); err != nil {
+			if lastErr != nil {
+				return fmt.Errorf("timed out waiting for ASG %s to return to %d InService instances (last describe error: %v): %v", asgName, desired, lastErr, err)
+			}
+			return fmt.Errorf("timed out waiting for ASG %s to return to %d InService instances: %v", asgName, desired, err)
 		}
-		return inService >= expected, nil
-	})
+	}
+	return nil
 }
