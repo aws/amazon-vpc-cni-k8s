@@ -126,10 +126,16 @@ var _ = BeforeSuite(func() {
 		rtAssociationID, err := f.CloudServices.EC2().AssociateRouteTableToSubnet(context.TODO(), clusterVPCConfig.PublicRouteTableID, subnetID)
 		Expect(err).ToNot(HaveOccurred())
 
+		// Include the cluster security group alongside the custom-networking SG. The
+		// cluster SG carries the "Source: Self" ingress rule the EKS control plane
+		// enforces, so secondary-ENI pods can reach the API server. Without it, a
+		// recycled-node pod that needs the API server at startup (e.g. metrics-server)
+		// has its SYN dropped at the control plane and CrashLoops, even though the
+		// custom-networking SG is fully open.
 		eniConfigBuilder := manifest.NewENIConfigBuilder().
 			Name(az).
 			SubnetID(subnetID).
-			SecurityGroup([]string{customNetworkingSGID})
+			SecurityGroup([]string{clusterSGID, customNetworkingSGID})
 		eniConfig, err := eniConfigBuilder.Build()
 		Expect(err).ToNot(HaveOccurred())
 
