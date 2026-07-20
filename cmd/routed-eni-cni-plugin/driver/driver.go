@@ -135,28 +135,26 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	}
 
 	hostHardwareAddr := createVethContext.hostMACAddr
-	{
-		// The container end only has carrier when both veth ends are up, and the
-		// IPv6 DAD wait below needs carrier. Bring the host end up now; net.FlagUp
-		// at create time is not reliably applied on all platforms. The IPv6
-		// sysctls must be applied before the link comes up: the host end must
-		// never be up while still accepting router advertisements from the pod
-		// side.
-		if err := hostNS.Do(func(ns.NetNS) error {
-			hv, err := createVethContext.netLink.LinkByName(createVethContext.hostVethName)
-			if err != nil {
-				return errors.Wrapf(err, "setup NS network: failed to find host link %q", createVethContext.hostVethName)
-			}
-			if err := setHostVethV6Sysctls(createVethContext.procSys, createVethContext.hostVethName, createVethContext.log); err != nil {
-				return err
-			}
-			if err := createVethContext.netLink.LinkSetUp(hv); err != nil {
-				return errors.Wrapf(err, "setup NS network: failed to set host link %q up", createVethContext.hostVethName)
-			}
-			return nil
-		}); err != nil {
+	// The container end only has carrier when both veth ends are up, and the
+	// IPv6 DAD wait below needs carrier. Bring the host end up now; net.FlagUp
+	// at create time is not reliably applied on all platforms. The IPv6
+	// sysctls must be applied before the link comes up: the host end must
+	// never be up while still accepting router advertisements from the pod
+	// side.
+	if err := hostNS.Do(func(ns.NetNS) error {
+		hv, err := createVethContext.netLink.LinkByName(createVethContext.hostVethName)
+		if err != nil {
+			return errors.Wrapf(err, "setup NS network: failed to find host link %q", createVethContext.hostVethName)
+		}
+		if err := setHostVethV6Sysctls(createVethContext.procSys, createVethContext.hostVethName, createVethContext.log); err != nil {
 			return err
 		}
+		if err := createVethContext.netLink.LinkSetUp(hv); err != nil {
+			return errors.Wrapf(err, "setup NS network: failed to set host link %q up", createVethContext.hostVethName)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	contVeth, err := createVethContext.netLink.LinkByName(createVethContext.contVethName)
@@ -447,8 +445,9 @@ func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netns
 		return nil, errors.Wrap(err, "failed to setup veth network")
 	}
 
-	// The IPv6 sysctls and bring-up of the host end happen inside the pod
-	// namespace closure, before the link comes up.
+	// The host end was created directly in the host namespace by run(); its
+	// IPv6 sysctls and bring-up were applied there (via hostNS.Do) before the
+	// link came up.
 	hostVeth, err := n.netLink.LinkByName(hostVethName)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to find hostVeth %s", hostVethName)

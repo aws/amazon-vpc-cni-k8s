@@ -1779,26 +1779,6 @@ func TestLoadNetConf(t *testing.T) {
 			},
 		},
 		{
-			name: "custom veth peer namespace",
-			args: args{
-				input: map[string]interface{}{
-					"cniVersion": "0.4.0",
-					"name":       "test-cni",
-					"type":       "aws-cni",
-				},
-				expectConf: &NetConf{
-					NetConf: types.NetConf{
-						CNIVersion: "0.4.0",
-						Name:       "test-cni",
-						Type:       "aws-cni",
-					},
-					MTU:                "9001",
-					VethPrefix:         "eni",
-					PodSGEnforcingMode: sgpp.DefaultEnforcingMode,
-				},
-			},
-		},
-		{
 			name: "vethPrefix too long",
 			args: args{
 				input: map[string]interface{}{

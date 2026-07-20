@@ -44,11 +44,10 @@ var testLogCfg = logger.Configuration{
 var testLogger = logger.New(&testLogCfg)
 
 type vethMatcher struct {
-	contVethName       string
-	flags              net.Flags
-	mtu                int
-	checkPeerNamespace bool
-	peerNamespace      interface{}
+	contVethName  string
+	flags         net.Flags
+	mtu           int
+	peerNamespace interface{}
 }
 
 func (m vethMatcher) Matches(x interface{}) bool {
@@ -60,15 +59,12 @@ func (m vethMatcher) Matches(x interface{}) bool {
 	if attrs.Name != m.contVethName || attrs.Flags != m.flags || attrs.MTU != m.mtu {
 		return false
 	}
-	if !m.checkPeerNamespace {
-		return true
-	}
 	netlinkVeth, ok := x.(*netlink.Veth)
 	return ok && reflect.DeepEqual(netlinkVeth.PeerNamespace, m.peerNamespace)
 }
 
 func (m vethMatcher) String() string {
-	return fmt.Sprintf("matches veth with contVethName=%s, flags=%s, mtu=%d", m.contVethName, m.flags, m.mtu)
+	return fmt.Sprintf("matches veth with contVethName=%s, flags=%s, mtu=%d, peerNamespace=%v", m.contVethName, m.flags, m.mtu, m.peerNamespace)
 }
 
 func Test_linuxNetwork_SetupPodNetwork(t *testing.T) {
@@ -3127,9 +3123,10 @@ func Test_createVethPairContext_run(t *testing.T) {
 			}
 			for _, call := range tt.fields.linkAddCalls {
 				netLink.EXPECT().LinkAdd(vethMatcher{
-					contVethName: call.link.Attrs().Name,
-					flags:        call.link.Attrs().Flags,
-					mtu:          call.link.Attrs().MTU}).
+					contVethName:  call.link.Attrs().Name,
+					flags:         call.link.Attrs().Flags,
+					mtu:           call.link.Attrs().MTU,
+					peerNamespace: netlink.NsFd(3)}).
 					Return(call.err)
 			}
 			for _, call := range tt.fields.linkSetupCalls {
@@ -3213,11 +3210,10 @@ func Test_createVethPairContext_runWithPeerNamespace(t *testing.T) {
 
 	netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
 	netLink.EXPECT().LinkAdd(vethMatcher{
-		contVethName:       "eth0",
-		flags:              net.FlagUp,
-		mtu:                9001,
-		checkPeerNamespace: true,
-		peerNamespace:      netlink.NsFd(3),
+		contVethName:  "eth0",
+		flags:         net.FlagUp,
+		mtu:           9001,
+		peerNamespace: netlink.NsFd(3),
 	}).Return(nil)
 	netLink.EXPECT().LinkByName("eni8ea2c11fe35").Return(hostVeth, nil)
 	hostLinkUp := netLink.EXPECT().LinkSetUp(hostVeth).Return(nil)
@@ -3310,11 +3306,10 @@ func Test_createVethPairContext_runWithPeerNamespaceIPv6(t *testing.T) {
 
 	netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
 	netLink.EXPECT().LinkAdd(vethMatcher{
-		contVethName:       "eth0",
-		flags:              net.FlagUp,
-		mtu:                9001,
-		checkPeerNamespace: true,
-		peerNamespace:      netlink.NsFd(3),
+		contVethName:  "eth0",
+		flags:         net.FlagUp,
+		mtu:           9001,
+		peerNamespace: netlink.NsFd(3),
 	}).Return(nil)
 	netLink.EXPECT().LinkByName("eni8ea2c11fe35").Return(hostVeth, nil)
 	hostLinkUp := netLink.EXPECT().LinkSetUp(hostVeth).Return(nil)
@@ -3388,44 +3383,82 @@ func Test_createVethPairContext_runWithPeerNamespaceIPv6(t *testing.T) {
 }
 
 // The host-side sysctls run inside hostNS.Do before the link comes up; a real
-// failure there must fail the ADD.
+// failure in any of them must fail the ADD.
 func Test_createVethPairContext_runHostSysctlFailure(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	hostVeth := &netlink.Veth{
-		LinkAttrs: netlink.LinkAttrs{
-			Name:  "eni8ea2c11fe35",
-			Index: 9,
+	tests := []struct {
+		name    string
+		failKey string
+		wantErr string
+	}{
+		{
+			name:    "accept_ra fails",
+			failKey: "net/ipv6/conf/eni8ea2c11fe35/accept_ra",
+			wantErr: "failed to disable IPv6 router advertisements: some error",
+		},
+		{
+			name:    "accept_redirects fails",
+			failKey: "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
+			wantErr: "failed to disable IPv6 ICMP redirects: some error",
+		},
+		{
+			name:    "forwarding fails",
+			failKey: "net/ipv6/conf/eni8ea2c11fe35/forwarding",
+			wantErr: "failed to disable IPv6 forwarding: some error",
 		},
 	}
-	netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
-	netLink.EXPECT().LinkAdd(gomock.Any()).Return(nil)
-	netLink.EXPECT().LinkByName("eni8ea2c11fe35").Return(hostVeth, nil)
-
-	procSys := mock_procsyswrapper.NewMockProcSys(ctrl)
-	procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_ra", "0").Return(errors.New("some error"))
-
-	hostNS := mock_ns.NewMockNetNS(ctrl)
-	hostNS.EXPECT().Fd().Return(uintptr(3))
-	hostNS.EXPECT().Do(gomock.Any()).DoAndReturn(func(toRun func(ns.NetNS) error) error {
-		return toRun(nil)
-	})
-
-	createVethContext := &createVethPairContext{
-		contVethName: "eth0",
-		hostVethName: "eni8ea2c11fe35",
-		ipAddr: &net.IPNet{
-			IP:   net.ParseIP("192.168.120.1"),
-			Mask: net.CIDRMask(32, 32),
-		},
-		mtu:     9001,
-		netLink: netLink,
-		procSys: procSys,
-		log:     testLogger,
+	sysctls := []struct {
+		key   string
+		value string
+	}{
+		{"net/ipv6/conf/eni8ea2c11fe35/accept_ra", "0"},
+		{"net/ipv6/conf/eni8ea2c11fe35/accept_redirects", "1"},
+		{"net/ipv6/conf/eni8ea2c11fe35/forwarding", "0"},
 	}
-	assert.EqualError(t, createVethContext.run(hostNS),
-		"failed to disable IPv6 router advertisements: some error")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			hostVeth := &netlink.Veth{
+				LinkAttrs: netlink.LinkAttrs{
+					Name:  "eni8ea2c11fe35",
+					Index: 9,
+				},
+			}
+			netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
+			netLink.EXPECT().LinkAdd(gomock.Any()).Return(nil)
+			netLink.EXPECT().LinkByName("eni8ea2c11fe35").Return(hostVeth, nil)
+
+			procSys := mock_procsyswrapper.NewMockProcSys(ctrl)
+			for _, sc := range sysctls {
+				if sc.key == tt.failKey {
+					procSys.EXPECT().Set(sc.key, sc.value).Return(errors.New("some error"))
+					break
+				}
+				procSys.EXPECT().Set(sc.key, sc.value).Return(nil)
+			}
+
+			hostNS := mock_ns.NewMockNetNS(ctrl)
+			hostNS.EXPECT().Fd().Return(uintptr(3))
+			hostNS.EXPECT().Do(gomock.Any()).DoAndReturn(func(toRun func(ns.NetNS) error) error {
+				return toRun(nil)
+			})
+
+			createVethContext := &createVethPairContext{
+				contVethName: "eth0",
+				hostVethName: "eni8ea2c11fe35",
+				ipAddr: &net.IPNet{
+					IP:   net.ParseIP("192.168.120.1"),
+					Mask: net.CIDRMask(32, 32),
+				},
+				mtu:     9001,
+				netLink: netLink,
+				procSys: procSys,
+				log:     testLogger,
+			}
+			assert.EqualError(t, createVethContext.run(hostNS), tt.wantErr)
+		})
+	}
 }
 
 // On kernels without IPv6 the sysctl files do not exist; the ENOENT must be
