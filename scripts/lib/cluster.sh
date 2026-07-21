@@ -89,16 +89,9 @@ function up-kops-cluster {
         echo -e "\nSSH keys are already in place!"
     fi
 
-    # Ubuntu 22.04: kops 1.34 installs containerd 2.1.x, whose dynamically-linked
-    # release binary is "built with glibc 2.35 (Ubuntu 22.04)" and imports GLIBC_2.32/
-    # GLIBC_2.34 symbols. Ubuntu 20.04 only ships glibc 2.31, so containerd fails to
-    # exec ("version `GLIBC_2.32' not found"), kubelet can't reach the CRI socket, no
-    # control-plane apiserver comes up, and `kops validate cluster` never succeeds.
-    # 22.04 ships glibc 2.35 and satisfies it. The original 20.04 pin (#2103) worked
-    # around a veth MAC address change on 22.04's newer kernel/udev that left the CNI's
-    # static ARP entry for the gateway stale and broke pod egress; that is fixed in the
-    # CNI itself by #3354 (assigns the host-side veth MAC so udev's MACAddressPolicy
-    # leaves it untouched), so the 20.04 pin is no longer required.
+    # Ubuntu 22.04 (glibc 2.35): kops installs containerd 2.1.x, which links against
+    # glibc 2.35 and cannot exec on 20.04's glibc 2.31. The prior 20.04 pin (#2103) is
+    # obsolete since #3354 fixed the host-veth MAC/ARP regression on newer kernels.
     $KOPS_BIN create cluster \
     --cloud aws \
     --zones ${AWS_DEFAULT_REGION}a,${AWS_DEFAULT_REGION}b \

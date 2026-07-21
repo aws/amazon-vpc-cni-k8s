@@ -37,11 +37,9 @@ function run_kops_conformance() {
   TEST_START=$SECONDS
   TEST_RESULT=success
 
-  # Scope to [sig-network] Conformance: this is the CNI's datapath (pod-to-pod, Services,
-  # DNS, NetworkPolicy, EndpointSlice, etc.), not the whole ~555-spec Kubernetes conformance
-  # suite. Running the full suite took >120m and tripped the ginkgo timeout without testing
-  # anything CNI-specific beyond these specs. All [sig-network] Conformance specs are
-  # parallel-safe (there are no [Serial] ones), so a single pass suffices.
+  # Scope to [sig-network] Conformance: the CNI's datapath (pod-to-pod, Services, DNS,
+  # NetworkPolicy). The full suite exceeds the 120m timeout without adding CNI-relevant
+  # coverage. These specs are all parallel-safe, so a single pass suffices.
   /tmp/e2e.test --ginkgo.focus="\[sig-network\].*\[Conformance\]" --ginkgo.timeout=120m --kubeconfig=$KUBECONFIG --ginkgo.v --ginkgo.trace --ginkgo.flake-attempts 8 \
     --ginkgo.skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]|\[Serial\]" || TEST_RESULT=fail
 
