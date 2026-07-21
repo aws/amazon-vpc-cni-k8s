@@ -108,3 +108,18 @@ The aws-network-policy-agent port to bind to for health probes
 {{- define "aws-vpc-cni.nodeAgentHealthProbeBindAddr" -}}
 {{- printf ":%s" .Values.nodeAgent.healthProbeBindAddr }}
 {{- end -}}
+
+{{/*
+Render an aws-eks-nodeagent probe spec, defaulting `httpGet.port` to
+`.Values.nodeAgent.healthProbeBindAddr` when the user has not set it explicitly.
+Expects a dict with keys:
+  probe: the probe value from .Values.nodeAgent.{liveness,readiness,startup}Probe
+  port:  the string port to default to (typically .Values.nodeAgent.healthProbeBindAddr)
+*/}}
+{{- define "aws-vpc-cni.nodeAgentProbe" -}}
+{{- $probe := deepCopy .probe -}}
+{{- if and (hasKey $probe "httpGet") (not (hasKey $probe.httpGet "port")) -}}
+{{- $_ := set $probe.httpGet "port" (int .port) -}}
+{{- end -}}
+{{- toYaml $probe -}}
+{{- end -}}
