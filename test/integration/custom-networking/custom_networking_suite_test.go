@@ -204,11 +204,12 @@ var _ = BeforeSuite(func() {
 })
 
 var _ = AfterSuite(func() {
-	By("deleting test namespace")
-	f.K8sResourceManagers.NamespaceManager().
-		DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
-
 	var errs prometheus.MultiError
+
+	By("deleting test namespace")
+	errs.Append(f.K8sResourceManagers.NamespaceManager().
+		DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace))
+
 	for _, eniConfig := range eniConfigList {
 		By("deleting ENIConfig")
 		errs.Append(f.K8sResourceManagers.CustomResourceManager().DeleteResource(eniConfig))
@@ -235,21 +236,26 @@ var _ = AfterSuite(func() {
 	_ = f.CloudServices.EC2().RevokeSecurityGroupIngress(context.TODO(), clusterSGID, "-1",
 		-1, -1, customNetworkingSGID, true)
 
-	By("deleting security group")
-	errs.Append(f.CloudServices.EC2().DeleteSecurityGroup(context.TODO(), customNetworkingSGID))
-
+	// Run every cleanup step regardless of earlier failures and aggregate errors:
+	// leaking a subnet or CIDR pins the VPC's CloudFormation stack. Subnets go first
+	// (their bounded polls absorb the CNI's async ENI drain), then the security
+	// group, whose delete is unblocked once the ENIs are gone.
 	for _, associationID := range customNetworkingRTAssociationIDs {
 		By(fmt.Sprintf("disassociating route table association %s", associationID))
-		errs.Append(f.CloudServices.EC2().DisassociateRouteTable(context.TODO(), associationID))
+		errs.Append(common.EnsureRouteTableDisassociated(f, associationID))
 	}
 
 	for _, subnet := range customNetworkingSubnetIDList {
 		By(fmt.Sprintf("deleting the subnet %s", subnet))
-		errs.Append(f.CloudServices.EC2().DeleteSubnet(context.TODO(), subnet))
+		errs.Append(common.EnsureSubnetDeleted(f, subnet))
 	}
 
-	By("disassociating the CIDR range to the VPC")
-	errs.Append(f.CloudServices.EC2().DisAssociateVPCCIDRBlock(context.TODO(), cidrBlockAssociationID))
+	By("deleting security group")
+	errs.Append(common.EnsureSecurityGroupDeleted(f, customNetworkingSGID))
 
-	Expect(errs.MaybeUnwrap()).ToNot(HaveOccurred())
+	By("disassociating the CIDR range to the VPC")
+	errs.Append(common.EnsureVPCCIDRDisassociated(f, cidrBlockAssociationID, cidrRange.String()))
+
+	// Fail the suite on a cleanup error rather than swallowing it, so leaks surface in CI.
+	Expect(errs.MaybeUnwrap()).ToNot(HaveOccurred(), "cleanup operations failed")
 })

@@ -17,7 +17,12 @@ addons:
   - name: coredns
     configurationValues: "{\"podDisruptionBudget\": {\"enabled\": false}}"
   - name: metrics-server
-    configurationValues: "{\"podDisruptionBudget\": {\"enabled\": false}}"
+    # hostNetwork pins metrics-server to node-primary IPs. The EKS apiserver allows
+    # proxying only to recognized VPC CIDRs, and recognizing the 100.64.0.0/16 CIDR the
+    # tests associate at runtime can take hours ("Address is not allowed" until then;
+    # see https://repost.aws/knowledge-center/eks-multiple-cidr-ranges). An unreachable
+    # metrics.k8s.io APIService stalls all namespace deletion mid-test.
+    configurationValues: "{\"podDisruptionBudget\": {\"enabled\": false}, \"hostNetwork\": {\"enabled\": true}}"
 
 iam:
    serviceRoleARN: "ROLE_ARN_PLACEHOLDER"
