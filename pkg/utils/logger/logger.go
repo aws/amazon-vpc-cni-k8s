@@ -14,8 +14,13 @@
 // Package logger is the CNI Logger interface, using zap
 package logger
 
-// Log is global variable so that log functions can be directly accessed
-var log Logger
+import "sync"
+
+var (
+	// logInstance is the process-wide singleton logger.
+	logInstance Logger
+	logOnce     sync.Once
+)
 
 // Fields Type to pass when we want to call WithFields for structured logging
 type Fields map[string]interface{}
@@ -45,19 +50,23 @@ type Logger interface {
 	WithFields(keyValues Fields) Logger
 }
 
-// Get returns an default instance of the zap logger
+// Get returns the process-wide singleton logger, initializing it on the first call.
+// Safe for concurrent use.
 func Get() Logger {
-	if log == nil {
+	logOnce.Do(func() {
 		logConfig := LoadLogConfig()
-		log = New(logConfig)
-		log.Info("Initialized new logger as an existing instance was not found")
-	}
-	return log
+		logInstance = logConfig.newZapLogger()
+		logInstance.Info("Constructed new logger instance")
+	})
+	return logInstance
 }
 
-// New logger initializes logger
+// New creates a logger with the given configuration and returns it.
+// It does not replace the singleton returned by Get; use Get for the shared
+// process logger. New is intended for short-lived processes (CNI plugins) that
+// need an independently configured logger.
 func New(inputLogConfig *Configuration) Logger {
-	log = inputLogConfig.newZapLogger()
-	log.Info("Constructed new logger instance")
-	return log
+	l := inputLogConfig.newZapLogger()
+	l.Info("Constructed new logger instance")
+	return l
 }
