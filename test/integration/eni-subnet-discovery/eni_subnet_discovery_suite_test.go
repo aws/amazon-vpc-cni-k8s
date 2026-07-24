@@ -214,8 +214,8 @@ var _ = BeforeSuite(func() {
 	k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
 		utils.AwsNodeName, map[string]string{"WARM_ENI_TARGET": "0"})
 
-	By("sleeping to allow CNI Plugin to delete unused ENIs")
-	time.Sleep(time.Second * 90)
+	By("waiting for the CNI to delete unused ENIs")
+	waitForSecondaryENIsDrained()
 
 	createdSubnet = subnetID
 })
