@@ -837,7 +837,7 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 
 	var ec2ip6s []ec2types.NetworkInterfaceIpv6Address
 	var subnetV6Cidr string
-	if cache.v6Enabled {
+	if ipv6Available {
 		// For IPv6 ENIs, we have to return the error if Subnet is not discovered
 		v6cidr, err := cache.imds.GetSubnetIPv6CIDRBlocks(ctx, eniMAC)
 		if err != nil {
