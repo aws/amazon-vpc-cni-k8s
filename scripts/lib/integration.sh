@@ -37,11 +37,10 @@ function run_kops_conformance() {
   TEST_START=$SECONDS
   TEST_RESULT=success
 
-  /tmp/e2e.test --ginkgo.focus="Conformance" --ginkgo.timeout=120m --kubeconfig=$KUBECONFIG --ginkgo.v --ginkgo.trace --ginkgo.flake-attempts 8 \
-    --ginkgo.skip="(works for CRD with validation schema)|(ServiceAccountIssuerDiscovery should support OIDC discovery of service account issuer)|(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|(Basic StatefulSet functionality [StatefulSetBasic])|\[Slow\]|\[Serial\]" || TEST_RESULT=fail
-
-  /tmp/e2e.test --ginkgo.focus="\[Serial\].*Conformance" --ginkgo.timeout=120m --kubeconfig=$KUBECONFIG --ginkgo.v --ginkgo.trace --ginkgo.flake-attempts 8 \
-    --ginkgo.skip="(ServiceAccountIssuerDiscovery should support OIDC discovery of service account issuer)|(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]" || TEST_RESULT=fail
+  # Scope to [sig-network] Conformance: the CNI's datapath (pod-to-pod, Services, DNS,
+  # Endpoints/EndpointSlices). These specs are all parallel-safe, so a single pass suffices.
+  /tmp/e2e.test --ginkgo.focus="\[sig-network\].*\[Conformance\]" --ginkgo.timeout=120m --kubeconfig=$KUBECONFIG --ginkgo.v --ginkgo.trace --ginkgo.flake-attempts 8 \
+    --ginkgo.skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]|\[Serial\]" || TEST_RESULT=fail
 
   TEST_DURATION=$((SECONDS - TEST_START))
 

@@ -78,7 +78,7 @@ function up-kops-cluster {
     mv kops-linux-amd64 $KOPS_BIN
     CLUSTER_NAME=kops-cni-test-cluster-${TEST_ID}.k8s.local
     export KOPS_STATE_STORE=s3://${KOPS_S3_BUCKET}
-    HOST_IMAGE_SSM_PARAMETER="ssm:/aws/service/canonical/ubuntu/server/20.04/stable/current/amd64/hvm/ebs-gp2/ami-id"
+    HOST_IMAGE_SSM_PARAMETER="ssm:/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id"
 
     SSH_KEYS=~/.ssh/devopsinuse
     if [ ! -f "$SSH_KEYS" ]
@@ -89,7 +89,9 @@ function up-kops-cluster {
         echo -e "\nSSH keys are already in place!"
     fi
 
-    # Using Ubuntu 20.04 because of https://github.com/aws/amazon-vpc-cni-k8s/issues/2103
+    # Ubuntu 22.04 (glibc 2.35): kops installs containerd 2.1.x, which links against
+    # glibc 2.35 and cannot exec on 20.04's glibc 2.31. The prior 20.04 pin (#2103) is
+    # obsolete since #3354 fixed the host-veth MAC/ARP regression on newer kernels.
     $KOPS_BIN create cluster \
     --cloud aws \
     --zones ${AWS_DEFAULT_REGION}a,${AWS_DEFAULT_REGION}b \
