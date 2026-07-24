@@ -32,6 +32,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 func TestServer_VersionCheck(t *testing.T) {
@@ -706,5 +709,111 @@ func TestRunRPCHandler_CreatesSocketDirectory(t *testing.T) {
 		default:
 			time.Sleep(10 * time.Millisecond)
 		}
+	}
+}
+
+func TestServer_DelNetwork_PodENI_InvalidAnnotation(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		awsClient:       m.awsutils,
+		k8sClient:       m.k8sClient,
+		enablePodENI:    true,
+		enableIPv4:      true,
+		networkClient:   m.network,
+		dataStoreAccess: datastore.InitializeDataStores([]bool{false}, "test", false, log),
+	}
+
+	tests := []struct {
+		name       string
+		podName    string
+		podUID     string
+		requestUID string
+		annotation string
+		wantErr    bool
+		wantMsg    string
+	}{
+		{
+			name:       "malformed JSON annotation returns error",
+			podName:    "test-pod-malformed-json",
+			podUID:     "test-uid",
+			requestUID: "test-uid",
+			annotation: "not-valid-json",
+			wantErr:    true,
+		},
+		{
+			name:       "empty JSON array annotation returns error",
+			podName:    "test-pod-empty-array",
+			podUID:     "test-uid",
+			requestUID: "test-uid",
+			annotation: "[]",
+			wantErr:    true,
+			wantMsg:    "parsed PodENIData is empty",
+		},
+		{
+			name:       "pod UID mismatch returns error",
+			podName:    "test-pod-uid-mismatch",
+			podUID:     "actual-uid",
+			requestUID: "wrong-uid",
+			annotation: `[{"eniId":"eni-abc","ifAddress":"01:23:45:67:89:ab","privateIp":"10.0.0.1","vlanID":1,"subnetCidr":"10.0.0.0/24"}]`,
+			wantErr:    true,
+			wantMsg:    "pod UID mismatch",
+		},
+		{
+			name:       "valid annotation succeeds",
+			podName:    "test-pod-valid",
+			podUID:     "test-uid",
+			requestUID: "test-uid",
+			annotation: `[{"eniId":"eni-abc","ifAddress":"01:23:45:67:89:ab","privateIp":"10.0.0.1","vlanID":1,"subnetCidr":"10.0.0.0/24"}]`,
+			wantErr:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a pod with the given annotation
+			pod := corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      tt.podName,
+					Namespace: "default",
+					UID:       types.UID(tt.podUID),
+					Annotations: map[string]string{
+						"vpc.amazonaws.com/pod-eni": tt.annotation,
+					},
+				},
+			}
+			err := m.k8sClient.Create(context.TODO(), &pod)
+			require.NoError(t, err)
+
+			rpcServer := server{
+				version:     "1.0.0",
+				ipamContext: mockContext,
+			}
+
+			delReq := &pb.DelNetworkRequest{
+				ClientVersion:    "1.0.0",
+				K8S_POD_NAME:     pod.Name,
+				K8S_POD_NAMESPACE: pod.Namespace,
+				K8S_POD_UID:      tt.requestUID,
+				NetworkName:      "net0",
+				ContainerID:      "container-id",
+				IfName:           "eth0",
+				Reason:           "PodDeleted",
+			}
+
+			resp, err := rpcServer.DelNetwork(context.TODO(), delReq)
+
+			if tt.wantErr {
+				assert.False(t, resp.Success)
+				assert.Error(t, err)
+				if tt.wantMsg != "" {
+					assert.Contains(t, err.Error(), tt.wantMsg)
+				}
+			} else {
+				assert.True(t, resp.Success)
+				assert.NoError(t, err)
+			}
+		})
 	}
 }
