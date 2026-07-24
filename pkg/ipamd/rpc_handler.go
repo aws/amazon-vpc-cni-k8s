@@ -403,8 +403,14 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 					// Parse JSON data
 					var podENIData []PodENIData
 					err := json.Unmarshal([]byte(val), &podENIData)
-					if err != nil || len(podENIData) < 1 {
+					if err != nil {
 						log.Errorf("Failed to unmarshal PodENIData JSON: %v", err)
+						return &rpc.DelNetworkReply{Success: false}, err
+					}
+					if len(podENIData) < 1 {
+						err = fmt.Errorf("parsed PodENIData is empty")
+						log.Errorf("Failed to parse PodENIData: %v", err)
+						return &rpc.DelNetworkReply{Success: false}, err
 					}
 					return &rpc.DelNetworkReply{
 						Success:              true,
