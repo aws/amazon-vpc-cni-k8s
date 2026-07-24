@@ -15,6 +15,7 @@ package resources
 
 import (
 	"context"
+	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 
@@ -84,7 +85,9 @@ func (d *defaultNodeManager) DeleteNode(node *v1.Node, opts ...client.DeleteOpti
 }
 
 func (d *defaultNodeManager) WaitTillNodesReady(nodeLabelKey string, nodeLabelVal string, asgSize int) error {
-	return wait.PollImmediateUntil(utils.PollIntervalLong, func() (done bool, err error) {
+	// Bounded: an ASG that never converges to asgSize Ready nodes must fail the
+	// suite, not hang it until the CI job timeout.
+	return wait.PollUntilContextTimeout(context.Background(), utils.PollIntervalLong, 15*time.Minute, true, func(ctx context.Context) (bool, error) {
 		nodeList, err := d.GetNodes(nodeLabelKey, nodeLabelVal)
 		if err != nil {
 			return false, err
@@ -100,5 +103,5 @@ func (d *defaultNodeManager) WaitTillNodesReady(nodeLabelKey string, nodeLabelVa
 			}
 		}
 		return true, nil
-	}, context.Background().Done())
+	})
 }

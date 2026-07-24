@@ -69,7 +69,7 @@ func (d *defaultDeploymentManager) DeleteAndWaitTillDeploymentIsDeleted(deployme
 		return err
 	}
 	observed := &v1.Deployment{}
-	return wait.PollImmediateUntil(utils.PollIntervalShort, func() (bool, error) {
+	return wait.PollUntilContextCancel(ctx, utils.PollIntervalShort, true, func(ctx context.Context) (bool, error) {
 		if err := d.k8sClient.Get(ctx, utils.NamespacedName(deployment), observed); err != nil {
 			if errors.IsNotFound(err) {
 				return true, nil
@@ -77,7 +77,7 @@ func (d *defaultDeploymentManager) DeleteAndWaitTillDeploymentIsDeleted(deployme
 			return false, err
 		}
 		return false, nil
-	}, ctx.Done())
+	})
 }
 
 func (d *defaultDeploymentManager) UpdateAndWaitTillDeploymentIsReady(deployment *v1.Deployment, timeout time.Duration) error {
@@ -90,6 +90,11 @@ func (d *defaultDeploymentManager) UpdateAndWaitTillDeploymentIsReady(deployment
 		if err != nil {
 			return err
 		}
+		// Carry the freshly-observed resourceVersion onto the object we update.
+		// Without this, RetryOnConflict re-sends the caller's original
+		// resourceVersion on every attempt, so a stale object conflicts forever
+		// and a concurrent writer's conflict is never actually retried.
+		deployment.ResourceVersion = observed.ResourceVersion
 		return d.k8sClient.Update(ctx, deployment)
 	})
 
@@ -116,7 +121,7 @@ func (d *defaultDeploymentManager) GetDeployment(name, namespace string) (*v1.De
 func (d *defaultDeploymentManager) WaitTillDeploymentReady(deployment *v1.Deployment, timeout time.Duration) (*v1.Deployment, error) {
 	ctx := context.Background()
 	observed := &v1.Deployment{}
-	return observed, wait.PollImmediate(utils.PollIntervalShort, timeout, func() (bool, error) {
+	return observed, wait.PollUntilContextTimeout(ctx, utils.PollIntervalShort, timeout, true, func(ctx context.Context) (bool, error) {
 		if err := d.k8sClient.Get(ctx, utils.NamespacedName(deployment), observed); err != nil {
 			return false, err
 		}
@@ -132,7 +137,7 @@ func (d *defaultDeploymentManager) WaitTillDeploymentReady(deployment *v1.Deploy
 
 func (d *defaultDeploymentManager) WaitUntilDeploymentReady(ctx context.Context, dp *v1.Deployment) (*v1.Deployment, error) {
 	observedDP := &v1.Deployment{}
-	return observedDP, wait.PollImmediateUntil(utils.PollIntervalShort, func() (bool, error) {
+	return observedDP, wait.PollUntilContextCancel(ctx, utils.PollIntervalShort, true, func(ctx context.Context) (bool, error) {
 		if err := d.k8sClient.Get(ctx, utils.NamespacedName(dp), observedDP); err != nil {
 			return false, err
 		}
@@ -143,12 +148,12 @@ func (d *defaultDeploymentManager) WaitUntilDeploymentReady(ctx context.Context,
 			return true, nil
 		}
 		return false, nil
-	}, ctx.Done())
+	})
 }
 
 func (d *defaultDeploymentManager) WaitUntilDeploymentDeleted(ctx context.Context, dp *v1.Deployment) error {
 	observedDP := &v1.Deployment{}
-	return wait.PollImmediateUntil(utils.PollIntervalShort, func() (bool, error) {
+	return wait.PollUntilContextCancel(ctx, utils.PollIntervalShort, true, func(ctx context.Context) (bool, error) {
 		if err := d.k8sClient.Get(ctx, utils.NamespacedName(dp), observedDP); err != nil {
 			if errors.IsNotFound(err) {
 				return true, nil
@@ -156,7 +161,7 @@ func (d *defaultDeploymentManager) WaitUntilDeploymentDeleted(ctx context.Contex
 			return false, err
 		}
 		return false, nil
-	}, ctx.Done())
+	})
 }
 
 func NewDefaultDeploymentManager(k8sClient client.Client) DeploymentManager {

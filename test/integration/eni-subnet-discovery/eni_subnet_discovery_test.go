@@ -83,8 +83,8 @@ var _ = Describe("ENI Subnet Selection Test", func() {
 			err := f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(deployment)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("sleeping to allow CNI Plugin to delete unused ENIs")
-			time.Sleep(time.Second * 90)
+			By("waiting for the CNI to delete unused ENIs")
+			waitForSecondaryENIsDrained()
 
 			newEniSubnetIds = nil
 		})
@@ -313,6 +313,24 @@ func podsPerENI(instanceType string) int {
 func computeReplicasForBothSubnets(instanceType string) int {
 	perENI := podsPerENI(instanceType)
 	return (3*perENI + 1) / 2 // ceil(1.5 * perENI)
+}
+
+// waitForSecondaryENIsDrained polls until the primary instance has no secondary
+// ENIs left, i.e. the CNI has finished detaching warm ENIs after WARM_ENI_TARGET=0.
+func waitForSecondaryENIsDrained() {
+	Eventually(func() int {
+		instance, err := f.CloudServices.EC2().DescribeInstance(context.TODO(), *primaryInstance.InstanceId)
+		if err != nil {
+			return -1
+		}
+		secondary := 0
+		for _, nwInterface := range instance.NetworkInterfaces {
+			if !common.IsPrimaryENI(nwInterface, instance.PrivateIpAddress) {
+				secondary++
+			}
+		}
+		return secondary
+	}, 5*time.Minute, 10*time.Second).Should(BeZero(), "CNI should detach all secondary ENIs")
 }
 
 func checkSecondaryENISubnets(expectNewCidr bool) {
