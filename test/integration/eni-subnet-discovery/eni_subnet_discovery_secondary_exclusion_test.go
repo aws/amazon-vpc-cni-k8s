@@ -107,7 +107,7 @@ var _ = Describe("Secondary ENI Exclusion Tests", func() {
 
 				deploymentBuilder := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 					Container(container).
-					Replicas(15). // Enough to force secondary ENI creation
+					Replicas(computeReplicasForBothSubnets(string(primaryInstance.InstanceType))). // Spread pods across primary + secondary subnets
 					PodLabel(secondaryExclusionPodLabelKey, secondaryExclusionPodLabelVal).
 					NodeName(*primaryInstance.PrivateDnsName).
 					Build()
@@ -194,7 +194,9 @@ var _ = Describe("Secondary ENI Exclusion Tests", func() {
 				validateSecondaryENIExclusionInDatastore()
 
 				By("Scaling deployment to test new pod allocation behavior")
-				scaledDeployment := scaleDeployment(initialDeployment, 25) // Add more pods
+				// Scale above the initial both-subnets count so new pods are created; after the
+				// secondary subnet is excluded these new pods must land in the primary subnet.
+				scaledDeployment := scaleDeployment(initialDeployment, computeReplicasForBothSubnets(string(primaryInstance.InstanceType))+2) // Add more pods
 
 				By("Waiting for new pods to be scheduled")
 				time.Sleep(45 * time.Second)
@@ -219,7 +221,7 @@ var _ = Describe("Secondary ENI Exclusion Tests", func() {
 				time.Sleep(30 * time.Second)
 
 				By("Scaling deployment to test prefix delegation with secondary exclusion")
-				scaledDeployment := scaleDeployment(initialDeployment, 20)
+				scaledDeployment := scaleDeployment(initialDeployment, computeReplicasForBothSubnets(string(primaryInstance.InstanceType))+2)
 
 				By("Verifying new pods use primary subnet with prefix delegation")
 				validateNewPodsAvoidExcludedSecondaryENI(scaledDeployment, primarySubnetCIDR, secondarySubnetCIDR)
@@ -299,7 +301,7 @@ var _ = Describe("Secondary ENI Exclusion Tests", func() {
 
 				deploymentBuilder := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 					Container(container).
-					Replicas(15). // Enough to force secondary ENI creation
+					Replicas(computeReplicasForBothSubnets(string(primaryInstance.InstanceType))). // Overflow onto a secondary ENI so the gating (untagged subnet skipped) is actually exercised
 					PodLabel(secondaryExclusionPodLabelKey, "no-cni-tag-gating").
 					NodeName(*primaryInstance.PrivateDnsName).
 					Build()
@@ -453,16 +455,25 @@ var _ = Describe("Secondary ENI Exclusion Tests", func() {
 					GinkgoWriter.Printf("Warning: Failed to exclude test subnet: %v\n", err)
 				}
 
-				By("Resetting WARM_ENI_TARGET to 0 to release ENIs")
+				// Force the CNI to reclaim the now-unused ENIs in the excluded test subnet.
+				// WARM_ENI_TARGET=0 alone does not: excluding the subnet (cni=0) drops its IPs
+				// from the warm pool, which shuts the ENI-reclaim path. Setting WARM_IP_TARGET
+				// keeps that path always evaluating extra ENIs for deletion.
+				By("Forcing ENI reclaim so the test subnet's ENIs are released")
 				k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
-					utils.AwsNodeName, map[string]string{"WARM_ENI_TARGET": "0"})
-				time.Sleep(90 * time.Second)
+					utils.AwsNodeName, map[string]string{"WARM_IP_TARGET": "2", "WARM_ENI_TARGET": "0"})
 
-				By("Deleting test subnet")
-				err = f.CloudServices.EC2().DeleteSubnet(context.TODO(), secondarySubnetWithOldTagID)
-				if err != nil {
-					GinkgoWriter.Printf("Warning: Failed to delete subnet %s: %v\n", secondarySubnetWithOldTagID, err)
-				}
+				// Delete only once the ENIs are gone, retrying to avoid a DependencyViolation
+				// that would leak the subnet into later specs.
+				By("Deleting test subnet once its ENIs are released")
+				Eventually(func() error {
+					return f.CloudServices.EC2().DeleteSubnet(context.TODO(), secondarySubnetWithOldTagID)
+				}, 3*time.Minute, 20*time.Second).Should(Succeed(), "test subnet should delete once its ENIs are released")
+
+				// Restore WARM_IP_TARGET to its prior (unset) state so the next spec starts clean.
+				By("Restoring WARM_IP_TARGET to its prior unset value")
+				k8sUtils.RemoveVarFromDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
+					utils.AwsNodeName, map[string]struct{}{"WARM_IP_TARGET": {}})
 			})
 
 			It("should include subnet with cni=1 even if old cluster tag is present (old prefix is ignored)", func() {
@@ -539,7 +550,7 @@ var _ = Describe("Secondary ENI Exclusion Tests", func() {
 
 				deploymentBuilder := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 					Container(container).
-					Replicas(15).
+					Replicas(computeReplicasForBothSubnets(string(primaryInstance.InstanceType))). // Overflow onto a secondary ENI so cluster-isolation (different-cluster subnet skipped) is actually exercised
 					PodLabel(secondaryExclusionPodLabelKey, "different-cluster-isolation").
 					NodeName(*primaryInstance.PrivateDnsName).
 					Build()
@@ -614,7 +625,7 @@ func validateSecondaryENIExclusionInDatastore() {
 			By(fmt.Sprintf("Checking secondary ENI exclusion in aws-node pod %s", pod.Name))
 
 			// Execute introspection command in the aws-node container
-			stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExecWithContainer(
+			stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExecInContainer(
 				pod.Namespace,
 				pod.Name,
 				"aws-node", // Specify the aws-node container
@@ -713,7 +724,7 @@ func validateExcludedSecondaryENIDeletable() {
 			By(fmt.Sprintf("Checking secondary ENI deletability in aws-node pod %s", pod.Name))
 
 			// Execute introspection command to check ENI status in the aws-node container
-			stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExecWithContainer(
+			stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExecInContainer(
 				pod.Namespace,
 				pod.Name,
 				"aws-node", // Specify the aws-node container
@@ -743,7 +754,7 @@ func validatePrefixCleanupOnExcludedSecondaryENI() {
 			By(fmt.Sprintf("Checking prefix cleanup on secondary ENIs in pod %s", pod.Name))
 
 			// Execute ENI introspection to check prefix allocation in the aws-node container
-			stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExecWithContainer(
+			stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExecInContainer(
 				pod.Namespace,
 				pod.Name,
 				"aws-node", // Specify the aws-node container

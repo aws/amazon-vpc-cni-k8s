@@ -43,7 +43,8 @@ type EC2 interface {
 	DescribeRouteTablesWithVPCID(ctx context.Context, vpcID string) (*ec2.DescribeRouteTablesOutput, error)
 	CreateSecurityGroup(ctx context.Context, groupName string, description string, vpcID string) (*ec2.CreateSecurityGroupOutput, error)
 	DeleteSecurityGroup(ctx context.Context, groupID string) error
-	AssociateRouteTableToSubnet(ctx context.Context, routeTableId string, subnetID string) error
+	AssociateRouteTableToSubnet(ctx context.Context, routeTableId string, subnetID string) (string, error)
+	DisassociateRouteTable(ctx context.Context, associationID string) error
 	CreateKey(ctx context.Context, keyName string) (*ec2.CreateKeyPairOutput, error)
 	DeleteKey(ctx context.Context, keyName string) error
 	DescribeKey(ctx context.Context, keyName string) (*ec2.DescribeKeyPairsOutput, error)
@@ -329,12 +330,22 @@ func (d *defaultEC2) DescribeRouteTables(ctx context.Context, subnetID string) (
 	return d.client.DescribeRouteTables(ctx, describeRouteTableInput)
 }
 
-func (d *defaultEC2) AssociateRouteTableToSubnet(ctx context.Context, routeTableId string, subnetID string) error {
+func (d *defaultEC2) AssociateRouteTableToSubnet(ctx context.Context, routeTableId string, subnetID string) (string, error) {
 	associateRouteTableInput := &ec2.AssociateRouteTableInput{
 		RouteTableId: aws.String(routeTableId),
 		SubnetId:     aws.String(subnetID),
 	}
-	_, err := d.client.AssociateRouteTable(ctx, associateRouteTableInput)
+	output, err := d.client.AssociateRouteTable(ctx, associateRouteTableInput)
+	if err != nil {
+		return "", err
+	}
+	return aws.ToString(output.AssociationId), nil
+}
+
+func (d *defaultEC2) DisassociateRouteTable(ctx context.Context, associationID string) error {
+	_, err := d.client.DisassociateRouteTable(ctx, &ec2.DisassociateRouteTableInput{
+		AssociationId: aws.String(associationID),
+	})
 	return err
 }
 

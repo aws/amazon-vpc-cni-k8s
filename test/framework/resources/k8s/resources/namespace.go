@@ -15,6 +15,7 @@ package resources
 
 import (
 	"context"
+	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 
@@ -24,6 +25,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// namespaceDeleteTimeout bounds namespace finalization so a stuck finalizer (e.g.
+// an unavailable aggregated APIService) fails the caller instead of hanging it.
+const namespaceDeleteTimeout = 5 * time.Minute
 
 type NamespaceManager interface {
 	CreateNamespace(namespace string) error
@@ -69,13 +74,13 @@ func (m *defaultNamespaceManager) DeleteAndWaitTillNamespaceDeleted(namespace st
 	}
 
 	observedNamespace := &v1.Namespace{}
-	return wait.PollImmediateUntil(utils.PollIntervalShort, func() (done bool, err error) {
-		err = m.k8sClient.Get(ctx, utils.NamespacedName(namespaceObj), observedNamespace)
+	return wait.PollUntilContextTimeout(ctx, utils.PollIntervalShort, namespaceDeleteTimeout, true, func(ctx context.Context) (bool, error) {
+		err := m.k8sClient.Get(ctx, utils.NamespacedName(namespaceObj), observedNamespace)
 		if errors.IsNotFound(err) {
 			return true, nil
 		}
 		return false, err
-	}, ctx.Done())
+	})
 }
 
 func (m *defaultNamespaceManager) WaitUntilNamespaceDeleted(ctx context.Context, ns *v1.Namespace) error {

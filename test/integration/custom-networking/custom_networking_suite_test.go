@@ -51,13 +51,14 @@ var (
 	cidrRange              *net.IPNet
 	cidrBlockAssociationID string
 	// Security Group that will be used in ENIConfig
-	customNetworkingSGID         string
-	customNetworkingSGOpenPort   = 8080
-	customNetworkingSubnetIDList []string
-	corednsSGOpenPort            = 53
-	primaryENISGID               string
-	primaryENISGList             []string
-	clusterSGID                  string
+	customNetworkingSGID             string
+	customNetworkingSGOpenPort       = 8080
+	customNetworkingSubnetIDList     []string
+	customNetworkingRTAssociationIDs []string
+	corednsSGOpenPort                = 53
+	primaryENISGID                   string
+	primaryENISGList                 []string
+	clusterSGID                      string
 	// List of ENIConfig per Availability Zone
 	eniConfigList        []*v1alpha1.ENIConfig
 	eniConfigBuilderList []*manifest.ENIConfigBuilder
@@ -168,7 +169,7 @@ var _ = BeforeSuite(func() {
 		subnetID := *createSubnetOutput.Subnet.SubnetId
 
 		By("associating the route table with the newly created subnet")
-		err = f.CloudServices.EC2().AssociateRouteTableToSubnet(context.TODO(), clusterVPCConfig.PublicRouteTableID, subnetID)
+		rtAssociationID, err := f.CloudServices.EC2().AssociateRouteTableToSubnet(context.TODO(), clusterVPCConfig.PublicRouteTableID, subnetID)
 		Expect(err).ToNot(HaveOccurred())
 
 		eniConfigBuilder := manifest.NewENIConfigBuilder().
@@ -180,6 +181,7 @@ var _ = BeforeSuite(func() {
 
 		// For updating/deleting later
 		customNetworkingSubnetIDList = append(customNetworkingSubnetIDList, subnetID)
+		customNetworkingRTAssociationIDs = append(customNetworkingRTAssociationIDs, rtAssociationID)
 		eniConfigBuilderList = append(eniConfigBuilderList, eniConfigBuilder)
 		eniConfigList = append(eniConfigList, eniConfig.DeepCopy())
 
@@ -202,11 +204,12 @@ var _ = BeforeSuite(func() {
 })
 
 var _ = AfterSuite(func() {
-	By("deleting test namespace")
-	f.K8sResourceManagers.NamespaceManager().
-		DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
-
 	var errs prometheus.MultiError
+
+	By("deleting test namespace")
+	errs.Append(f.K8sResourceManagers.NamespaceManager().
+		DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace))
+
 	for _, eniConfig := range eniConfigList {
 		By("deleting ENIConfig")
 		errs.Append(f.K8sResourceManagers.CustomResourceManager().DeleteResource(eniConfig))
@@ -233,16 +236,26 @@ var _ = AfterSuite(func() {
 	_ = f.CloudServices.EC2().RevokeSecurityGroupIngress(context.TODO(), clusterSGID, "-1",
 		-1, -1, customNetworkingSGID, true)
 
-	By("deleting security group")
-	errs.Append(f.CloudServices.EC2().DeleteSecurityGroup(context.TODO(), customNetworkingSGID))
+	// Run every cleanup step regardless of earlier failures and aggregate errors:
+	// leaking a subnet or CIDR pins the VPC's CloudFormation stack. Subnets go first
+	// (their bounded polls absorb the CNI's async ENI drain), then the security
+	// group, whose delete is unblocked once the ENIs are gone.
+	for _, associationID := range customNetworkingRTAssociationIDs {
+		By(fmt.Sprintf("disassociating route table association %s", associationID))
+		errs.Append(common.EnsureRouteTableDisassociated(f, associationID))
+	}
 
 	for _, subnet := range customNetworkingSubnetIDList {
 		By(fmt.Sprintf("deleting the subnet %s", subnet))
-		errs.Append(f.CloudServices.EC2().DeleteSubnet(context.TODO(), subnet))
+		errs.Append(common.EnsureSubnetDeleted(f, subnet))
 	}
 
-	By("disassociating the CIDR range to the VPC")
-	errs.Append(f.CloudServices.EC2().DisAssociateVPCCIDRBlock(context.TODO(), cidrBlockAssociationID))
+	By("deleting security group")
+	errs.Append(common.EnsureSecurityGroupDeleted(f, customNetworkingSGID))
 
-	Expect(errs.MaybeUnwrap()).ToNot(HaveOccurred())
+	By("disassociating the CIDR range to the VPC")
+	errs.Append(common.EnsureVPCCIDRDisassociated(f, cidrBlockAssociationID, cidrRange.String()))
+
+	// Fail the suite on a cleanup error rather than swallowing it, so leaks surface in CI.
+	Expect(errs.MaybeUnwrap()).ToNot(HaveOccurred(), "cleanup operations failed")
 })

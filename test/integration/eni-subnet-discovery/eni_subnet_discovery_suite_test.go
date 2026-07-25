@@ -31,6 +31,7 @@ import (
 	awsUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws/utils"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
+	"github.com/aws/amazon-vpc-cni-k8s/test/integration/common"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
@@ -49,6 +50,7 @@ var (
 	cidrRange              *net.IPNet
 	cidrBlockAssociationID string
 	createdSubnet          string
+	rtAssociationID        string
 	primaryInstance        ec2types.Instance
 	useIPv6                bool
 )
@@ -205,68 +207,54 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	By("associating the route table with the newly created subnet")
-	err = f.CloudServices.EC2().AssociateRouteTableToSubnet(context.TODO(), clusterVPCConfig.PublicRouteTableID, subnetID)
+	rtAssociationID, err = f.CloudServices.EC2().AssociateRouteTableToSubnet(context.TODO(), clusterVPCConfig.PublicRouteTableID, subnetID)
 	Expect(err).ToNot(HaveOccurred())
 
 	By("try detaching all ENIs by setting WARM_ENI_TARGET to 0")
 	k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
 		utils.AwsNodeName, map[string]string{"WARM_ENI_TARGET": "0"})
 
-	By("sleeping to allow CNI Plugin to delete unused ENIs")
-	time.Sleep(time.Second * 90)
+	By("waiting for the CNI to delete unused ENIs")
+	waitForSecondaryENIsDrained()
 
 	createdSubnet = subnetID
 })
 
 var _ = AfterSuite(func() {
-	By("deleting test namespace")
-	_ = f.K8sResourceManagers.NamespaceManager().
-		DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
-
-	By("sleeping to allow CNI Plugin to delete unused ENIs")
-	time.Sleep(time.Second * 90)
-
-	By("by setting WARM_ENI_TARGET to 1")
-	k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
-		utils.AwsNodeName, map[string]string{"WARM_ENI_TARGET": "1"})
-
 	var errs prometheus.MultiError
 
+	// DeferCleanup runs after this body, even if an assertion fails: the restore
+	// cannot mask the aggregated cleanup errors below (its helper asserts
+	// internally), the failed aggregate cannot skip the restore, and it still runs
+	// after the subnet delete so the CNI drains ENIs instead of warming a new one
+	// into the subnet being deleted.
+	DeferCleanup(func() {
+		By("restoring WARM_ENI_TARGET to 1")
+		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
+			utils.AwsNodeName, map[string]string{"WARM_ENI_TARGET": "1"})
+	})
+
+	By("deleting test namespace")
+	errs.Append(f.K8sResourceManagers.NamespaceManager().
+		DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace))
+
+	if rtAssociationID != "" {
+		By(fmt.Sprintf("disassociating route table association %s", rtAssociationID))
+		errs.Append(common.EnsureRouteTableDisassociated(f, rtAssociationID))
+	}
+
+	// WARM_ENI_TARGET stays 0 (set in BeforeSuite) until the subnet is gone; the
+	// bounded delete poll absorbs the ENI drain, no fixed sleep needed.
 	By(fmt.Sprintf("deleting the subnet %s", createdSubnet))
-	if err := f.CloudServices.EC2().DeleteSubnet(context.TODO(), createdSubnet); err != nil {
-		errs.Append(err)
-	}
+	errs.Append(common.EnsureSubnetDeleted(f, createdSubnet))
 
-	// Wait for subnet deletion to complete before trying to disassociate CIDR
-	By("waiting for subnet deletion to complete")
-	time.Sleep(time.Second * 30)
-
-	By("disassociating the CIDR range from the VPC")
 	if cidrBlockAssociationID != "" {
-		// Retry CIDR disassociation a few times in case subnet deletion is still in progress
-		maxRetries := 5
-		for i := 0; i < maxRetries; i++ {
-			if err := f.CloudServices.EC2().DisAssociateVPCCIDRBlock(context.TODO(), cidrBlockAssociationID); err != nil {
-				if i == maxRetries-1 {
-					// Last retry failed, append error
-					errs.Append(err)
-				} else {
-					// Wait and retry
-					By(fmt.Sprintf("CIDR disassociation failed (attempt %d/%d), retrying in 15 seconds", i+1, maxRetries))
-					time.Sleep(time.Second * 15)
-				}
-			} else {
-				// Success, break out of retry loop
-				break
-			}
-		}
+		By("disassociating the CIDR range from the VPC")
+		errs.Append(common.EnsureVPCCIDRDisassociated(f, cidrBlockAssociationID, cidrRange.String()))
 	}
 
-	// Only fail if there were actual errors, not just retry attempts
-	if errs.MaybeUnwrap() != nil {
-		GinkgoWriter.Printf("WARNING: Some cleanup operations failed: %v\n", errs.MaybeUnwrap())
-		// Don't fail the test suite for cleanup issues, just log them
-	}
+	// Fail the suite on a cleanup error rather than swallowing it, so leaks surface in CI.
+	Expect(errs.MaybeUnwrap()).ToNot(HaveOccurred(), "cleanup operations failed")
 })
 
 // staleSubnetTag is applied to all subnets created by this test suite so that

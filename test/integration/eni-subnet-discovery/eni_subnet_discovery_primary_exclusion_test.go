@@ -183,7 +183,7 @@ var _ = Describe("Primary ENI Exclusion Tests", func() {
 				validatePrimaryENIExclusionInDatastore(primaryENIID)
 
 				By("Scaling deployment to force new ENI creation")
-				scaledDeployment := scaleDeployment(initialDeployment, 20) // Force secondary ENI creation
+				scaledDeployment := scaleDeployment(initialDeployment, podsPerENI(string(primaryInstance.InstanceType))) // Scale up; primary subnet is excluded so new pods land on a secondary ENI
 
 				By("Waiting for new pods to be scheduled")
 				time.Sleep(30 * time.Second)
@@ -208,7 +208,7 @@ var _ = Describe("Primary ENI Exclusion Tests", func() {
 				time.Sleep(30 * time.Second)
 
 				By("Scaling deployment to test prefix delegation with exclusion")
-				scaledDeployment := scaleDeployment(initialDeployment, 15)
+				scaledDeployment := scaleDeployment(initialDeployment, podsPerENI(string(primaryInstance.InstanceType)))
 
 				By("Verifying new pods use secondary subnet with prefix delegation")
 				validateNewPodsOnSecondarySubnet(scaledDeployment, secondarySubnetCIDR)

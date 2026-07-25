@@ -44,6 +44,7 @@ var _ = Describe("[CANARY] test service connectivity", func() {
 	// Service front ending the http server deployment
 	var service *v1.Service
 	var serviceType v1.ServiceType
+	var serviceNodePort int32
 	var serviceAnnotation map[string]string
 
 	// Test job that verifies connectivity to the http server
@@ -78,12 +79,22 @@ var _ = Describe("[CANARY] test service connectivity", func() {
 			CreateAndWaitTillDeploymentIsReady(deployment, utils.DefaultDeploymentReadyTimeout)
 		Expect(err).ToNot(HaveOccurred())
 
-		service = manifest.NewHTTPService().
-			ServiceType(serviceType).
-			Name("test-service").
-			Selector(serviceLabelSelectorKey, serviceLabelSelectorVal).
-			Annotations(serviceAnnotation).
-			Build()
+		if serviceType == v1.ServiceTypeClusterIP {
+			service = manifest.NewHTTPService().
+				ServiceType(serviceType).
+				Name("test-service").
+				Selector(serviceLabelSelectorKey, serviceLabelSelectorVal).
+				Annotations(serviceAnnotation).
+				Build()
+		} else {
+			service = manifest.NewHTTPService().
+				ServiceType(serviceType).
+				NodePort(serviceNodePort).
+				Name("test-service").
+				Selector(serviceLabelSelectorKey, serviceLabelSelectorVal).
+				Annotations(serviceAnnotation).
+				Build()
+		}
 
 		By(fmt.Sprintf("creating the service of type %s", serviceType))
 		service, err = f.K8sResourceManagers.ServiceManager().
@@ -154,6 +165,7 @@ var _ = Describe("[CANARY] test service connectivity", func() {
 	Context("when a deployment behind node port is created", func() {
 		BeforeEach(func() {
 			serviceType = v1.ServiceTypeNodePort
+			serviceNodePort = 30443
 		})
 
 		It("node port service pod should be reachable", func() {})

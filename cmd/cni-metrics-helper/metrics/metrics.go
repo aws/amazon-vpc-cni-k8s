@@ -24,6 +24,7 @@ import (
 	cloudwatchtypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/publisher"
@@ -412,7 +413,7 @@ func metricsListGrabAggregateConvert(ctx context.Context, t metricsTarget) (map[
 			continue
 		}
 
-		parser := &expfmt.TextParser{}
+		parser := expfmt.NewTextParser(model.UTF8Validation)
 		origFamilies, err := parser.TextToMetricFamilies(bytes.NewReader(rawOutput))
 
 		if err != nil {

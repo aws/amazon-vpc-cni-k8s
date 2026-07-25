@@ -14,7 +14,14 @@
 // Package iptableswrapper is a wrapper interface for the iptables package
 package iptableswrapper
 
-import "github.com/coreos/go-iptables/iptables"
+import (
+	"bytes"
+	"fmt"
+	"os/exec"
+	"strings"
+
+	"github.com/coreos/go-iptables/iptables"
+)
 
 // IPTablesIface is an interface created to make code unit testable.
 // Both the iptables package version and mocked version implement the same interface
@@ -107,4 +114,40 @@ func (i ipTables) ChainExists(table, chain string) (bool, error) {
 // HasRandomFully implements IPTablesIface interface by calling iptables package
 func (i ipTables) HasRandomFully() bool {
 	return i.ipt.HasRandomFully()
+}
+
+type IptablesMode string
+
+const (
+	IptablesModeLegacy IptablesMode = "legacy"
+	IptablesModeNFT    IptablesMode = "nf_tables"
+)
+
+func (m IptablesMode) IsNFTables() bool {
+	return m == IptablesModeNFT
+}
+
+// GetIptablesMode runs "iptables --version" to detect backend (nf_tables or legacy)
+func GetIptablesMode() (IptablesMode, error) {
+	cmd := exec.Command("iptables", "--version")
+	var out, stderr bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("iptables --version failed: %w, stderr: %s", err, stderr.String())
+	}
+	return parseIptablesMode(out.String()), nil
+}
+
+// parseIptablesMode interprets the output of `iptables --version`. Real
+// `iptables --version` output looks like:
+// eg:
+//
+//	iptables v1.8.10 (nf_tables)
+//	iptables v1.8.7 (legacy)
+func parseIptablesMode(versionOutput string) IptablesMode {
+	if strings.Contains(versionOutput, string(IptablesModeLegacy)) {
+		return IptablesModeLegacy
+	}
+	return IptablesModeNFT
 }

@@ -99,7 +99,7 @@ func TestCmdAdd(t *testing.T) {
 
 	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
 
-	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
+	conn, _ := grpc.Dial("unix://"+ipamdSocketPath, grpc.WithInsecure())
 
 	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
@@ -144,7 +144,7 @@ func TestCmdAddWithNPenabled(t *testing.T) {
 
 	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
 
-	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
+	conn, _ := grpc.Dial("unix://"+ipamdSocketPath, grpc.WithInsecure())
 
 	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
@@ -189,7 +189,7 @@ func TestCmdAddWithNPenabledWithErr(t *testing.T) {
 
 	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
 
-	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
+	conn, _ := grpc.Dial("unix://"+ipamdSocketPath, grpc.WithInsecure())
 
 	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
@@ -232,7 +232,7 @@ func TestCmdAddNetworkErr(t *testing.T) {
 
 	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
 
-	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
+	conn, _ := grpc.Dial("unix://"+ipamdSocketPath, grpc.WithInsecure())
 
 	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
@@ -265,7 +265,7 @@ func TestCmdAddErrSetupPodNetwork(t *testing.T) {
 
 	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
 
-	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
+	conn, _ := grpc.Dial("unix://"+ipamdSocketPath, grpc.WithInsecure())
 
 	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
@@ -303,7 +303,7 @@ func TestCmdAddWithNetworkPolicyModeUnset(t *testing.T) {
 
 	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
 
-	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
+	conn, _ := grpc.Dial("unix://"+ipamdSocketPath, grpc.WithInsecure())
 
 	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
@@ -346,7 +346,7 @@ func TestCmdAddForMultiNICAttachment(t *testing.T) {
 
 	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
 
-	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
+	conn, _ := grpc.Dial("unix://"+ipamdSocketPath, grpc.WithInsecure())
 
 	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
@@ -426,7 +426,7 @@ func TestCmdDel(t *testing.T) {
 
 	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
 
-	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
+	conn, _ := grpc.Dial("unix://"+ipamdSocketPath, grpc.WithInsecure())
 
 	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
@@ -563,7 +563,7 @@ func TestCmdDelWhenIPAMIsDown(t *testing.T) {
 
 	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
 
-	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
+	conn, _ := grpc.Dial("unix://"+ipamdSocketPath, grpc.WithInsecure())
 	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, errors.New("IPAM is down"))
 
 	mocksNetwork.EXPECT().TeardownPodNetwork(gomock.Any(), gomock.Any()).Return(nil)
@@ -623,7 +623,7 @@ func TestCmdDelWhenIPAMIsDownAndPrevResultDeletionFails(t *testing.T) {
 
 	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
 
-	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
+	conn, _ := grpc.Dial("unix://"+ipamdSocketPath, grpc.WithInsecure())
 	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, errors.New("IPAM is down"))
 
 	mocksNetwork.EXPECT().TeardownPodNetwork(gomock.Any(), gomock.Any()).Return(errors.New("error on TeardownPodNetwork"))
@@ -645,7 +645,7 @@ func TestCmdDelErrDelNetwork(t *testing.T) {
 
 	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
 
-	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
+	conn, _ := grpc.Dial("unix://"+ipamdSocketPath, grpc.WithInsecure())
 
 	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
@@ -679,7 +679,7 @@ func TestCmdDelErrTeardown(t *testing.T) {
 
 	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
 
-	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
+	conn, _ := grpc.Dial("unix://"+ipamdSocketPath, grpc.WithInsecure())
 
 	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
@@ -714,7 +714,7 @@ func TestCmdAddForPodENINetwork(t *testing.T) {
 
 	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
 
-	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
+	conn, _ := grpc.Dial("unix://"+ipamdSocketPath, grpc.WithInsecure())
 
 	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
@@ -759,7 +759,7 @@ func TestCmdDelForPodENINetwork(t *testing.T) {
 
 	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
 
-	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
+	conn, _ := grpc.Dial("unix://"+ipamdSocketPath, grpc.WithInsecure())
 
 	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
@@ -802,7 +802,7 @@ func TestCmdDelWithNetworkPolicyModeUnset(t *testing.T) {
 
 	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
 
-	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
+	conn, _ := grpc.Dial("unix://"+ipamdSocketPath, grpc.WithInsecure())
 
 	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
@@ -1832,4 +1832,33 @@ func TestLoadNetConf(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDialIPAMD_ConnectsViaUnixSocket(t *testing.T) {
+	ctrl, _, mocksGRPC, _, _ := setup(t)
+	defer ctrl.Finish()
+
+	log := logger.New(&logger.Configuration{LogLevel: "DEBUG"})
+
+	socketPath := t.TempDir() + "/ipamd.sock"
+	conn, _ := grpc.Dial("unix://"+socketPath, grpc.WithInsecure())
+	mocksGRPC.EXPECT().Dial("unix://"+socketPath, gomock.Any()).Return(conn, nil)
+
+	result, err := dialIPAMD(mocksGRPC, log, socketPath)
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+}
+
+func TestDialIPAMD_ReturnsErrorWhenDialFails(t *testing.T) {
+	ctrl, _, mocksGRPC, _, _ := setup(t)
+	defer ctrl.Finish()
+
+	log := logger.New(&logger.Configuration{LogLevel: "DEBUG"})
+
+	socketPath := t.TempDir() + "/ipamd.sock"
+	mocksGRPC.EXPECT().Dial("unix://"+socketPath, gomock.Any()).Return(nil, errors.New("connection refused"))
+
+	result, err := dialIPAMD(mocksGRPC, log, socketPath)
+	assert.Error(t, err)
+	assert.Nil(t, result)
 }

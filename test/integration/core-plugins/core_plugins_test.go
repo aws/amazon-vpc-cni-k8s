@@ -72,7 +72,7 @@ var _ = Describe("CNI init container core plugins", func() {
 			// clear error if the file is missing or not executable.
 			cmd := []string{p}
 			_, _, err := f.K8sResourceManagers.PodManager().
-				PodExecWithContainer(pod.Namespace, pod.Name, "aws-node", cmd)
+				PodExecInContainer(pod.Namespace, pod.Name, "aws-node", cmd)
 			if err != nil {
 				errMsg := err.Error()
 				if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "no such file") {
