@@ -27,6 +27,22 @@ import (
 type ENIConfigSpec struct {
 	SecurityGroups []string `json:"securityGroups"`
 	Subnet         string   `json:"subnet"`
+	// WarmIPTarget overrides the WARM_IP_TARGET env var for nodes selecting this ENIConfig.
+	// Only consulted when AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true. Read once at daemon startup.
+	WarmIPTarget *int `json:"warmIPTarget,omitempty"`
+	// MinimumIPTarget overrides the MINIMUM_IP_TARGET env var for nodes selecting this ENIConfig.
+	// Only consulted when AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true. Read once at daemon startup.
+	MinimumIPTarget *int `json:"minimumIPTarget,omitempty"`
+	// WarmENITarget overrides the WARM_ENI_TARGET env var for nodes selecting this ENIConfig.
+	// Only consulted when AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true. Read once at daemon startup.
+	WarmENITarget *int `json:"warmENITarget,omitempty"`
+	// WarmPrefixTarget overrides the WARM_PREFIX_TARGET env var for nodes selecting this ENIConfig.
+	// Only consulted when AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true. Read once at daemon startup.
+	WarmPrefixTarget *int `json:"warmPrefixTarget,omitempty"`
+	// MaxENI overrides the MAX_ENI env var for nodes selecting this ENIConfig. Must be >= 1; the
+	// resulting value is clamped to the instance type's ENI limit.
+	// Only consulted when AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true. Read once at daemon startup.
+	MaxENI *int `json:"maxENI,omitempty"`
 }
 
 // ENIConfigStatus defines the observed state of ENIConfig

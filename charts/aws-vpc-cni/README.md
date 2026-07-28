@@ -39,6 +39,11 @@ The following table lists the configurable parameters for this chart and their d
 | `eniConfig.subnets`     | A map of AZ identifiers to config per AZ                | `nil`                               |
 | `eniConfig.subnets.id`  | The ID of the subnet within the AZ which will be used in the ENIConfig | `nil`                |
 | `eniConfig.subnets.securityGroups`  | The IDs of the security groups which will be used in the ENIConfig | `nil`        |
+| `eniConfig.subnets.warmIPTarget`     | Optional per-ENIConfig override for WARM_IP_TARGET (requires custom networking) | `nil` |
+| `eniConfig.subnets.minimumIPTarget`  | Optional per-ENIConfig override for MINIMUM_IP_TARGET (requires custom networking) | `nil` |
+| `eniConfig.subnets.warmENITarget`    | Optional per-ENIConfig override for WARM_ENI_TARGET (requires custom networking) | `nil` |
+| `eniConfig.subnets.warmPrefixTarget` | Optional per-ENIConfig override for WARM_PREFIX_TARGET (requires custom networking) | `nil` |
+| `eniConfig.subnets.maxENI`           | Optional per-ENIConfig override for MAX_ENI; clamped to instance limit (requires custom networking) | `nil` |
 | `env`                   | List of environment variables. See [here](https://github.com/aws/amazon-vpc-cni-k8s#cni-configuration-variables) for options | (see `values.yaml`) |
 | `enableWindowsIpam`     | Enable windows support for your cluster                 | `false`                             |
 | `enableNetworkPolicy`   | Enable Network Policy Controller and Agent for your cluster | `false`                         |

@@ -228,11 +228,22 @@ eniConfig:
   region: us-west-2
   subnets:
     # Key identifies the AZ
-    # Value contains the subnet ID and security group IDs within that AZ
+    # Value contains the subnet ID and security group IDs within that AZ.
+    # Optional per-ENIConfig overrides (require AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true):
+    #   warmIPTarget     - overrides WARM_IP_TARGET for nodes selecting this ENIConfig
+    #   minimumIPTarget  - overrides MINIMUM_IP_TARGET for nodes selecting this ENIConfig
+    #   warmENITarget    - overrides WARM_ENI_TARGET for nodes selecting this ENIConfig
+    #   warmPrefixTarget - overrides WARM_PREFIX_TARGET for nodes selecting this ENIConfig
+    #   maxENI           - overrides MAX_ENI (clamped to instance limit; must be >= 1)
     # us-west-2a:
     #   id: subnet-123
     #   securityGroups:
     #   - sg-123
+    #   warmIPTarget: 5
+    #   minimumIPTarget: 10
+    #   warmENITarget: 2
+    #   warmPrefixTarget: 1
+    #   maxENI: 4
     # us-west-2b:
     #   id: subnet-456
     #   securityGroups:

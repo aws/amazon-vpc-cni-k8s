@@ -12,6 +12,21 @@ spec:
     {{- end }}
   {{- end }}
   subnet: {{ $value.id }}
+  {{- if hasKey $value "warmIPTarget" }}
+  warmIPTarget: {{ $value.warmIPTarget }}
+  {{- end }}
+  {{- if hasKey $value "minimumIPTarget" }}
+  minimumIPTarget: {{ $value.minimumIPTarget }}
+  {{- end }}
+  {{- if hasKey $value "warmENITarget" }}
+  warmENITarget: {{ $value.warmENITarget }}
+  {{- end }}
+  {{- if hasKey $value "warmPrefixTarget" }}
+  warmPrefixTarget: {{ $value.warmPrefixTarget }}
+  {{- end }}
+  {{- if hasKey $value "maxENI" }}
+  maxENI: {{ $value.maxENI }}
+  {{- end }}
 ---
 {{- end }}
 {{- end }}

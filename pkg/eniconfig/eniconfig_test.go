@@ -270,3 +270,186 @@ func TestGetEniConfigLabelDefCustom(t *testing.T) {
 	eniConfigLabelDef := getEniConfigLabelDef()
 	assert.Equal(t, eniConfigLabelDef, "k8s.amazonaws.com/eniConfigCustom")
 }
+
+func intPtr(i int) *int { return &i }
+
+func TestResolveNodeOverrides(t *testing.T) {
+	tests := []struct {
+		name                string
+		labels              map[string]string
+		annotations         map[string]string
+		eniConfigSpec       *v1alpha1.ENIConfigSpec // nil means no ENIConfig at all
+		useCustomNetworking bool
+		nodeMissing         bool
+
+		want NodeOverrides
+	}{
+		{
+			name:   "WARM_IP / MIN_IP from labels",
+			labels: map[string]string{NodeLabelWarmIPTarget: "5", NodeLabelMinimumIPTarget: "10"},
+			want:   NodeOverrides{WarmIPTarget: intPtr(5), MinimumIPTarget: intPtr(10)},
+		},
+		{
+			name:        "WARM_IP from annotation only",
+			annotations: map[string]string{NodeAnnotationWarmIPTarget: "7"},
+			want:        NodeOverrides{WarmIPTarget: intPtr(7)},
+		},
+		{
+			name:        "WARM_IP annotation wins over label",
+			labels:      map[string]string{NodeLabelWarmIPTarget: "5"},
+			annotations: map[string]string{NodeAnnotationWarmIPTarget: "9"},
+			want:        NodeOverrides{WarmIPTarget: intPtr(9)},
+		},
+		{
+			name: "WARM_ENI / WARM_PREFIX / MAX_ENI from labels",
+			labels: map[string]string{
+				NodeLabelWarmENITarget:    "2",
+				NodeLabelWarmPrefixTarget: "3",
+				NodeLabelMaxENI:           "4",
+			},
+			want: NodeOverrides{WarmENITarget: intPtr(2), WarmPrefixTarget: intPtr(3), MaxENI: intPtr(4)},
+		},
+		{
+			name: "MAX_ENI annotation wins over label",
+			labels: map[string]string{
+				NodeLabelMaxENI: "2",
+			},
+			annotations: map[string]string{
+				NodeAnnotationMaxENI: "8",
+			},
+			want: NodeOverrides{MaxENI: intPtr(8)},
+		},
+		{
+			name: "ENIConfig populates everything (custom networking on)",
+			eniConfigSpec: &v1alpha1.ENIConfigSpec{
+				Subnet:           "sb1",
+				WarmIPTarget:     intPtr(3),
+				MinimumIPTarget:  intPtr(6),
+				WarmENITarget:    intPtr(2),
+				WarmPrefixTarget: intPtr(1),
+				MaxENI:           intPtr(5),
+			},
+			useCustomNetworking: true,
+			want: NodeOverrides{
+				WarmIPTarget:     intPtr(3),
+				MinimumIPTarget:  intPtr(6),
+				WarmENITarget:    intPtr(2),
+				WarmPrefixTarget: intPtr(1),
+				MaxENI:           intPtr(5),
+			},
+		},
+		{
+			name: "ENIConfig ignored when custom networking off",
+			eniConfigSpec: &v1alpha1.ENIConfigSpec{
+				Subnet: "sb1", WarmIPTarget: intPtr(3), WarmENITarget: intPtr(7), MaxENI: intPtr(5),
+			},
+			useCustomNetworking: false,
+			want:                NodeOverrides{},
+		},
+		{
+			name:                "label wins over ENIConfig (per-field)",
+			labels:              map[string]string{NodeLabelWarmIPTarget: "5", NodeLabelMaxENI: "3"},
+			eniConfigSpec:       &v1alpha1.ENIConfigSpec{Subnet: "sb1", WarmIPTarget: intPtr(99), MaxENI: intPtr(99)},
+			useCustomNetworking: true,
+			want:                NodeOverrides{WarmIPTarget: intPtr(5), MaxENI: intPtr(3)},
+		},
+		{
+			name:   "negative label rejected (warm_ip)",
+			labels: map[string]string{NodeLabelWarmIPTarget: "-1"},
+			want:   NodeOverrides{},
+		},
+		{
+			name:   "non-numeric label rejected (max_eni)",
+			labels: map[string]string{NodeLabelMaxENI: "many"},
+			want:   NodeOverrides{},
+		},
+		{
+			name:        "MAX_ENI=0 rejected (out of range)",
+			annotations: map[string]string{NodeAnnotationMaxENI: "0"},
+			want:        NodeOverrides{},
+		},
+		{
+			name:                "MAX_ENI=0 in ENIConfig is ignored",
+			eniConfigSpec:       &v1alpha1.ENIConfigSpec{Subnet: "sb1", MaxENI: intPtr(0)},
+			useCustomNetworking: true,
+			want:                NodeOverrides{},
+		},
+		{
+			name:        "zero is valid (explicit disable) for warm_ip",
+			annotations: map[string]string{NodeAnnotationWarmIPTarget: "0"},
+			want:        NodeOverrides{WarmIPTarget: intPtr(0)},
+		},
+		{
+			name:        "zero is valid (explicit disable) for warm_eni and warm_prefix",
+			annotations: map[string]string{NodeAnnotationWarmENITarget: "0", NodeAnnotationWarmPrefixTarget: "0"},
+			want:        NodeOverrides{WarmENITarget: intPtr(0), WarmPrefixTarget: intPtr(0)},
+		},
+		{
+			name:                "ENIConfig fetch failure falls through",
+			useCustomNetworking: true,
+			// No ENIConfig created → MyENIConfig returns ErrNoENIConfig.
+			want: NodeOverrides{},
+		},
+		{
+			name:        "node fetch failure falls through",
+			nodeMissing: true,
+			want:        NodeOverrides{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			_ = os.Unsetenv(envEniConfigAnnotationDef)
+			_ = os.Unsetenv(envEniConfigLabelDef)
+
+			k8sSchema := runtime.NewScheme()
+			_ = clientgoscheme.AddToScheme(k8sSchema)
+			_ = eniconfigscheme.AddToScheme(k8sSchema)
+			k8sClient := testclient.NewClientBuilder().WithScheme(k8sSchema).Build()
+
+			if !tt.nodeMissing {
+				node := &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-node",
+						Labels:      tt.labels,
+						Annotations: tt.annotations,
+					},
+				}
+				_ = os.Setenv("MY_NODE_NAME", node.Name)
+				assert.NoError(t, k8sClient.Create(ctx, node))
+			} else {
+				_ = os.Setenv("MY_NODE_NAME", "missing-node")
+			}
+
+			if tt.eniConfigSpec != nil {
+				ec := &v1alpha1.ENIConfig{
+					ObjectMeta: metav1.ObjectMeta{Name: EniConfigDefault},
+					Spec:       *tt.eniConfigSpec,
+				}
+				assert.NoError(t, k8sClient.Create(ctx, ec))
+			}
+
+			got := ResolveNodeOverrides(ctx, k8sClient, tt.useCustomNetworking)
+			assertIntPtrEqual(t, tt.want.WarmIPTarget, got.WarmIPTarget, "WarmIPTarget")
+			assertIntPtrEqual(t, tt.want.MinimumIPTarget, got.MinimumIPTarget, "MinimumIPTarget")
+			assertIntPtrEqual(t, tt.want.WarmENITarget, got.WarmENITarget, "WarmENITarget")
+			assertIntPtrEqual(t, tt.want.WarmPrefixTarget, got.WarmPrefixTarget, "WarmPrefixTarget")
+			assertIntPtrEqual(t, tt.want.MaxENI, got.MaxENI, "MaxENI")
+		})
+	}
+}
+
+func assertIntPtrEqual(t *testing.T, want, got *int, field string) {
+	t.Helper()
+	switch {
+	case want == nil && got == nil:
+		return
+	case want == nil:
+		t.Errorf("%s: want nil, got %d", field, *got)
+	case got == nil:
+		t.Errorf("%s: want %d, got nil", field, *want)
+	case *want != *got:
+		t.Errorf("%s: want %d, got %d", field, *want, *got)
+	}
+}

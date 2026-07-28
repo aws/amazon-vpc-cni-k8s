@@ -292,6 +292,8 @@ interfaces are available on the node.
 
 **NOTE!** If `WARM_IP_TARGET` is set, then this environment variable is ignored and the `WARM_IP_TARGET` behavior is used instead.
 
+`WARM_ENI_TARGET` can also be overridden per node via the `vpc.amazonaws.com/warm-eni-target` node label/annotation, or via a `warmENITarget` field on the node's `ENIConfig` (when `AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true`). See [Per-node overrides](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/eni-and-ip-target.md#per-node-overrides-for-ipam-tuning-settings).
+
 #### `WARM_IP_TARGET`
 
 Type: Integer
@@ -320,6 +322,8 @@ This environment variable overrides `WARM_ENI_TARGET` behavior. For a detailed e
 If `ENABLE_PREFIX_DELEGATION` set to `true` and `WARM_IP_TARGET` overrides `WARM_PREFIX_TARGET` behavior. For a detailed explanation, see
 [`WARM_PREFIX_TARGET`, `WARM_IP_TARGET` and `MINIMUM_IP_TARGET`](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/prefix-and-ip-target.md).
 
+`WARM_IP_TARGET` can also be overridden per node via the `vpc.amazonaws.com/warm-ip-target` node label/annotation, or via a `warmIPTarget` field on the node's `ENIConfig` (when `AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true`). See [Per-node overrides](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/eni-and-ip-target.md#per-node-overrides-for-ipam-tuning-settings).
+
 #### `MINIMUM_IP_TARGET` (v1.6.0+)
 
 Type: Integer
@@ -345,6 +349,8 @@ private IPs, which may be throttled, especially at scaling-related times.
 1. If `MINIMUM_IP_TARGET` is set, `WARM_ENI_TARGET` will be ignored. Please utilize `WARM_IP_TARGET` instead.
 2. If `MINIMUM_IP_TARGET` is set and `WARM_IP_TARGET` is not set, `WARM_IP_TARGET` is assumed to be 0, which leads to the number of IPs attached to the node will be the value of `MINIMUM_IP_TARGET`. This configuration will prevent future ENIs/IPs from being allocated. It is strongly recommended that `WARM_IP_TARGET` should be set greater than 0 when `MINIMUM_IP_TARGET` is set.
 
+`MINIMUM_IP_TARGET` can also be overridden per node via the `vpc.amazonaws.com/minimum-ip-target` node label/annotation, or via a `minimumIPTarget` field on the node's `ENIConfig` (when `AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true`). See [Per-node overrides](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/eni-and-ip-target.md#per-node-overrides-for-ipam-tuning-settings).
+
 #### `MAX_ENI`
 
 Type: Integer
@@ -354,6 +360,8 @@ Default: None
 Specifies the maximum number of ENIs that will be attached to the node. When `MAX_ENI` is unset or 0 (or lower), the setting
 is not used, and the maximum number of ENIs is always equal to the maximum number for the instance type in question. Even when
 `MAX_ENI` is a positive number, it is limited by the maximum number for the instance type.
+
+`MAX_ENI` can also be overridden per node via the `vpc.amazonaws.com/max-eni` node label/annotation, or via a `maxENI` field on the node's `ENIConfig` (when `AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true`). The override must be `>= 1` and is still clamped to the instance type's ENI limit. See [Per-node overrides](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/eni-and-ip-target.md#per-node-overrides-for-ipam-tuning-settings).
 
 #### `AWS_VPC_K8S_CNI_LOGLEVEL`
 
@@ -577,6 +585,8 @@ Default: None
 
 Specifies the number of free IPv4(/28) prefixes that the `ipamd` daemon should attempt to keep available for pod assignment on the node. Setting to a non-positive value is same as setting this to 0 or not setting the variable.
 This environment variable works when `ENABLE_PREFIX_DELEGATION` is set to `true` and is overridden when `WARM_IP_TARGET` and `MINIMUM_IP_TARGET` are configured.
+
+`WARM_PREFIX_TARGET` can also be overridden per node via the `vpc.amazonaws.com/warm-prefix-target` node label/annotation, or via a `warmPrefixTarget` field on the node's `ENIConfig` (when `AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true`). See [Per-node overrides](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/eni-and-ip-target.md#per-node-overrides-for-ipam-tuning-settings).
 
 #### `DISABLE_NETWORK_RESOURCE_PROVISIONING` (v1.9.1+)
 
