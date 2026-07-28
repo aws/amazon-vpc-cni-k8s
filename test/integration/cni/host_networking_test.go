@@ -47,8 +47,10 @@ var _ = Describe("test host networking", func() {
 		})
 	})
 	AfterEach(func() {
-		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
-			"WARM_IP_TARGET": DEFAULT_WARM_IP_TARGET,
+		// Remove rather than restore: the suite runs in WARM_ENI_TARGET mode, and
+		// ipamd ignores WARM_ENI_TARGET while WARM_IP_TARGET is set.
+		k8sUtils.RemoveVarFromDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]struct{}{
+			"WARM_IP_TARGET": {},
 		})
 	})
 

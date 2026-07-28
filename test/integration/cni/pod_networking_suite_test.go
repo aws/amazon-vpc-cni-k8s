@@ -31,7 +31,6 @@ const (
 	InstanceTypeNodeLabelKey = "beta.kubernetes.io/instance-type"
 	DEFAULT_VETH_PREFIX      = "eni"
 	DEFAULT_MTU_VAL          = "9001"
-	DEFAULT_WARM_IP_TARGET   = "3"
 )
 
 var maxIPPerInterface int
@@ -101,14 +100,20 @@ var _ = BeforeSuite(func() {
 		vpcCIDRs = append(vpcCIDRs, *cidrBlockAssociationSet.CidrBlock)
 	}
 
-	// WARM_ENI_TARGET=0 packs pods onto the primary ENI before attaching a secondary.
+	// WARM_ENI_TARGET=1 keeps one spare ENI attached so ipamd grows the IP pool an
+	// ENI at a time; with a lean WARM_IP_TARGET the pool grows a few IPs per
+	// reconcile round and a spanning deployment cannot converge within the ready
+	// wait. WARM_IP_TARGET must stay unset here: when set, ipamd ignores
+	// WARM_ENI_TARGET. Placement on the primary ENI is guaranteed by the
+	// pigeonhole replica count, not by keeping the pool lean.
 	// IP_COOLDOWN_PERIOD=0 makes IPs freed by a prior spec's teardown immediately
 	// reusable, so the primary ENI's IPs stay eligible across specs. AfterSuite unsets it.
-	k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, "aws-node", "kube-system",
+	k8sUtils.UpdateEnvVarOnDaemonSetAndWaitUntilReady(f, "aws-node", "kube-system",
 		"aws-node", map[string]string{
-			"WARM_IP_TARGET":     DEFAULT_WARM_IP_TARGET,
-			"WARM_ENI_TARGET":    "0",
+			"WARM_ENI_TARGET":    "1",
 			"IP_COOLDOWN_PERIOD": "0",
+		}, map[string]struct{}{
+			"WARM_IP_TARGET": {},
 		})
 })
 
