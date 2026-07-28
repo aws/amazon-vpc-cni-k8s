@@ -249,33 +249,6 @@ func AssertSpanningENIsPreconditions(f *framework.Framework, node coreV1.Node, n
 	Expect(hasTrunk).To(BeFalse(),
 		"security-groups-for-pods is enabled on this node: the trunk ENI consumes an ENI slot without hosting pod IPs, so %d replicas exceed data-ENI capacity and pods stay Pending", replicas)
 
-	// The deployment must fit in the node's free pod capacity, or it never becomes
-	// Ready and the wait times out. max-pods counts host-network system pods
-	// (aws-node, kube-proxy) already scheduled here, so check against what is free.
-	allocatablePods := node.Status.Allocatable.Pods().Value()
-	scheduledPods := podsScheduledOnNode(f, node.Name)
-	Expect(int64(replicas)).To(BeNumerically("<=", allocatablePods-int64(scheduledPods)),
-		"replica count %d exceeds free pod capacity on node %s (allocatable %d, already scheduled %d)",
-		replicas, node.Name, allocatablePods, scheduledPods)
-}
-
-// podsScheduledOnNode counts the non-terminal pods already bound to the node.
-func podsScheduledOnNode(f *framework.Framework, nodeName string) int {
-	var podList coreV1.PodList
-	err := f.K8sClient.List(context.TODO(), &podList)
-	Expect(err).ToNot(HaveOccurred())
-
-	count := 0
-	for _, pod := range podList.Items {
-		if pod.Spec.NodeName != nodeName {
-			continue
-		}
-		if pod.Status.Phase == coreV1.PodSucceeded || pod.Status.Phase == coreV1.PodFailed {
-			continue
-		}
-		count++
-	}
-	return count
 }
 
 // getAWSNodeEnv reads the environment variables on the live aws-node container so

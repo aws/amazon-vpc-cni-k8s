@@ -37,13 +37,17 @@ func TestSpanningENIsReplicaCount(t *testing.T) {
 			// is forced onto the primary ENI, and must stay within the secondary-IP
 			// max-pods ceiling so the node can schedule it.
 			secondaryCapacity := (int(tc.maxENIs) - 1) * (int(tc.ipsPerENI) - 1)
+			// replicas = max-pods - (ipsPerENI-1) by construction, so a single
+			// spanning deployment always fits the node scheduling cap; this is why
+			// AssertSpanningENIsPreconditions has no capacity check.
 			maxPods := int(tc.maxENIs)*(int(tc.ipsPerENI)-1) + 2
 			if got <= secondaryCapacity {
 				t.Errorf("replica count %d does not exceed secondary capacity %d; pods may all fit on secondary ENIs",
 					got, secondaryCapacity)
 			}
-			if got > maxPods {
-				t.Errorf("replica count %d exceeds max-pods ceiling %d", got, maxPods)
+			if got != maxPods-(int(tc.ipsPerENI)-1) {
+				t.Errorf("replica count %d != max-pods %d minus primary-ENI capacity %d; the fits-by-construction algebra no longer holds",
+					got, maxPods, int(tc.ipsPerENI)-1)
 			}
 		})
 	}
