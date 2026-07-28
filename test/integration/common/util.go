@@ -7,18 +7,21 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/agent/pkg/input"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	appsV1 "k8s.io/api/apps/v1"
 	coreV1 "k8s.io/api/core/v1"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/agent"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 )
 
 type TestType int
@@ -158,6 +161,180 @@ func GetPodsOnPrimaryAndSecondaryInterface(node coreV1.Node,
 		}
 	}
 	return interfaceToPodList
+}
+
+// SpanningENIsReplicaCount returns the number of pods needed so that placement
+// must occupy the primary ENI and at least one secondary ENI. ipamd assigns pod
+// IPs by ranging over a Go map of ENIs, so placement order is not deterministic;
+// requesting two more pods than every secondary ENI can hold forces at least two
+// onto the primary ENI regardless of iteration order.
+func SpanningENIsReplicaCount(netInfo ec2types.NetworkInfo) int {
+	maxENIs := int(*netInfo.MaximumNetworkInterfaces)
+	ipsPerENI := int(*netInfo.Ipv4AddressesPerInterface)
+	return (maxENIs-1)*(ipsPerENI-1) + 2
+}
+
+// NetworkInfoForNode returns the ENI/IP limits for the node's own instance type,
+// read from its instance-type label. Resolving per node keeps the replica count
+// and preconditions correct on a heterogeneous node group.
+func NetworkInfoForNode(f *framework.Framework, node coreV1.Node) ec2types.NetworkInfo {
+	instanceType := node.Labels["node.kubernetes.io/instance-type"]
+	if instanceType == "" {
+		instanceType = node.Labels["beta.kubernetes.io/instance-type"]
+	}
+	Expect(instanceType).ToNot(BeEmpty(), "node %s has no instance-type label", node.Name)
+
+	instanceTypeInfo, err := f.CloudServices.EC2().DescribeInstanceType(context.TODO(), instanceType)
+	Expect(err).ToNot(HaveOccurred())
+	Expect(instanceTypeInfo).ToNot(BeEmpty())
+	return *instanceTypeInfo[0].NetworkInfo
+}
+
+// CreateDeploymentSpanningENIs creates a deployment on the node sized so its pods
+// occupy the primary ENI and at least one secondary ENI, waits for readiness, and
+// returns the pods bucketed by ENI. The guarantee depends on the node running in
+// secondary-IP mode with no trunk ENI and no custom networking; each assumption is
+// asserted with a message that names it, so environment drift fails loudly rather
+// than reappearing as a placement flake. On an empty bucket it prints the node's
+// ENI/IP layout to explain the failure.
+func CreateDeploymentSpanningENIs(f *framework.Framework, node coreV1.Node,
+	name, podLabelKey, podLabelVal string,
+	container coreV1.Container) (InterfaceTypeToPodList, *appsV1.Deployment) {
+
+	netInfo := NetworkInfoForNode(f, node)
+	AssertSpanningENIsPreconditions(f, node, netInfo)
+	replicas := SpanningENIsReplicaCount(netInfo)
+
+	deployment := manifest.NewDefaultDeploymentBuilder().
+		Name(name).
+		Container(container).
+		Replicas(replicas).
+		NodeName(node.Name).
+		PodLabel(podLabelKey, podLabelVal).
+		Build()
+
+	deployment, err := f.K8sResourceManagers.DeploymentManager().
+		CreateAndWaitTillDeploymentIsReady(deployment, utils.DefaultDeploymentReadyTimeout)
+	Expect(err).ToNot(HaveOccurred())
+
+	interfaceToPodList := GetPodsOnPrimaryAndSecondaryInterface(node, podLabelKey, podLabelVal, f)
+	if len(interfaceToPodList.PodsOnPrimaryENI) == 0 || len(interfaceToPodList.PodsOnSecondaryENI) == 0 {
+		dumpENIPlacement(f, node, interfaceToPodList, replicas)
+	}
+	return interfaceToPodList, deployment
+}
+
+// AssertSpanningENIsPreconditions fails the spec if the node configuration would
+// break the pigeonhole guarantee that a SpanningENIsReplicaCount-sized deployment
+// occupies both the primary and a secondary ENI. Call it before sizing a
+// deployment with SpanningENIsReplicaCount when not using
+// CreateDeploymentSpanningENIs.
+func AssertSpanningENIsPreconditions(f *framework.Framework, node coreV1.Node, netInfo ec2types.NetworkInfo) {
+	replicas := SpanningENIsReplicaCount(netInfo)
+	awsNodeEnv := getAWSNodeEnv(f)
+
+	Expect(int(*netInfo.MaximumNetworkInterfaces)).To(BeNumerically(">=", 2),
+		"instance type supports a single ENI: there is no secondary ENI for pods to span")
+
+	Expect(parseBoolEnv(awsNodeEnv["ENABLE_PREFIX_DELEGATION"])).To(BeFalse(),
+		"prefix delegation is enabled: per-ENI capacity is prefix-based, so the "+
+			"secondary-IP replica count under-provisions and pods span every ENI by chance, not by pigeonhole")
+	Expect(parseBoolEnv(awsNodeEnv["AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG"])).To(BeFalse(),
+		"custom networking is enabled: the primary ENI is excluded from pod IPs, so the primary bucket is always empty")
+
+	// A trunk ENI (security groups for pods) consumes an ENI slot without hosting
+	// pod IPs, so real data-ENI capacity drops below the pigeonhole count and pods
+	// stay Pending until the readiness wait times out.
+	_, hasTrunk := node.Labels["vpc.amazonaws.com/has-trunk-attached"]
+	Expect(hasTrunk).To(BeFalse(),
+		"security-groups-for-pods is enabled on this node: the trunk ENI consumes an ENI slot without hosting pod IPs, so %d replicas exceed data-ENI capacity and pods stay Pending", replicas)
+
+	// The deployment must fit in the node's free pod capacity, or it never becomes
+	// Ready and the wait times out. max-pods counts host-network system pods
+	// (aws-node, kube-proxy) already scheduled here, so check against what is free.
+	allocatablePods := node.Status.Allocatable.Pods().Value()
+	scheduledPods := podsScheduledOnNode(f, node.Name)
+	Expect(int64(replicas)).To(BeNumerically("<=", allocatablePods-int64(scheduledPods)),
+		"replica count %d exceeds free pod capacity on node %s (allocatable %d, already scheduled %d)",
+		replicas, node.Name, allocatablePods, scheduledPods)
+}
+
+// podsScheduledOnNode counts the non-terminal pods already bound to the node.
+func podsScheduledOnNode(f *framework.Framework, nodeName string) int {
+	var podList coreV1.PodList
+	err := f.K8sClient.List(context.TODO(), &podList)
+	Expect(err).ToNot(HaveOccurred())
+
+	count := 0
+	for _, pod := range podList.Items {
+		if pod.Spec.NodeName != nodeName {
+			continue
+		}
+		if pod.Status.Phase == coreV1.PodSucceeded || pod.Status.Phase == coreV1.PodFailed {
+			continue
+		}
+		count++
+	}
+	return count
+}
+
+// getAWSNodeEnv reads the environment variables on the live aws-node container so
+// preconditions reflect the current node state, including mid-suite toggles.
+func getAWSNodeEnv(f *framework.Framework) map[string]string {
+	ds, err := f.K8sResourceManagers.DaemonSetManager().
+		GetDaemonSet(utils.AwsNodeNamespace, utils.AwsNodeName)
+	Expect(err).ToNot(HaveOccurred())
+
+	env := map[string]string{}
+	for _, container := range ds.Spec.Template.Spec.Containers {
+		if container.Name != utils.AwsNodeName {
+			continue
+		}
+		for _, e := range container.Env {
+			env[e.Name] = e.Value
+		}
+	}
+	return env
+}
+
+func parseBoolEnv(val string) bool {
+	return strings.EqualFold(val, "true")
+}
+
+// dumpENIPlacement prints the node's attached ENIs and each pod's IP-to-ENI
+// mapping so a placement assertion failure carries the state that explains it.
+func dumpENIPlacement(f *framework.Framework, node coreV1.Node,
+	interfaceToPodList InterfaceTypeToPodList, replicas int) {
+
+	fmt.Fprintf(GinkgoWriter, "ENI placement dump for node %s (requested %d replicas): "+
+		"%d pods on primary ENI, %d pods on secondary ENIs\n",
+		node.Name, replicas, len(interfaceToPodList.PodsOnPrimaryENI),
+		len(interfaceToPodList.PodsOnSecondaryENI))
+
+	for _, pod := range interfaceToPodList.PodsOnPrimaryENI {
+		fmt.Fprintf(GinkgoWriter, "  primary-bucket pod %s -> %s\n", pod.Name, pod.Status.PodIP)
+	}
+	for _, pod := range interfaceToPodList.PodsOnSecondaryENI {
+		fmt.Fprintf(GinkgoWriter, "  secondary-bucket pod %s -> %s\n", pod.Name, pod.Status.PodIP)
+	}
+
+	instance, err := f.CloudServices.EC2().
+		DescribeInstance(context.TODO(), k8sUtils.GetInstanceIDFromNode(node))
+	if err != nil {
+		fmt.Fprintf(GinkgoWriter, "could not describe instance for dump: %v\n", err)
+		return
+	}
+	for _, nwInterface := range instance.NetworkInterfaces {
+		role := "secondary"
+		if IsPrimaryENI(nwInterface, instance.PrivateIpAddress) {
+			role = "primary"
+		}
+		ips := make([]string, 0, len(nwInterface.PrivateIpAddresses))
+		for _, ip := range nwInterface.PrivateIpAddresses {
+			ips = append(ips, *ip.PrivateIpAddress)
+		}
+		fmt.Fprintf(GinkgoWriter, "  ENI %s (%s): %v\n", *nwInterface.NetworkInterfaceId, role, ips)
+	}
 }
 
 func GetTrafficTestConfig(f *framework.Framework, protocol string, serverDeploymentBuilder *manifest.DeploymentBuilder, clientCount int, serverCount int) agent.TrafficTest {

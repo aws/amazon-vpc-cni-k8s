@@ -69,8 +69,10 @@ var _ = Describe("test host networking", func() {
 		It("should have correct host networking setup when running and cleaned up once terminated", func() {
 			// Launch enough pods so some pods end up using primary ENI IP and some using secondary
 			// ENI IP
+			netInfo := common.NetworkInfoForNode(f, primaryNode)
+			common.AssertSpanningENIsPreconditions(f, primaryNode, netInfo)
 			deployment := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
-				Replicas(maxIPPerInterface*2).
+				Replicas(common.SpanningENIsReplicaCount(netInfo)).
 				PodLabel(podLabelKey, podLabelVal).
 				NodeName(primaryNode.Name).
 				Build()
@@ -174,8 +176,10 @@ var _ = Describe("test host networking", func() {
 })
 
 func mtuValidationTest(usePodMTU bool, mtuVal int) {
+	netInfo := common.NetworkInfoForNode(f, primaryNode)
+	common.AssertSpanningENIsPreconditions(f, primaryNode, netInfo)
 	deployment := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
-		Replicas(maxIPPerInterface*2).
+		Replicas(common.SpanningENIsReplicaCount(netInfo)).
 		PodLabel(podLabelKey, podLabelVal).
 		NodeName(primaryNode.Name).
 		Build()

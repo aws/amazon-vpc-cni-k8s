@@ -48,19 +48,8 @@ var _ = Describe("test SNAT with kube-proxy modes", func() {
 			Port(v1.ContainerPort{ContainerPort: 80, Protocol: "TCP"}).
 			Build()
 
-		deployment = manifest.NewDefaultDeploymentBuilder().
-			Name("snat-test-server").
-			Container(serverContainer).
-			Replicas(maxIPPerInterface*2).
-			NodeName(primaryNode.Name).
-			PodLabel("app", "snat-test").
-			Build()
-
-		deployment, err = f.K8sResourceManagers.DeploymentManager().
-			CreateAndWaitTillDeploymentIsReady(deployment, utils.DefaultDeploymentReadyTimeout)
-		Expect(err).ToNot(HaveOccurred())
-
-		interfaceToPodList = common.GetPodsOnPrimaryAndSecondaryInterface(primaryNode, "app", "snat-test", f)
+		interfaceToPodList, deployment = common.CreateDeploymentSpanningENIs(f, primaryNode,
+			"snat-test-server", "app", "snat-test", serverContainer)
 		Expect(len(interfaceToPodList.PodsOnPrimaryENI)).Should(BeNumerically(">=", 1))
 		Expect(len(interfaceToPodList.PodsOnSecondaryENI)).Should(BeNumerically(">=", 1))
 

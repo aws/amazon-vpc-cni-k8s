@@ -179,6 +179,13 @@ var _ = Describe("[CANARY] test service connectivity", FlakeAttempts(3), func() 
 
 		// Sleep for IP cooldown period to ensure IPs are added back to datastore for future test runs
 		time.Sleep(5 * time.Second)
+
+		// Restore the suite-wide IP_COOLDOWN_PERIOD so later specs, whose ENI-placement
+		// preconditions rely on freed IPs being immediately reusable, do not inherit the 5s set above.
+		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
+			utils.AwsNodeName, map[string]string{
+				"IP_COOLDOWN_PERIOD": "0",
+			})
 	})
 
 	Context("when a deployment behind clb service is created", func() {

@@ -101,11 +101,14 @@ var _ = BeforeSuite(func() {
 		vpcCIDRs = append(vpcCIDRs, *cidrBlockAssociationSet.CidrBlock)
 	}
 
-	// Set the WARM_ENI_TARGET to 0 to prevent all pods being scheduled on secondary ENI
+	// WARM_ENI_TARGET=0 packs pods onto the primary ENI before attaching a secondary.
+	// IP_COOLDOWN_PERIOD=0 makes IPs freed by a prior spec's teardown immediately
+	// reusable, so the primary ENI's IPs stay eligible across specs. AfterSuite unsets it.
 	k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, "aws-node", "kube-system",
 		"aws-node", map[string]string{
-			"WARM_IP_TARGET":  DEFAULT_WARM_IP_TARGET,
-			"WARM_ENI_TARGET": "0",
+			"WARM_IP_TARGET":     DEFAULT_WARM_IP_TARGET,
+			"WARM_ENI_TARGET":    "0",
+			"IP_COOLDOWN_PERIOD": "0",
 		})
 })
 
