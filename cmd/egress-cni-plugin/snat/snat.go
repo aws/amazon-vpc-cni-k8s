@@ -15,7 +15,6 @@ package snat
 
 import (
 	"net"
-	"strings"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/iptableswrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/cniutils"
@@ -73,7 +72,13 @@ func Add(ipt iptableswrapper.IPTablesIface, nodeIP, src net.IP, multicastRange, 
 	for _, rule := range rules {
 		_chain := rule[0]
 		if !existingChains[_chain] {
-			if err = ipt.NewChain("nat", _chain); err != nil && !chainExistErr(err) {
+			// Tolerate "Chain already exists" from a concurrent invocation that won
+			// the race. On a node with many pods starting simultaneously (e.g. at a
+			// cron tick), multiple egress-cni processes snapshot ListChains before
+			// any has called NewChain and all race to create the same chain. The
+			// second caller gets this error, but the chain is already in the desired
+			// state — it is safe to proceed. See https://github.com/aws/amazon-vpc-cni-k8s/pull/3782.
+			if err = ipt.NewChain("nat", _chain); err != nil && !cniutils.IsChainExistErr(err) {
 				return err
 			}
 			existingChains[_chain] = true
@@ -88,14 +93,6 @@ func Add(ipt iptableswrapper.IPTablesIface, nodeIP, src net.IP, multicastRange, 
 	}
 
 	return nil
-}
-
-// chainExistErr returns true if the error indicates an iptables chain already exists.
-// This can occur as a benign race when multiple CNI invocations run concurrently on the
-// same node (e.g. many pods starting simultaneously at a cron tick) and both attempt to
-// create the same chain at the same instant.
-func chainExistErr(err error) bool {
-	return strings.Contains(err.Error(), "Chain already exists")
 }
 
 // Del removes rules added by snat
