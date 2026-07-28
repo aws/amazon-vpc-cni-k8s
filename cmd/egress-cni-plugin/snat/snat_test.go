@@ -170,3 +170,61 @@ func setupDelExpect(ipt iptableswrapper.IPTablesIface, actualClearChain, actualD
 		*actualRule = append(*actualRule, rule)
 	}).Return(nil).AnyTimes()
 }
+
+// TestDelV4_ClearChainNotExist verifies the teardown DEL+DEL race fix: when
+// ClearChain returns "No chain/target/match by that name" (because a concurrent
+// DEL invocation already removed the chain), Del() must succeed rather than
+// propagating the error.
+func TestDelV4_ClearChainNotExist(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	ipt := mock_iptables.NewMockIPTablesIface(ctrl)
+
+	// The POSTROUTING jump rule is already gone (concurrent DEL won the race).
+	ipt.EXPECT().Delete("nat", "POSTROUTING", gomock.Any()).Return(
+		fmt.Errorf("No chain/target/match by that name"),
+	).AnyTimes()
+
+	// ClearChain also finds the chain already gone.
+	ipt.EXPECT().ClearChain("nat", chainV4).Return(
+		fmt.Errorf("No chain/target/match by that name"),
+	)
+
+	// DeleteChain succeeds (or is also missing — tested separately).
+	ipt.EXPECT().DeleteChain("nat", chainV4).Return(nil)
+
+	err := Del(ipt, containerIPv4, chainV4, comment)
+	assert.Nil(t, err, "Del() must not fail when ClearChain returns 'No chain/target/match by that name'")
+}
+
+// TestDelV4_DeleteChainNotExist verifies the teardown DEL+DEL race fix: when
+// DeleteChain returns "No chain/target/match by that name" (because a concurrent
+// DEL invocation already deleted the chain after we cleared it), Del() must
+// succeed rather than propagating the error.
+func TestDelV4_DeleteChainNotExist(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	ipt := mock_iptables.NewMockIPTablesIface(ctrl)
+
+	// The POSTROUTING jump rule deletion succeeds normally.
+	ipt.EXPECT().Delete("nat", "POSTROUTING", gomock.Any()).Return(nil).AnyTimes()
+
+	// ClearChain succeeds (empties the chain).
+	ipt.EXPECT().ClearChain("nat", chainV4).Return(nil)
+
+	// DeleteChain finds the chain already gone — concurrent DEL deleted it
+	// between our ClearChain and DeleteChain calls.
+	ipt.EXPECT().DeleteChain("nat", chainV4).Return(
+		fmt.Errorf("No chain/target/match by that name"),
+	)
+
+	err := Del(ipt, containerIPv4, chainV4, comment)
+	assert.Nil(t, err, "Del() must not fail when DeleteChain returns 'No chain/target/match by that name'")
+}
+
+// TestIsChainNotExistErr verifies cniutils.IsChainNotExistErr correctly
+// identifies "No chain/target/match" errors and ignores unrelated errors.
+func TestIsChainNotExistErr(t *testing.T) {
+	assert.True(t, cniutils.IsChainNotExistErr(fmt.Errorf("No chain/target/match by that name")))
+	assert.True(t, cniutils.IsChainNotExistErr(fmt.Errorf("iptables: No chain/target/match by that name.\n")))
+	assert.False(t, cniutils.IsChainNotExistErr(fmt.Errorf("some other error")))
+	assert.False(t, cniutils.IsChainNotExistErr(fmt.Errorf("Chain already exists")))
+}

@@ -154,8 +154,7 @@ func IsIptableTargetNotExist(err error) bool {
 //
 // The primary check uses the typed *iptables.Error with exit status 1 (the same
 // sentinel used by ClearChain in github.com/coreos/go-iptables). A string
-// fallback covers test doubles that return plain errors rather than
-// *iptables.Error.
+// fallback covers test doubles that return plain errors rather than *iptables.Error.
 func IsChainExistErr(err error) bool {
 	if e, ok := err.(*iptables.Error); ok {
 		return e.ExitStatus() == 1
@@ -163,6 +162,21 @@ func IsChainExistErr(err error) bool {
 	return strings.Contains(err.Error(), "Chain already exists")
 }
 
+// IsChainNotExistErr returns true if err indicates that an iptables chain or
+// rule does not exist. This is the expected error when a concurrent DEL
+// invocation has already removed the chain or rule before this invocation
+// reaches the same operation — the desired end state (chain gone) is already
+// achieved and it is safe to proceed.
+//
+// The primary check uses the typed *iptables.Error.IsNotExist() which matches
+// "No chain/target/match by that name" and related patterns. A string fallback
+// covers test doubles that return plain errors rather than *iptables.Error.
+func IsChainNotExistErr(err error) bool {
+	if e, ok := err.(*iptables.Error); ok {
+		return e.IsNotExist()
+	}
+	return strings.Contains(err.Error(), "No chain/target/match by that name")
+}
 // PrefixSimilar checks if prefix pool and eni prefix are equivalent.
 func PrefixSimilar(prefixPool []string, eniPrefixes []ec2types.Ipv4PrefixSpecification) bool {
 	if len(prefixPool) != len(eniPrefixes) {

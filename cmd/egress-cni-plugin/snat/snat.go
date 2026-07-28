@@ -97,18 +97,29 @@ func Add(ipt iptableswrapper.IPTablesIface, nodeIP, src net.IP, multicastRange, 
 
 // Del removes rules added by snat
 func Del(ipt iptableswrapper.IPTablesIface, src net.IP, chain, comment string) (err error) {
+	// Tolerate "rule does not exist" — a concurrent DEL invocation may have
+	// already removed this POSTROUTING jump rule before we reached this point.
+	// The desired end state (rule absent) is already achieved; proceed.
 	err = ipt.Delete("nat", "POSTROUTING", "-s", src.String(), "-j", chain, "-m", "comment", "--comment", comment)
-	if err != nil && !cniutils.IsIptableTargetNotExist(err) {
+	if err != nil && !cniutils.IsChainNotExistErr(err) {
 		return err
 	}
 
+	// Tolerate "No chain/target/match" — a concurrent DEL invocation may have
+	// already cleared and deleted this chain. ClearChain internally calls
+	// NewChain; if the chain was already removed it will be re-created as an
+	// empty chain, so a genuine "not exist" return here would be unexpected.
+	// Guard defensively for any implementation that does return it.
 	err = ipt.ClearChain("nat", chain)
-	if err != nil && !cniutils.IsIptableTargetNotExist(err) {
+	if err != nil && !cniutils.IsChainNotExistErr(err) {
 		return err
 	}
 
+	// Tolerate "No chain/target/match" — a concurrent DEL invocation may have
+	// already deleted the chain (after we cleared it or before we got here).
+	// Either way the chain is gone, which is the desired post-DEL state.
 	err = ipt.DeleteChain("nat", chain)
-	if err != nil && !cniutils.IsIptableTargetNotExist(err) {
+	if err != nil && !cniutils.IsChainNotExistErr(err) {
 		return err
 	}
 
