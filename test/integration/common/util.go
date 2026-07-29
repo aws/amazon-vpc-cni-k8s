@@ -167,11 +167,25 @@ func GetPodsOnPrimaryAndSecondaryInterface(node coreV1.Node,
 // must occupy the primary ENI and at least one secondary ENI. ipamd assigns pod
 // IPs by ranging over a Go map of ENIs, so placement order is not deterministic;
 // requesting two more pods than every secondary ENI can hold forces at least two
-// onto the primary ENI regardless of iteration order.
-func SpanningENIsReplicaCount(netInfo ec2types.NetworkInfo) int {
+// onto the primary ENI regardless of iteration order. It returns an error when
+// the instance limits are missing or cannot support that guarantee.
+func SpanningENIsReplicaCount(netInfo ec2types.NetworkInfo) (int, error) {
+	if netInfo.MaximumNetworkInterfaces == nil {
+		return 0, fmt.Errorf("instance type network info is missing maximum network interfaces")
+	}
+	if netInfo.Ipv4AddressesPerInterface == nil {
+		return 0, fmt.Errorf("instance type network info is missing IPv4 addresses per interface")
+	}
+
 	maxENIs := int(*netInfo.MaximumNetworkInterfaces)
 	ipsPerENI := int(*netInfo.Ipv4AddressesPerInterface)
-	return (maxENIs-1)*(ipsPerENI-1) + 2
+	if maxENIs < 2 {
+		return 0, fmt.Errorf("instance type supports %d ENI(s): at least 2 are required", maxENIs)
+	}
+	if ipsPerENI < 2 {
+		return 0, fmt.Errorf("instance type supports %d IPv4 address(es) per ENI: at least 2 are required", ipsPerENI)
+	}
+	return (maxENIs-1)*(ipsPerENI-1) + 2, nil
 }
 
 // NetworkInfoForNode returns the ENI/IP limits for the node's own instance type,
@@ -187,6 +201,8 @@ func NetworkInfoForNode(f *framework.Framework, node coreV1.Node) ec2types.Netwo
 	instanceTypeInfo, err := f.CloudServices.EC2().DescribeInstanceType(context.TODO(), instanceType)
 	Expect(err).ToNot(HaveOccurred())
 	Expect(instanceTypeInfo).ToNot(BeEmpty())
+	Expect(instanceTypeInfo[0].NetworkInfo).ToNot(BeNil(),
+		"instance type %s has no network information", instanceType)
 	return *instanceTypeInfo[0].NetworkInfo
 }
 
@@ -201,8 +217,7 @@ func CreateDeploymentSpanningENIs(f *framework.Framework, node coreV1.Node,
 	name, podLabelKey, podLabelVal string,
 	container coreV1.Container) (InterfaceTypeToPodList, *appsV1.Deployment) {
 
-	netInfo := AssertSpanningENIsPreconditions(f, node)
-	replicas := SpanningENIsReplicaCount(netInfo)
+	replicas := AssertSpanningENIsPreconditions(f, node)
 
 	deployment := manifest.NewDefaultDeploymentBuilder().
 		Name(name).
@@ -239,16 +254,13 @@ func CreateDeploymentSpanningENIs(f *framework.Framework, node coreV1.Node,
 
 // AssertSpanningENIsPreconditions fails the spec if the node configuration would
 // break the pigeonhole guarantee that a SpanningENIsReplicaCount-sized deployment
-// occupies both the primary and a secondary ENI. Call it before sizing a
-// deployment with SpanningENIsReplicaCount when not using
-// CreateDeploymentSpanningENIs.
-func AssertSpanningENIsPreconditions(f *framework.Framework, node coreV1.Node) ec2types.NetworkInfo {
+// occupies both the primary and a secondary ENI, and returns the validated replica
+// count for callers that build the deployment directly.
+func AssertSpanningENIsPreconditions(f *framework.Framework, node coreV1.Node) int {
 	netInfo := NetworkInfoForNode(f, node)
-	replicas := SpanningENIsReplicaCount(netInfo)
+	replicas, err := SpanningENIsReplicaCount(netInfo)
+	Expect(err).ToNot(HaveOccurred(), "instance type cannot support a spanning ENI deployment")
 	awsNodeEnv := getAWSNodeEnv(f)
-
-	Expect(int(*netInfo.MaximumNetworkInterfaces)).To(BeNumerically(">=", 2),
-		"instance type supports a single ENI: there is no secondary ENI for pods to span")
 
 	Expect(parseBoolEnv(awsNodeEnv["ENABLE_PREFIX_DELEGATION"])).To(BeFalse(),
 		"prefix delegation is enabled: per-ENI capacity is prefix-based, so the "+
@@ -263,7 +275,7 @@ func AssertSpanningENIsPreconditions(f *framework.Framework, node coreV1.Node) e
 	Expect(hasTrunk).To(BeFalse(),
 		"security-groups-for-pods is enabled on this node: the trunk ENI consumes an ENI slot without hosting pod IPs, so %d replicas exceed data-ENI capacity and pods stay Pending", replicas)
 
-	return netInfo
+	return replicas
 }
 
 // getAWSNodeEnv reads the environment variables on the live aws-node container so
@@ -274,14 +286,19 @@ func getAWSNodeEnv(f *framework.Framework) map[string]string {
 	Expect(err).ToNot(HaveOccurred())
 
 	env := map[string]string{}
+	found := false
 	for _, container := range ds.Spec.Template.Spec.Containers {
 		if container.Name != utils.AwsNodeName {
 			continue
 		}
+		found = true
 		for _, e := range container.Env {
 			env[e.Name] = e.Value
 		}
+		break
 	}
+	Expect(found).To(BeTrue(), "daemonset %s/%s has no %q container",
+		utils.AwsNodeNamespace, utils.AwsNodeName, utils.AwsNodeName)
 	return env
 }
 

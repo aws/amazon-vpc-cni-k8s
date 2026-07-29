@@ -27,7 +27,11 @@ func TestSpanningENIsReplicaCount(t *testing.T) {
 				MaximumNetworkInterfaces:  i32(tc.maxENIs),
 				Ipv4AddressesPerInterface: i32(tc.ipsPerENI),
 			}
-			got := SpanningENIsReplicaCount(netInfo)
+			got, err := SpanningENIsReplicaCount(netInfo)
+			if err != nil {
+				t.Fatalf("SpanningENIsReplicaCount(%d ENIs, %d IPs) returned error: %v",
+					tc.maxENIs, tc.ipsPerENI, err)
+			}
 			if got != tc.want {
 				t.Errorf("SpanningENIsReplicaCount(%d ENIs, %d IPs) = %d, want %d",
 					tc.maxENIs, tc.ipsPerENI, got, tc.want)
@@ -48,6 +52,28 @@ func TestSpanningENIsReplicaCount(t *testing.T) {
 			if got != maxPods-(int(tc.ipsPerENI)-1) {
 				t.Errorf("replica count %d != max-pods %d minus primary-ENI capacity %d; the fits-by-construction algebra no longer holds",
 					got, maxPods, int(tc.ipsPerENI)-1)
+			}
+		})
+	}
+}
+
+func TestSpanningENIsReplicaCountRejectsInvalidNetworkInfo(t *testing.T) {
+	i32 := func(v int32) *int32 { return &v }
+
+	cases := []struct {
+		name    string
+		netInfo ec2types.NetworkInfo
+	}{
+		{"missing maximum ENIs", ec2types.NetworkInfo{Ipv4AddressesPerInterface: i32(10)}},
+		{"missing IPs per ENI", ec2types.NetworkInfo{MaximumNetworkInterfaces: i32(3)}},
+		{"single ENI", ec2types.NetworkInfo{MaximumNetworkInterfaces: i32(1), Ipv4AddressesPerInterface: i32(10)}},
+		{"no secondary IPs", ec2types.NetworkInfo{MaximumNetworkInterfaces: i32(3), Ipv4AddressesPerInterface: i32(1)}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := SpanningENIsReplicaCount(tc.netInfo); err == nil {
+				t.Fatal("SpanningENIsReplicaCount() returned no error")
 			}
 		})
 	}
