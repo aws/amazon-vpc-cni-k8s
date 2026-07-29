@@ -374,11 +374,10 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	driverClient driver.NetworkAPIs) error {
 
 	conf, log, err := LoadNetConf(args.StdinData)
-	log.Debugf("Prev Result: %v\n", conf.PrevResult)
-
 	if err != nil {
 		return errors.Wrap(err, "del cmd: error loading config from args")
 	}
+	log.Debugf("Prev Result: %v\n", conf.PrevResult)
 
 	log.Infof("Received CNI del request: ContainerID(%s) Netns(%s) IfName(%s) Args(%s) Path(%s) argsStdinData(%s)",
 		args.ContainerID, args.Netns, args.IfName, args.Args, args.Path, args.StdinData)

@@ -1862,3 +1862,39 @@ func TestDialIPAMD_ReturnsErrorWhenDialFails(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, result)
 }
+
+// del must return the config-loading error rather than panicking. LoadNetConf returns
+// (nil, nil, err) on failure, so touching conf or log before checking err is a nil deref.
+func TestCmdDelErrLoadNetConf(t *testing.T) {
+	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
+	defer ctrl.Finish()
+
+	tests := []struct {
+		name      string
+		stdinData []byte
+	}{
+		{
+			name:      "malformed JSON config",
+			stdinData: []byte("{invalid-json}"),
+		},
+		{
+			// ParsePrevResult fails on a cniVersion the plugin cannot parse, e.g. after a
+			// CNI downgrade. LoadNetConf returns before the logger is constructed.
+			name:      "unparsable prevResult",
+			stdinData: []byte(`{"cniVersion":"0.4.0","name":"aws-cni","type":"aws-cni","prevResult":{"cniVersion":"9.9.9"}}`),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmdArgs := &skel.CmdArgs{ContainerID: containerID,
+				Netns:     netNS,
+				IfName:    ifName,
+				StdinData: tt.stdinData}
+
+			err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "del cmd: error loading config from args")
+		})
+	}
+}
