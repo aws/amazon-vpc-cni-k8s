@@ -15,6 +15,7 @@ func TestSpanningENIsReplicaCount(t *testing.T) {
 		ipsPerENI int32
 		want      int
 	}{
+		{"minimum spanning capacity", 2, 3, 4},
 		{"c5.large", 3, 10, 20},
 		{"c5.xlarge", 4, 15, 44},
 		{"t3.medium", 3, 6, 12},
@@ -68,12 +69,37 @@ func TestSpanningENIsReplicaCountRejectsInvalidNetworkInfo(t *testing.T) {
 		{"missing IPs per ENI", ec2types.NetworkInfo{MaximumNetworkInterfaces: i32(3)}},
 		{"single ENI", ec2types.NetworkInfo{MaximumNetworkInterfaces: i32(1), Ipv4AddressesPerInterface: i32(10)}},
 		{"no secondary IPs", ec2types.NetworkInfo{MaximumNetworkInterfaces: i32(3), Ipv4AddressesPerInterface: i32(1)}},
+		{"only one pod IP per ENI", ec2types.NetworkInfo{MaximumNetworkInterfaces: i32(3), Ipv4AddressesPerInterface: i32(2)}},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := SpanningENIsReplicaCount(tc.netInfo); err == nil {
 				t.Fatal("SpanningENIsReplicaCount() returned no error")
+			}
+		})
+	}
+}
+
+func TestParseBoolEnv(t *testing.T) {
+	cases := []struct {
+		value string
+		want  bool
+	}{
+		{"true", true},
+		{"TRUE", true},
+		{"1", true},
+		{"t", true},
+		{"false", false},
+		{"0", false},
+		{"", false},
+		{"invalid", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.value, func(t *testing.T) {
+			if got := parseBoolEnv(tc.value); got != tc.want {
+				t.Errorf("parseBoolEnv(%q) = %t, want %t", tc.value, got, tc.want)
 			}
 		})
 	}

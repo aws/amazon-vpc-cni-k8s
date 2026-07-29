@@ -7,7 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"strings"
+	"strconv"
 
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
@@ -182,8 +182,8 @@ func SpanningENIsReplicaCount(netInfo ec2types.NetworkInfo) (int, error) {
 	if maxENIs < 2 {
 		return 0, fmt.Errorf("instance type supports %d ENI(s): at least 2 are required", maxENIs)
 	}
-	if ipsPerENI < 2 {
-		return 0, fmt.Errorf("instance type supports %d IPv4 address(es) per ENI: at least 2 are required", ipsPerENI)
+	if ipsPerENI < 3 {
+		return 0, fmt.Errorf("instance type supports %d IPv4 address(es) per ENI: at least 3 are required to place two pods on the primary ENI", ipsPerENI)
 	}
 	return (maxENIs-1)*(ipsPerENI-1) + 2, nil
 }
@@ -246,8 +246,8 @@ func CreateDeploymentSpanningENIs(f *framework.Framework, node coreV1.Node,
 	Expect(err).ToNot(HaveOccurred())
 
 	interfaceToPodList := GetPodsOnPrimaryAndSecondaryInterface(node, podLabelKey, podLabelVal, f)
-	if len(interfaceToPodList.PodsOnPrimaryENI) == 0 || len(interfaceToPodList.PodsOnSecondaryENI) == 0 {
-		dumpENIPlacement(f, node, interfaceToPodList, replicas)
+	if len(interfaceToPodList.PodsOnPrimaryENI) < 2 || len(interfaceToPodList.PodsOnSecondaryENI) < 2 {
+		DumpENIPlacement(f, node, interfaceToPodList, replicas)
 	}
 	return interfaceToPodList, deployment
 }
@@ -303,12 +303,13 @@ func getAWSNodeEnv(f *framework.Framework) map[string]string {
 }
 
 func parseBoolEnv(val string) bool {
-	return strings.EqualFold(val, "true")
+	parsed, err := strconv.ParseBool(val)
+	return err == nil && parsed
 }
 
-// dumpENIPlacement prints the node's attached ENIs and each pod's IP-to-ENI
+// DumpENIPlacement prints the node's attached ENIs and each pod's IP-to-ENI
 // mapping so a placement assertion failure carries the state that explains it.
-func dumpENIPlacement(f *framework.Framework, node coreV1.Node,
+func DumpENIPlacement(f *framework.Framework, node coreV1.Node,
 	interfaceToPodList InterfaceTypeToPodList, replicas int) {
 
 	fmt.Fprintf(GinkgoWriter, "ENI placement dump for node %s (requested %d replicas): "+

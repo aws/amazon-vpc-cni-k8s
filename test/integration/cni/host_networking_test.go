@@ -71,6 +71,9 @@ var _ = Describe("test host networking", func() {
 
 			By("getting the list of pods using IP from primary and secondary ENI")
 			interfaceTypeToPodList := common.GetPodsOnPrimaryAndSecondaryInterface(primaryNode, podLabelKey, podLabelVal, f)
+			if len(interfaceTypeToPodList.PodsOnPrimaryENI) == 0 || len(interfaceTypeToPodList.PodsOnSecondaryENI) == 0 {
+				common.DumpENIPlacement(f, primaryNode, interfaceTypeToPodList, replicas)
+			}
 
 			// Primary ENI and Secondary ENI IPs are handled differently when setting up
 			// the host networking rule hence this check
@@ -195,6 +198,9 @@ func mtuValidationTest(usePodMTU bool, mtuVal int) {
 	By("getting the list of pods using IP from primary and secondary ENI")
 	interfaceTypeToPodList :=
 		common.GetPodsOnPrimaryAndSecondaryInterface(primaryNode, podLabelKey, podLabelVal, f)
+	if len(interfaceTypeToPodList.PodsOnPrimaryENI) == 0 || len(interfaceTypeToPodList.PodsOnSecondaryENI) == 0 {
+		common.DumpENIPlacement(f, primaryNode, interfaceTypeToPodList, replicas)
+	}
 
 	By("generating the pod networking validation input to be passed to tester")
 	podNetworkingValidationInput := common.GetPodNetworkingValidationInput(interfaceTypeToPodList, vpcCIDRs)
