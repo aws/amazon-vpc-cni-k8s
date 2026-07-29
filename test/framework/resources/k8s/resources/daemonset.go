@@ -15,7 +15,7 @@ package resources
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
@@ -99,30 +99,25 @@ func (d *defaultDaemonSetManager) CheckIfDaemonSetIsReady(namespace string, name
 	if err != nil {
 		return err
 	}
-	ctx := context.Background()
-	attempts := 0
-	return wait.PollImmediateUntil(utils.PollIntervalMedium, func() (bool, error) {
-		attempts += 1
-		// 24 attempts x 5s = 2 minutes. aws-node startup includes a 30s background
-		// wait for API server connectivity before it degrades gracefully
-		// ("Proceeding without API server connectivity"), and specs that restart
-		// kube-proxy immediately before restarting aws-node extend that window
-		// while the service VIP path is reprogrammed -- measured ~50s+ to Ready.
-		// The previous 4-attempt (20s) budget was shorter than aws-node's own
-		// startup budget and flaked any spec that restarts aws-node.
-		if attempts > 24 {
-			return false, errors.New("daemonset taking too long to become ready")
-		}
-
-		if err := d.k8sClient.Get(ctx, utils.NamespacedName(ds), ds); err != nil {
-			return false, err
-		}
-		// Need to ensure the DesiredNumberScheduled is not 0 as it may happen if the DS is still being deleted from previous run
-		if ds.Status.DesiredNumberScheduled != 0 && ds.Status.NumberReady == ds.Status.DesiredNumberScheduled {
-			return true, nil
-		}
-		return false, nil
-	}, ctx.Done())
+	// 2 minute budget: aws-node startup includes a 30s background wait for API
+	// server connectivity before it degrades gracefully ("Proceeding without
+	// API server connectivity"), and specs that restart kube-proxy immediately
+	// before restarting aws-node extend that window while the service VIP path
+	// is reprogrammed -- measured ~50s+ to Ready. A shorter budget (previously
+	// 20s) flaked any spec that restarts aws-node; polling returns as soon as
+	// the daemonset is ready.
+	err = wait.PollUntilContextTimeout(context.Background(), utils.PollIntervalMedium, 2*time.Minute, true,
+		func(ctx context.Context) (bool, error) {
+			if err := d.k8sClient.Get(ctx, utils.NamespacedName(ds), ds); err != nil {
+				return false, err
+			}
+			// DesiredNumberScheduled can be 0 while the previous run's daemonset is still deleting.
+			return ds.Status.DesiredNumberScheduled != 0 && ds.Status.NumberReady == ds.Status.DesiredNumberScheduled, nil
+		})
+	if err != nil {
+		return fmt.Errorf("daemonset %s/%s not ready: %w", namespace, name, err)
+	}
+	return nil
 
 }
 
