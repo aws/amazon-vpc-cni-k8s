@@ -36,7 +36,6 @@ const (
 	suiteIPCooldownPeriod = "0"
 )
 
-var maxIPPerInterface int
 var primaryNode v1.Node
 var secondaryNode v1.Node
 var instanceSecurityGroupID string
@@ -84,16 +83,6 @@ var _ = BeforeSuite(func() {
 	// This won't work if the first SG is only associated with the primary instance.
 	// Need a robust substring in the SGP name to identify node SGP
 	instanceSecurityGroupID = *primaryInstance.NetworkInterfaces[0].Groups[0].GroupId
-
-	By("getting the instance type from node label " + InstanceTypeNodeLabelKey)
-	instanceType := primaryNode.Labels[InstanceTypeNodeLabelKey]
-
-	By("getting the network interface details from ec2")
-	instanceOutput, err := f.CloudServices.EC2().DescribeInstanceType(context.TODO(), instanceType)
-	Expect(err).ToNot(HaveOccurred())
-
-	// Subtract 2 for coredns pods if any, both could be on same Interface
-	maxIPPerInterface = int(*instanceOutput[0].NetworkInfo.Ipv4AddressesPerInterface) - 2
 
 	By("describing the VPC to get the VPC CIDRs")
 	describeVPCOutput, err := f.CloudServices.EC2().DescribeVPC(context.TODO(), f.Options.AWSVPCID)

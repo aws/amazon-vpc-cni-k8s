@@ -201,8 +201,7 @@ func CreateDeploymentSpanningENIs(f *framework.Framework, node coreV1.Node,
 	name, podLabelKey, podLabelVal string,
 	container coreV1.Container) (InterfaceTypeToPodList, *appsV1.Deployment) {
 
-	netInfo := NetworkInfoForNode(f, node)
-	AssertSpanningENIsPreconditions(f, node, netInfo)
+	netInfo := AssertSpanningENIsPreconditions(f, node)
 	replicas := SpanningENIsReplicaCount(netInfo)
 
 	deployment := manifest.NewDefaultDeploymentBuilder().
@@ -243,7 +242,8 @@ func CreateDeploymentSpanningENIs(f *framework.Framework, node coreV1.Node,
 // occupies both the primary and a secondary ENI. Call it before sizing a
 // deployment with SpanningENIsReplicaCount when not using
 // CreateDeploymentSpanningENIs.
-func AssertSpanningENIsPreconditions(f *framework.Framework, node coreV1.Node, netInfo ec2types.NetworkInfo) {
+func AssertSpanningENIsPreconditions(f *framework.Framework, node coreV1.Node) ec2types.NetworkInfo {
+	netInfo := NetworkInfoForNode(f, node)
 	replicas := SpanningENIsReplicaCount(netInfo)
 	awsNodeEnv := getAWSNodeEnv(f)
 
@@ -263,6 +263,7 @@ func AssertSpanningENIsPreconditions(f *framework.Framework, node coreV1.Node, n
 	Expect(hasTrunk).To(BeFalse(),
 		"security-groups-for-pods is enabled on this node: the trunk ENI consumes an ENI slot without hosting pod IPs, so %d replicas exceed data-ENI capacity and pods stay Pending", replicas)
 
+	return netInfo
 }
 
 // getAWSNodeEnv reads the environment variables on the live aws-node container so
