@@ -21,10 +21,13 @@ import (
 
 	"github.com/pkg/errors"
 
+	mock_ec2metadatawrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadatawrapper/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	ec2metadata "github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -272,4 +275,33 @@ func getCloudWatchPublisher(t *testing.T) *cloudWatchPublisher {
 		localMetricData:  make([]types.MetricDatum, 0, localMetricDataSize),
 		log:              getCloudWatchLog(),
 	}
+}
+
+// GetRegion returns a nil output together with its error, so the error must be checked
+// before output.Region is read. Reachable in cni-metrics-helper when AWS_REGION is unset
+// (non-IRSA) and IMDS is unreachable, throttled, or blocked by the hop limit.
+func TestRegionFromIMDSError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockMetadata := mock_ec2metadatawrapper.NewMockEC2MetadataClient(ctrl)
+	mockMetadata.EXPECT().GetRegion(gomock.Any(), gomock.Any()).Return(nil, errors.New("IMDS unreachable"))
+
+	region, err := regionFromIMDS(context.TODO(), mockMetadata)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unable to obtain region from instance metadata")
+	assert.Empty(t, region)
+}
+
+func TestRegionFromIMDSSuccess(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockMetadata := mock_ec2metadatawrapper.NewMockEC2MetadataClient(ctrl)
+	mockMetadata.EXPECT().GetRegion(gomock.Any(), gomock.Any()).Return(
+		&ec2metadata.GetRegionOutput{Region: "us-west-2"}, nil)
+
+	region, err := regionFromIMDS(context.TODO(), mockMetadata)
+	assert.NoError(t, err)
+	assert.Equal(t, "us-west-2", region)
 }
