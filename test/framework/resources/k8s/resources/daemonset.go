@@ -103,7 +103,14 @@ func (d *defaultDaemonSetManager) CheckIfDaemonSetIsReady(namespace string, name
 	attempts := 0
 	return wait.PollImmediateUntil(utils.PollIntervalMedium, func() (bool, error) {
 		attempts += 1
-		if attempts > 4 {
+		// 24 attempts x 5s = 2 minutes. aws-node startup includes a 30s background
+		// wait for API server connectivity before it degrades gracefully
+		// ("Proceeding without API server connectivity"), and specs that restart
+		// kube-proxy immediately before restarting aws-node extend that window
+		// while the service VIP path is reprogrammed -- measured ~50s+ to Ready.
+		// The previous 4-attempt (20s) budget was shorter than aws-node's own
+		// startup budget and flaked any spec that restarts aws-node.
+		if attempts > 24 {
 			return false, errors.New("daemonset taking too long to become ready")
 		}
 
