@@ -95,12 +95,16 @@ var _ = BeforeSuite(func() {
 	// wait. WARM_IP_TARGET must stay unset here: when set, ipamd ignores
 	// WARM_ENI_TARGET. Placement on the primary ENI is guaranteed by the
 	// pigeonhole replica count, not by keeping the pool lean.
+	// WARM_PREFIX_TARGET=1 preserves a valid warm pool for tests that enable
+	// prefix delegation; zero is unsupported when warm IP and minimum IP targets
+	// are unset.
 	// Leave IP_COOLDOWN_PERIOD unset so ipamd uses its 30-second default. The
 	// deployment readiness wait absorbs cooldown carryover, while the pigeonhole
 	// count guarantees placement once pods are ready.
 	k8sUtils.UpdateEnvVarOnDaemonSetAndWaitUntilReady(f, "aws-node", "kube-system",
 		"aws-node", map[string]string{
-			"WARM_ENI_TARGET": "1",
+			"WARM_ENI_TARGET":    "1",
+			"WARM_PREFIX_TARGET": "1",
 		}, map[string]struct{}{
 			"WARM_IP_TARGET": {},
 		})
@@ -119,6 +123,7 @@ var _ = AfterSuite(func() {
 		map[string]struct{}{
 			"WARM_IP_TARGET":     {},
 			"WARM_ENI_TARGET":    {},
+			"WARM_PREFIX_TARGET": {},
 			"IP_COOLDOWN_PERIOD": {},
 		})
 })
