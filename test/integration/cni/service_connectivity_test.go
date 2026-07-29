@@ -188,11 +188,11 @@ var _ = Describe("[CANARY] test service connectivity", FlakeAttempts(3), func() 
 		// Sleep for IP cooldown period to ensure IPs are added back to datastore for future test runs
 		time.Sleep(5 * time.Second)
 
-		// Restore the suite-wide default cooldown so later specs do not inherit the
-		// service-connectivity override.
-		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
-			utils.AwsNodeName, map[string]string{
-				"IP_COOLDOWN_PERIOD": suiteIPCooldownPeriod,
+		// Remove the service-connectivity override so ipamd returns to its 30-second
+		// default for later specs.
+		k8sUtils.RemoveVarFromDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName,
+			utils.AwsNodeNamespace, utils.AwsNodeName, map[string]struct{}{
+				"IP_COOLDOWN_PERIOD": {},
 			})
 	})
 

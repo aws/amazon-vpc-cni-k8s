@@ -31,9 +31,6 @@ const (
 	InstanceTypeNodeLabelKey = "beta.kubernetes.io/instance-type"
 	DEFAULT_VETH_PREFIX      = "eni"
 	DEFAULT_MTU_VAL          = "9001"
-	// suiteIPCooldownPeriod preserves the product default so network proxies have
-	// time to remove stale endpoint rules before an IP is reused.
-	suiteIPCooldownPeriod = "30"
 )
 
 var primaryNode v1.Node
@@ -98,12 +95,12 @@ var _ = BeforeSuite(func() {
 	// wait. WARM_IP_TARGET must stay unset here: when set, ipamd ignores
 	// WARM_ENI_TARGET. Placement on the primary ENI is guaranteed by the
 	// pigeonhole replica count, not by keeping the pool lean.
-	// Keep the default IP cooldown: the deployment readiness wait absorbs cooldown
-	// carryover, while the pigeonhole count guarantees placement once pods are ready.
+	// Leave IP_COOLDOWN_PERIOD unset so ipamd uses its 30-second default. The
+	// deployment readiness wait absorbs cooldown carryover, while the pigeonhole
+	// count guarantees placement once pods are ready.
 	k8sUtils.UpdateEnvVarOnDaemonSetAndWaitUntilReady(f, "aws-node", "kube-system",
 		"aws-node", map[string]string{
-			"WARM_ENI_TARGET":    "1",
-			"IP_COOLDOWN_PERIOD": suiteIPCooldownPeriod,
+			"WARM_ENI_TARGET": "1",
 		}, map[string]struct{}{
 			"WARM_IP_TARGET": {},
 		})
