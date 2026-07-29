@@ -145,14 +145,22 @@ var _ = Describe("[CANARY] test service connectivity", FlakeAttempts(3), func() 
 			CreateAndWaitTillJobCompleted(negativeTesterJob)
 		Expect(err).To(HaveOccurred())
 
-		// After each test case, validate that no more than maxENIs have been allocated to verify
+		// After each test case, validate that no more than maxENIs stay allocated, verifying
 		// that IPs have not leaked or gotten stuck in cooldown. We chose 3 as the value of maxENIs
-		// since pod placement is not guaranteed to be equally distributed
-		By("checking number of ENIs is less than or equal to maxENIs")
+		// since pod placement is not guaranteed to be equally distributed. The count is
+		// eventually consistent: a prior spec may have grown the pool (the suite runs with
+		// WARM_ENI_TARGET=1) and ipamd detaches surplus ENIs over its ~45s reconcile
+		// cycles, so poll for convergence instead of asserting a snapshot. A real leak
+		// never converges and still fails here.
+		By("checking number of ENIs converges to no more than maxENIs")
 		instanceID := k8sUtils.GetInstanceIDFromNode(primaryNode)
-		primaryInstance, err := f.CloudServices.EC2().DescribeInstance(context.TODO(), instanceID)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(len(primaryInstance.NetworkInterfaces) <= 3).To(BeTrue())
+		Eventually(func() (int, error) {
+			primaryInstance, err := f.CloudServices.EC2().DescribeInstance(context.TODO(), instanceID)
+			if err != nil {
+				return 0, err
+			}
+			return len(primaryInstance.NetworkInterfaces), nil
+		}, 3*time.Minute, 10*time.Second).Should(BeNumerically("<=", 3))
 	})
 
 	JustAfterEach(func() {
