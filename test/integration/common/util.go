@@ -215,6 +215,20 @@ func CreateDeploymentSpanningENIs(f *framework.Framework, node coreV1.Node,
 
 	deployment, err := f.K8sResourceManagers.DeploymentManager().
 		CreateAndWaitTillDeploymentIsReady(deployment, utils.DefaultDeploymentReadyTimeout)
+	if err != nil {
+		// A capacity or IP-allocation problem surfaces here as a bare timeout;
+		// print each pod phase so the failure explains itself.
+		pods, listErr := f.K8sResourceManagers.PodManager().
+			GetPodsWithLabelSelector(podLabelKey, podLabelVal)
+		if listErr == nil {
+			phases := map[string]int{}
+			for _, pod := range pods.Items {
+				phases[string(pod.Status.Phase)]++
+			}
+			fmt.Fprintf(GinkgoWriter, "spanning deployment not ready after %v: %d replicas requested, pod phases: %v\n",
+				utils.DefaultDeploymentReadyTimeout, replicas, phases)
+		}
+	}
 	Expect(err).ToNot(HaveOccurred())
 
 	interfaceToPodList := GetPodsOnPrimaryAndSecondaryInterface(node, podLabelKey, podLabelVal, f)

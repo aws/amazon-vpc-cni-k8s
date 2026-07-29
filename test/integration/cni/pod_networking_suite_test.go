@@ -31,6 +31,9 @@ const (
 	InstanceTypeNodeLabelKey = "beta.kubernetes.io/instance-type"
 	DEFAULT_VETH_PREFIX      = "eni"
 	DEFAULT_MTU_VAL          = "9001"
+	// suiteIPCooldownPeriod keeps IPs freed by a spec teardown immediately
+	// reusable across the suite; specs that override it must restore this value.
+	suiteIPCooldownPeriod = "0"
 )
 
 var maxIPPerInterface int
@@ -111,7 +114,7 @@ var _ = BeforeSuite(func() {
 	k8sUtils.UpdateEnvVarOnDaemonSetAndWaitUntilReady(f, "aws-node", "kube-system",
 		"aws-node", map[string]string{
 			"WARM_ENI_TARGET":    "1",
-			"IP_COOLDOWN_PERIOD": "0",
+			"IP_COOLDOWN_PERIOD": suiteIPCooldownPeriod,
 		}, map[string]struct{}{
 			"WARM_IP_TARGET": {},
 		})

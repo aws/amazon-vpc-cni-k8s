@@ -40,20 +40,6 @@ var err error
 
 var _ = Describe("test host networking", func() {
 
-	// For host networking tests, increase WARM_IP_TARGET to prevent long IPAMD warmup.
-	BeforeEach(func() {
-		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
-			"WARM_IP_TARGET": strconv.Itoa(maxIPPerInterface - 1),
-		})
-	})
-	AfterEach(func() {
-		// Remove rather than restore: the suite runs in WARM_ENI_TARGET mode, and
-		// ipamd ignores WARM_ENI_TARGET while WARM_IP_TARGET is set.
-		k8sUtils.RemoveVarFromDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]struct{}{
-			"WARM_IP_TARGET": {},
-		})
-	})
-
 	Context("when pods using IP from primary and secondary ENI are created", func() {
 		AfterEach(func() {
 			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{

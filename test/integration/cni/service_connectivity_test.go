@@ -184,7 +184,7 @@ var _ = Describe("[CANARY] test service connectivity", FlakeAttempts(3), func() 
 		// preconditions rely on freed IPs being immediately reusable, do not inherit the 5s set above.
 		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
 			utils.AwsNodeName, map[string]string{
-				"IP_COOLDOWN_PERIOD": "0",
+				"IP_COOLDOWN_PERIOD": suiteIPCooldownPeriod,
 			})
 	})
 
