@@ -126,14 +126,14 @@ var _ = Describe("Test pod networking with prefix delegation enabled <-> disable
 })
 
 // waitForPodAddressConvergence places one canary server pod per node and
-// verifies every canary can reach every other canary across nodes. Freshly
-// assigned pod addresses (for example from a prefix delegated moments ago)
-// are handed out by ipamd as soon as the EC2 control-plane call returns,
-// before the VPC dataplane has converged, so traffic started immediately
-// after a PD toggle can be black-holed. The canaries prove the address
-// ranges pods will actually use are routable before the measured traffic
-// starts. Bounded by the existing pod-running and exec timeouts; no
-// assertion of the measured test is altered.
+// verifies every canary can reach every other canary across nodes before the
+// measured traffic starts. Observed in release runs: traffic started
+// immediately after toggling ENABLE_PREFIX_DELEGATION intermittently timed
+// out cross-node to newly assigned pod addresses for the full client
+// lifetime, while same-node traffic succeeded; adding this barrier removed
+// those failures. The lagging layer has not been isolated, so this asserts
+// the reachability precondition the measured test depends on rather than a
+// specific mechanism. No assertion of the measured test is altered.
 func waitForPodAddressConvergence() error {
 	nodes, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
 	if err != nil {
