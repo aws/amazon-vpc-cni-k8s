@@ -52,7 +52,6 @@ var _ = Describe("Test pod networking with prefix delegation enabled <-> disable
 		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName,
 			utils.AwsNodeNamespace, utils.AwsNodeName,
 			map[string]string{"ENABLE_PREFIX_DELEGATION": enableIPv4PrefixDelegation})
-
 	})
 
 	JustAfterEach(func() {

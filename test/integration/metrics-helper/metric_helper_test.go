@@ -35,10 +35,11 @@ var _ = Describe("test cni-metrics-helper publishes metrics", func() {
 
 	Context("when a metric is updated", func() {
 		It("the updated metric is published to CW", func() {
-			// Create a new deployment to verify addReqCount is updated
+			// Create a new deployment to verify addReqCount is updated. Half the
+			// node's allocatable pod capacity always fits alongside existing pods.
 			var deployment *v1.Deployment
 			deployment = manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
-				Replicas(30).
+				Replicas(nodePodCapacity / 2).
 				NodeName(nodeName).
 				Build()
 
