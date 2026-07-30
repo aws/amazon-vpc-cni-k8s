@@ -23,6 +23,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	v1 "k8s.io/api/core/v1"
 )
 
 var _ = Describe("Test pod networking with prefix delegation enabled <-> disabled", func() {
@@ -53,6 +54,8 @@ var _ = Describe("Test pod networking with prefix delegation enabled <-> disable
 			utils.AwsNodeNamespace, utils.AwsNodeName,
 			map[string]string{"ENABLE_PREFIX_DELEGATION": enableIPv4PrefixDelegation})
 
+		By("waiting for pod address dataplane convergence on every node")
+		Expect(waitForPodAddressConvergence()).To(Succeed())
 	})
 
 	JustAfterEach(func() {
@@ -121,3 +124,62 @@ var _ = Describe("Test pod networking with prefix delegation enabled <-> disable
 		})
 	})
 })
+
+// waitForPodAddressConvergence places one canary server pod per node and
+// verifies every canary can reach every other canary across nodes. Freshly
+// assigned pod addresses (for example from a prefix delegated moments ago)
+// are handed out by ipamd as soon as the EC2 control-plane call returns,
+// before the VPC dataplane has converged, so traffic started immediately
+// after a PD toggle can be black-holed. The canaries prove the address
+// ranges pods will actually use are routable before the measured traffic
+// starts. Bounded by the existing pod-running and exec timeouts; no
+// assertion of the measured test is altered.
+func waitForPodAddressConvergence() error {
+	nodes, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
+	if err != nil {
+		return err
+	}
+
+	var canaries []*v1.Pod
+	defer func() {
+		for _, pod := range canaries {
+			_ = f.K8sResourceManagers.PodManager().DeleteAndWaitTillPodDeleted(pod)
+		}
+	}()
+
+	for i, node := range nodes.Items {
+		container := manifest.NewBusyBoxContainerBuilder(f.Options.TestImageRegistry).
+			Image(utils.GetTestImage(f.Options.TestImageRegistry, utils.NginxImage)).
+			Command(nil).
+			Port(v1.ContainerPort{ContainerPort: 80, Protocol: "TCP"}).
+			Build()
+		pod := manifest.NewDefaultPodBuilder().
+			Name(fmt.Sprintf("pd-convergence-canary-%d", i)).
+			Namespace(utils.DefaultTestNamespace).
+			NodeName(node.Name).
+			Container(container).
+			RestartPolicy(v1.RestartPolicyNever).
+			Build()
+		runningPod, err := f.K8sResourceManagers.PodManager().CreateAndWaitTillRunning(pod)
+		if err != nil {
+			return fmt.Errorf("creating convergence canary on node %s: %w", node.Name, err)
+		}
+		canaries = append(canaries, runningPod)
+	}
+
+	for _, src := range canaries {
+		for _, dst := range canaries {
+			if src.Spec.NodeName == dst.Spec.NodeName {
+				continue
+			}
+			cmd := []string{"curl", "-s", "-o", "/dev/null", "--retry", "20", "--retry-delay", "3",
+				"--retry-connrefused", "--retry-all-errors", "--max-time", "5",
+				fmt.Sprintf("http://%s:80", dst.Status.PodIP)}
+			if _, stderr, err := f.K8sResourceManagers.PodManager().PodExec(src.Namespace, src.Name, cmd); err != nil {
+				return fmt.Errorf("dataplane did not converge: canary %s (node %s) cannot reach %s (node %s): %v %s",
+					src.Name, src.Spec.NodeName, dst.Status.PodIP, dst.Spec.NodeName, err, stderr)
+			}
+		}
+	}
+	return nil
+}

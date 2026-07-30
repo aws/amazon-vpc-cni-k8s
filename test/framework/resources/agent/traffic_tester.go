@@ -63,6 +63,27 @@ type TrafficTest struct {
 // Tests traffic by creating multiple server pods using a deployment and multiple client pods
 // using a Job. Each client Pod tests connectivity to each Server Pod.
 func (t *TrafficTest) TestTraffic() (float64, error) {
+	// Best-effort cleanup so a failure mid-test does not leak resources that
+	// collide with or starve IPs from later specs.
+	completed := false
+	var serverDeployment *appsV1.Deployment
+	var metricServerPod *v1.Pod
+	var clientJob *batchV1.Job
+	defer func() {
+		if completed {
+			return
+		}
+		if clientJob != nil {
+			_ = t.Framework.K8sResourceManagers.JobManager().DeleteAndWaitTillJobIsDeleted(clientJob)
+		}
+		if metricServerPod != nil {
+			_ = t.Framework.K8sResourceManagers.PodManager().DeleteAndWaitTillPodDeleted(metricServerPod)
+		}
+		if serverDeployment != nil {
+			_ = t.Framework.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(serverDeployment)
+		}
+	}()
+
 	// Server listens on a given TCP/UDP Port
 	serverDeployment, err := t.startTrafficServer()
 	if err != nil {
@@ -73,7 +94,7 @@ func (t *TrafficTest) TestTraffic() (float64, error) {
 
 	// The Metric Server Aggregates all metrics from all the client Pod so we
 	// don't have to query each client Pod to get the metric
-	metricServerPod, err := t.startMetricServerPod()
+	metricServerPod, err = t.startMetricServerPod()
 	if err != nil {
 		return 0, fmt.Errorf("failed to start metric server pod: %v", err)
 	}
@@ -109,7 +130,7 @@ func (t *TrafficTest) TestTraffic() (float64, error) {
 
 	// To the Client Job pass the list of Server IPs, so each client Pod tests connectivity to each
 	// server
-	clientJob, err := t.startTrafficClient(strings.Join(serverIPs, ","), metricServerPod.Status.PodIP)
+	clientJob, err = t.startTrafficClient(strings.Join(serverIPs, ","), metricServerPod.Status.PodIP)
 	if err != nil {
 		return 0, fmt.Errorf("failed to start client jobs: %v", err)
 	}
@@ -151,6 +172,7 @@ func (t *TrafficTest) TestTraffic() (float64, error) {
 	}
 
 	// Clean up all the resources
+	completed = true
 	err = t.Framework.K8sResourceManagers.JobManager().DeleteAndWaitTillJobIsDeleted(clientJob)
 	if err != nil {
 		return 0, fmt.Errorf("failed to delete client job: %v", err)
