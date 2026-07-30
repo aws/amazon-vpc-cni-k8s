@@ -95,8 +95,10 @@ var _ = Describe("test SNAT with kube-proxy modes", func() {
 					By("cleaning up node state left behind by ipvs mode")
 					Expect(cleanupIPVSLeftovers()).To(Succeed())
 				}
-				By("verifying no Service ClusterIP remains bound on any node")
-				Expect(verifyNoServiceVIPBoundOnNodes()).To(Succeed())
+				if originalMode != "ipvs" {
+					By("verifying no Service ClusterIP remains bound on any node")
+					Expect(verifyNoServiceVIPBoundOnNodes()).To(Succeed())
+				}
 			})
 
 			By(fmt.Sprintf("switching kube-proxy to %s mode", mode))
@@ -243,19 +245,28 @@ func setKubeProxyMode(mode string) error {
 	return restartKubeProxyPods()
 }
 
-// cleanupIPVSLeftovers removes node state left behind by running kube-proxy in
-// ipvs mode. Since v1.16 kube-proxy does not clean up state created by other
-// proxy modes; upstream recommends kube-proxy --cleanup or a node restart when
-// switching modes: https://github.com/kubernetes/kubernetes/pull/76109
+// cleanupIPVSLeftovers removes ipvs state left behind after the ipvs entry.
+// kube-proxy startup cleans other-family leftovers only (platformCleanup in
+// cmd/kube-proxy/app/server_linux.go): nftables mode cleans iptables and ipvs
+// state, while iptables-based modes clean nftables state. Since iptables and
+// ipvs are the same family, restoring iptables mode never removes ipvs
+// leftovers, and the kube-ipvs0 dummy interface keeps every Service ClusterIP
+// bound to the node, black-holing host-network pods that start later.
+// The commands follow the cleanup documented for kubeadm reset
+// (https://github.com/kubernetes/kubeadm/issues/3133) plus the interface
+// removal, then verify against kernel state so nothing fails silently: the
+// command exits non-zero if the interface still exists or the ipvs table
+// still has virtual services.
 func cleanupIPVSLeftovers() error {
 	nodes, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
 	if err != nil {
 		return err
 	}
+	cleanup := "ipvsadm --clear 2>/dev/null; ip link del kube-ipvs0 2>/dev/null; " +
+		"[ ! -e /sys/class/net/kube-ipvs0 ] && ! grep -qE \"^(TCP|UDP|SCTP)\" /proc/net/ip_vs 2>/dev/null"
 	for _, node := range nodes.Items {
-		_, err := execNodeShell(node.Name, "ipvsadm -C 2>/dev/null; ip link del kube-ipvs0 2>/dev/null; true")
-		if err != nil {
-			return fmt.Errorf("ipvs cleanup on node %s: %w", node.Name, err)
+		if _, err := execNodeShell(node.Name, cleanup); err != nil {
+			return fmt.Errorf("ipvs cleanup on node %s left interface or virtual services behind: %w", node.Name, err)
 		}
 	}
 	return nil
@@ -285,7 +296,7 @@ func verifyNoServiceVIPBoundOnNodes() error {
 		return err
 	}
 	for _, node := range nodes.Items {
-		out, err := execNodeShell(node.Name, "ip -4 -o addr show scope global")
+		out, err := execNodeShell(node.Name, "ip -o addr show scope global")
 		if err != nil {
 			return fmt.Errorf("listing addresses on node %s: %w", node.Name, err)
 		}
