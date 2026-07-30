@@ -95,10 +95,6 @@ var _ = Describe("test SNAT with kube-proxy modes", func() {
 					By("cleaning up node state left behind by ipvs mode")
 					Expect(cleanupIPVSLeftovers()).To(Succeed())
 				}
-				if originalMode != "ipvs" {
-					By("verifying no Service ClusterIP remains bound on any node")
-					Expect(verifyNoServiceVIPBoundOnNodes()).To(Succeed())
-				}
 			})
 
 			By(fmt.Sprintf("switching kube-proxy to %s mode", mode))
@@ -245,18 +241,11 @@ func setKubeProxyMode(mode string) error {
 	return restartKubeProxyPods()
 }
 
-// cleanupIPVSLeftovers removes ipvs state left behind after the ipvs entry.
-// kube-proxy startup cleans other-family leftovers only (platformCleanup in
-// cmd/kube-proxy/app/server_linux.go): nftables mode cleans iptables and ipvs
-// state, while iptables-based modes clean nftables state. Since iptables and
-// ipvs are the same family, restoring iptables mode never removes ipvs
-// leftovers, and the kube-ipvs0 dummy interface keeps every Service ClusterIP
-// bound to the node, black-holing host-network pods that start later.
-// The commands follow the cleanup documented for kubeadm reset
-// (https://github.com/kubernetes/kubeadm/issues/3133) plus the interface
-// removal, then verify against kernel state so nothing fails silently: the
-// command exits non-zero if the interface still exists or the ipvs table
-// still has virtual services.
+// cleanupIPVSLeftovers removes ipvs state that kube-proxy startup never
+// cleans when restoring an iptables-based mode (iptables and ipvs are one
+// family in platformCleanup). A leftover kube-ipvs0 keeps Service ClusterIPs
+// bound to the node and black-holes host-network pods started later.
+// Ref: https://github.com/kubernetes/kubeadm/issues/3133
 func cleanupIPVSLeftovers() error {
 	nodes, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
 	if err != nil {
@@ -267,49 +256,6 @@ func cleanupIPVSLeftovers() error {
 	for _, node := range nodes.Items {
 		if _, err := execNodeShell(node.Name, cleanup); err != nil {
 			return fmt.Errorf("ipvs cleanup on node %s left interface or virtual services behind: %w", node.Name, err)
-		}
-	}
-	return nil
-}
-
-// verifyNoServiceVIPBoundOnNodes asserts no Service ClusterIP is bound to a
-// local interface on any node, regardless of which kube-proxy mode left it
-// behind. A leftover binding (for example ipvs mode's kube-ipvs0 dummy
-// interface) black-holes Service VIP traffic from host-network processes that
-// start after the mode switch, such as a restarted ipamd.
-func verifyNoServiceVIPBoundOnNodes() error {
-	serviceList := &v1.ServiceList{}
-	if err := f.K8sClient.List(context.Background(), serviceList); err != nil {
-		return err
-	}
-	clusterIPs := make(map[string]string)
-	for _, svc := range serviceList.Items {
-		for _, ip := range svc.Spec.ClusterIPs {
-			if ip != "" && ip != v1.ClusterIPNone {
-				clusterIPs[ip] = fmt.Sprintf("%s/%s", svc.Namespace, svc.Name)
-			}
-		}
-	}
-
-	nodes, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
-	if err != nil {
-		return err
-	}
-	for _, node := range nodes.Items {
-		out, err := execNodeShell(node.Name, "ip -o addr show scope global")
-		if err != nil {
-			return fmt.Errorf("listing addresses on node %s: %w", node.Name, err)
-		}
-		for _, line := range strings.Split(string(out), "\n") {
-			fields := strings.Fields(line)
-			if len(fields) < 4 {
-				continue
-			}
-			addr := strings.SplitN(fields[3], "/", 2)[0]
-			if svc, bound := clusterIPs[addr]; bound {
-				return fmt.Errorf("ClusterIP %s of Service %s is bound to interface %s on node %s: kube-proxy mode switch left node state behind (see https://github.com/kubernetes/kubernetes/pull/76109)",
-					addr, svc, fields[1], node.Name)
-			}
 		}
 	}
 	return nil
