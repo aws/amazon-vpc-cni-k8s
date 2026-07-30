@@ -66,9 +66,7 @@ func (t *TrafficTest) TestTraffic() (successRate float64, err error) {
 	var serverDeployment *appsV1.Deployment
 	var metricServerPod *v1.Pod
 	var clientJob *batchV1.Job
-	// Single cleanup for every exit path, so a failure mid-test cannot leak
-	// resources that collide with or starve IPs from later specs. A cleanup
-	// failure fails the test unless an earlier error is already returned.
+	// Clean up test resources on every exit path.
 	defer func() {
 		cleanup := func(name string, del func() error) {
 			if delErr := del(); delErr != nil && err == nil {
