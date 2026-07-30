@@ -62,30 +62,39 @@ type TrafficTest struct {
 
 // Tests traffic by creating multiple server pods using a deployment and multiple client pods
 // using a Job. Each client Pod tests connectivity to each Server Pod.
-func (t *TrafficTest) TestTraffic() (float64, error) {
-	// Best-effort cleanup so a failure mid-test does not leak resources that
-	// collide with or starve IPs from later specs.
-	completed := false
+func (t *TrafficTest) TestTraffic() (successRate float64, err error) {
 	var serverDeployment *appsV1.Deployment
 	var metricServerPod *v1.Pod
 	var clientJob *batchV1.Job
+	// Single cleanup for every exit path, so a failure mid-test cannot leak
+	// resources that collide with or starve IPs from later specs. A cleanup
+	// failure fails the test unless an earlier error is already returned.
 	defer func() {
-		if completed {
-			return
+		cleanup := func(name string, del func() error) {
+			if delErr := del(); delErr != nil && err == nil {
+				successRate = 0
+				err = fmt.Errorf("failed to delete %s: %v", name, delErr)
+			}
 		}
 		if clientJob != nil {
-			_ = t.Framework.K8sResourceManagers.JobManager().DeleteAndWaitTillJobIsDeleted(clientJob)
+			cleanup("client job", func() error {
+				return t.Framework.K8sResourceManagers.JobManager().DeleteAndWaitTillJobIsDeleted(clientJob)
+			})
 		}
 		if metricServerPod != nil {
-			_ = t.Framework.K8sResourceManagers.PodManager().DeleteAndWaitTillPodDeleted(metricServerPod)
+			cleanup("metric server pod", func() error {
+				return t.Framework.K8sResourceManagers.PodManager().DeleteAndWaitTillPodDeleted(metricServerPod)
+			})
 		}
 		if serverDeployment != nil {
-			_ = t.Framework.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(serverDeployment)
+			cleanup("server deployment", func() error {
+				return t.Framework.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(serverDeployment)
+			})
 		}
 	}()
 
 	// Server listens on a given TCP/UDP Port
-	serverDeployment, err := t.startTrafficServer()
+	serverDeployment, err = t.startTrafficServer()
 	if err != nil {
 		return 0, fmt.Errorf("failed to start server deployment: %v", err)
 	}
@@ -164,28 +173,11 @@ func (t *TrafficTest) TestTraffic() (float64, error) {
 
 	fmt.Fprintln(GinkgoWriter, "successfully fetched the metrics from metric server")
 
-	successRate := t.calculateSuccessRate(testInputs)
+	successRate = t.calculateSuccessRate(testInputs)
 	if successRate != float64(100) {
 		fmt.Fprintf(GinkgoWriter, "SuccessRate: %v, Input List: %v", successRate, testInputs)
 	} else {
 		fmt.Fprintf(GinkgoWriter, "SuccessRate: %v", successRate)
-	}
-
-	// Clean up all the resources
-	completed = true
-	err = t.Framework.K8sResourceManagers.JobManager().DeleteAndWaitTillJobIsDeleted(clientJob)
-	if err != nil {
-		return 0, fmt.Errorf("failed to delete client job: %v", err)
-	}
-
-	err = t.Framework.K8sResourceManagers.PodManager().DeleteAndWaitTillPodDeleted(metricServerPod)
-	if err != nil {
-		return 0, fmt.Errorf("failed to delete metric server pod: %v", err)
-	}
-
-	err = t.Framework.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(serverDeployment)
-	if err != nil {
-		return 0, fmt.Errorf("failed to delete server deployment: %v", err)
 	}
 
 	return successRate, nil
