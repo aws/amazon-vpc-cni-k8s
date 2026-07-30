@@ -330,6 +330,15 @@ func execNodeShell(nodeName string, command string) ([]byte, error) {
 	return output, err
 }
 
+// execNodeShellWithTimeout bounds the remote exec and captures combined output
+// so a wedged node cannot hang cleanup and failures carry their output.
+func execNodeShellWithTimeout(nodeName string, command string, timeout time.Duration) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "kubectl", "node-shell", nodeName, "--", "bash", "-c", command)
+	return cmd.CombinedOutput()
+}
+
 // sets requested policy in drop file and restarts udev
 func setMACAddressPolicy(nodeName string, value string) error {
 

@@ -15,8 +15,10 @@ package agent
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/agent/pkg/input"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
@@ -66,12 +68,21 @@ func (t *TrafficTest) TestTraffic() (successRate float64, err error) {
 	var serverDeployment *appsV1.Deployment
 	var metricServerPod *v1.Pod
 	var clientJob *batchV1.Job
-	// Clean up test resources on every exit path.
+	// Clean up test resources on every exit path. Failures are aggregated and
+	// surfaced, and each deletion is bounded so a stuck resource cannot hang
+	// teardown indefinitely.
 	defer func() {
+		var cleanupErrs []error
 		cleanup := func(name string, del func() error) {
-			if delErr := del(); delErr != nil && err == nil {
-				successRate = 0
-				err = fmt.Errorf("failed to delete %s: %v", name, delErr)
+			done := make(chan error, 1)
+			go func() { done <- del() }()
+			select {
+			case delErr := <-done:
+				if delErr != nil {
+					cleanupErrs = append(cleanupErrs, fmt.Errorf("%s deletion failed: %w", name, delErr))
+				}
+			case <-time.After(2 * time.Minute):
+				cleanupErrs = append(cleanupErrs, fmt.Errorf("%s deletion timed out after 2m", name))
 			}
 		}
 		if clientJob != nil {
@@ -88,6 +99,10 @@ func (t *TrafficTest) TestTraffic() (successRate float64, err error) {
 			cleanup("server deployment", func() error {
 				return t.Framework.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(serverDeployment)
 			})
+		}
+		if err == nil && len(cleanupErrs) > 0 {
+			successRate = 0
+			err = fmt.Errorf("teardown failures: %w", errors.Join(cleanupErrs...))
 		}
 	}()
 

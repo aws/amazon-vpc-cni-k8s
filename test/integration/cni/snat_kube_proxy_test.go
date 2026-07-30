@@ -254,8 +254,8 @@ func cleanupIPVSLeftovers() error {
 	cleanup := "ipvsadm --clear 2>/dev/null; ip link del kube-ipvs0 2>/dev/null; " +
 		"[ ! -e /sys/class/net/kube-ipvs0 ] && ! grep -qE \"^(TCP|UDP|SCTP)\" /proc/net/ip_vs 2>/dev/null"
 	for _, node := range nodes.Items {
-		if _, err := execNodeShell(node.Name, cleanup); err != nil {
-			return fmt.Errorf("ipvs cleanup on node %s left interface or virtual services behind: %w", node.Name, err)
+		if out, err := execNodeShellWithTimeout(node.Name, cleanup, 30*time.Second); err != nil {
+			return fmt.Errorf("ipvs cleanup on node %s left interface or virtual services behind: %w (output: %s)", node.Name, err, out)
 		}
 	}
 	return nil
