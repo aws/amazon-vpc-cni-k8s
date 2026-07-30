@@ -91,6 +91,12 @@ var _ = Describe("test SNAT with kube-proxy modes", func() {
 			DeferCleanup(func() {
 				By(fmt.Sprintf("restoring kube-proxy mode to %s", originalMode))
 				Expect(setKubeProxyMode(originalMode)).To(Succeed())
+				if mode == "ipvs" && originalMode != "ipvs" {
+					By("cleaning up node state left behind by ipvs mode")
+					Expect(cleanupIPVSLeftovers()).To(Succeed())
+				}
+				By("verifying no Service ClusterIP remains bound on any node")
+				Expect(verifyNoServiceVIPBoundOnNodes()).To(Succeed())
 			})
 
 			By(fmt.Sprintf("switching kube-proxy to %s mode", mode))
@@ -235,6 +241,67 @@ func setKubeProxyMode(mode string) error {
 		return err
 	}
 	return restartKubeProxyPods()
+}
+
+// cleanupIPVSLeftovers removes node state left behind by running kube-proxy in
+// ipvs mode. Since v1.16 kube-proxy does not clean up state created by other
+// proxy modes; upstream recommends kube-proxy --cleanup or a node restart when
+// switching modes: https://github.com/kubernetes/kubernetes/pull/76109
+func cleanupIPVSLeftovers() error {
+	nodes, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
+	if err != nil {
+		return err
+	}
+	for _, node := range nodes.Items {
+		_, err := execNodeShell(node.Name, "ipvsadm -C 2>/dev/null; ip link del kube-ipvs0 2>/dev/null; true")
+		if err != nil {
+			return fmt.Errorf("ipvs cleanup on node %s: %w", node.Name, err)
+		}
+	}
+	return nil
+}
+
+// verifyNoServiceVIPBoundOnNodes asserts no Service ClusterIP is bound to a
+// local interface on any node, regardless of which kube-proxy mode left it
+// behind. A leftover binding (for example ipvs mode's kube-ipvs0 dummy
+// interface) black-holes Service VIP traffic from host-network processes that
+// start after the mode switch, such as a restarted ipamd.
+func verifyNoServiceVIPBoundOnNodes() error {
+	serviceList := &v1.ServiceList{}
+	if err := f.K8sClient.List(context.Background(), serviceList); err != nil {
+		return err
+	}
+	clusterIPs := make(map[string]string)
+	for _, svc := range serviceList.Items {
+		for _, ip := range svc.Spec.ClusterIPs {
+			if ip != "" && ip != v1.ClusterIPNone {
+				clusterIPs[ip] = fmt.Sprintf("%s/%s", svc.Namespace, svc.Name)
+			}
+		}
+	}
+
+	nodes, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
+	if err != nil {
+		return err
+	}
+	for _, node := range nodes.Items {
+		out, err := execNodeShell(node.Name, "ip -4 -o addr show scope global")
+		if err != nil {
+			return fmt.Errorf("listing addresses on node %s: %w", node.Name, err)
+		}
+		for _, line := range strings.Split(string(out), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) < 4 {
+				continue
+			}
+			addr := strings.SplitN(fields[3], "/", 2)[0]
+			if svc, bound := clusterIPs[addr]; bound {
+				return fmt.Errorf("ClusterIP %s of Service %s is bound to interface %s on node %s: kube-proxy mode switch left node state behind (see https://github.com/kubernetes/kubernetes/pull/76109)",
+					addr, svc, fields[1], node.Name)
+			}
+		}
+	}
+	return nil
 }
 
 func restartKubeProxyPods() error {
