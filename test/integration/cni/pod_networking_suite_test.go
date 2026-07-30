@@ -89,18 +89,12 @@ var _ = BeforeSuite(func() {
 		vpcCIDRs = append(vpcCIDRs, *cidrBlockAssociationSet.CidrBlock)
 	}
 
-	// WARM_ENI_TARGET=1 keeps one spare ENI attached so ipamd grows the IP pool an
-	// ENI at a time; with a lean WARM_IP_TARGET the pool grows a few IPs per
-	// reconcile round and a spanning deployment cannot converge within the ready
-	// wait. WARM_IP_TARGET must stay unset here: when set, ipamd ignores
-	// WARM_ENI_TARGET. Placement on the primary ENI is guaranteed by the
-	// pigeonhole replica count, not by keeping the pool lean.
-	// WARM_PREFIX_TARGET=1 preserves a valid warm pool for tests that enable
-	// prefix delegation; zero is unsupported when warm IP and minimum IP targets
-	// are unset.
-	// Leave IP_COOLDOWN_PERIOD unset so ipamd uses its 30-second default. The
-	// deployment readiness wait absorbs cooldown carryover, while the pigeonhole
-	// count guarantees placement once pods are ready.
+	// WARM_ENI_TARGET=1 grows the IP pool an ENI at a time; WARM_IP_TARGET must
+	// stay unset because ipamd ignores WARM_ENI_TARGET when it is set and the
+	// pool then grows too slowly for a spanning deployment to converge.
+	// WARM_PREFIX_TARGET=1 keeps the warm pool valid for prefix delegation
+	// tests; zero is unsupported when warm and minimum IP targets are unset.
+	// IP_COOLDOWN_PERIOD stays unset so ipamd uses its 30s default.
 	k8sUtils.UpdateEnvVarOnDaemonSetAndWaitUntilReady(f, "aws-node", "kube-system",
 		"aws-node", map[string]string{
 			"WARM_ENI_TARGET":    "1",

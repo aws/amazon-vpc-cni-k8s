@@ -208,11 +208,9 @@ func NetworkInfoForNode(f *framework.Framework, node coreV1.Node) ec2types.Netwo
 
 // CreateDeploymentSpanningENIs creates a deployment on the node sized so its pods
 // occupy the primary ENI and at least one secondary ENI, waits for readiness, and
-// returns the pods bucketed by ENI. The guarantee depends on the node running in
-// secondary-IP mode with no trunk ENI and no custom networking; each assumption is
-// asserted with a message that names it, so environment drift fails loudly rather
-// than reappearing as a placement flake. On an empty bucket it prints the node's
-// ENI/IP layout to explain the failure.
+// returns the pods bucketed by ENI. Requires secondary-IP mode, no trunk ENI, and
+// no custom networking; each precondition is asserted. On an empty bucket it
+// prints the node ENI/IP layout.
 func CreateDeploymentSpanningENIs(f *framework.Framework, node coreV1.Node,
 	name, podLabelKey, podLabelVal string,
 	container coreV1.Container) (InterfaceTypeToPodList, *appsV1.Deployment) {
@@ -230,8 +228,7 @@ func CreateDeploymentSpanningENIs(f *framework.Framework, node coreV1.Node,
 	deployment, err := f.K8sResourceManagers.DeploymentManager().
 		CreateAndWaitTillDeploymentIsReady(deployment, utils.DefaultDeploymentReadyTimeout)
 	if err != nil {
-		// A capacity or IP-allocation problem surfaces here as a bare timeout;
-		// print each pod phase so the failure explains itself.
+		// Print pod phases so a readiness timeout is diagnosable.
 		pods, listErr := f.K8sResourceManagers.PodManager().
 			GetPodsWithLabelSelector(podLabelKey, podLabelVal)
 		if listErr == nil {
