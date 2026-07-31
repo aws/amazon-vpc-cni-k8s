@@ -45,6 +45,8 @@ var (
 	ngName string
 	// node name which has CW publish metric privileges
 	nodeName string
+	// allocatable pod capacity of that node
+	nodePodCapacity int
 
 	clusterIDKeys []string
 )
@@ -89,6 +91,7 @@ var _ = BeforeSuite(func() {
 		if len(n.Spec.Taints) == 0 {
 			instanceID = k8sUtil.GetInstanceIDFromNode(n)
 			nodeName = n.Name
+			nodePodCapacity = int(n.Status.Allocatable.Pods().Value())
 			break
 		}
 	}

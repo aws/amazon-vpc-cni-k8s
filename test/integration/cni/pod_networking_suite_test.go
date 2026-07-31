@@ -31,10 +31,8 @@ const (
 	InstanceTypeNodeLabelKey = "beta.kubernetes.io/instance-type"
 	DEFAULT_VETH_PREFIX      = "eni"
 	DEFAULT_MTU_VAL          = "9001"
-	DEFAULT_WARM_IP_TARGET   = "3"
 )
 
-var maxIPPerInterface int
 var primaryNode v1.Node
 var secondaryNode v1.Node
 var instanceSecurityGroupID string
@@ -83,16 +81,6 @@ var _ = BeforeSuite(func() {
 	// Need a robust substring in the SGP name to identify node SGP
 	instanceSecurityGroupID = *primaryInstance.NetworkInterfaces[0].Groups[0].GroupId
 
-	By("getting the instance type from node label " + InstanceTypeNodeLabelKey)
-	instanceType := primaryNode.Labels[InstanceTypeNodeLabelKey]
-
-	By("getting the network interface details from ec2")
-	instanceOutput, err := f.CloudServices.EC2().DescribeInstanceType(context.TODO(), instanceType)
-	Expect(err).ToNot(HaveOccurred())
-
-	// Subtract 2 for coredns pods if any, both could be on same Interface
-	maxIPPerInterface = int(*instanceOutput[0].NetworkInfo.Ipv4AddressesPerInterface) - 2
-
 	By("describing the VPC to get the VPC CIDRs")
 	describeVPCOutput, err := f.CloudServices.EC2().DescribeVPC(context.TODO(), f.Options.AWSVPCID)
 	Expect(err).ToNot(HaveOccurred())
@@ -101,11 +89,18 @@ var _ = BeforeSuite(func() {
 		vpcCIDRs = append(vpcCIDRs, *cidrBlockAssociationSet.CidrBlock)
 	}
 
-	// Set the WARM_ENI_TARGET to 0 to prevent all pods being scheduled on secondary ENI
-	k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, "aws-node", "kube-system",
+	// WARM_ENI_TARGET=1 grows the IP pool an ENI at a time; WARM_IP_TARGET must
+	// stay unset because ipamd ignores WARM_ENI_TARGET when it is set and the
+	// pool then grows too slowly for a spanning deployment to converge.
+	// WARM_PREFIX_TARGET=1 keeps the warm pool valid for prefix delegation
+	// tests; zero is unsupported when warm and minimum IP targets are unset.
+	// IP_COOLDOWN_PERIOD stays unset so ipamd uses its 30s default.
+	k8sUtils.UpdateEnvVarOnDaemonSetAndWaitUntilReady(f, "aws-node", "kube-system",
 		"aws-node", map[string]string{
-			"WARM_IP_TARGET":  DEFAULT_WARM_IP_TARGET,
-			"WARM_ENI_TARGET": "0",
+			"WARM_ENI_TARGET":    "1",
+			"WARM_PREFIX_TARGET": "1",
+		}, map[string]struct{}{
+			"WARM_IP_TARGET": {},
 		})
 })
 
@@ -122,6 +117,7 @@ var _ = AfterSuite(func() {
 		map[string]struct{}{
 			"WARM_IP_TARGET":     {},
 			"WARM_ENI_TARGET":    {},
+			"WARM_PREFIX_TARGET": {},
 			"IP_COOLDOWN_PERIOD": {},
 		})
 })
