@@ -276,21 +276,33 @@ func restartKubeProxyPods() error {
 	return nil
 }
 
-// detectIptablesBackend determines if the node uses iptables-legacy or nftables
-func detectIptablesBackend(nodeName string) string {
+// awsNodeExec runs a command in the aws-node container on the given node and returns stdout.
+// It reads host firewall state by exec-ing into the long-lived, hostNetwork aws-node pod rather
+// than via `kubectl node-shell`: node-shell spawns a throwaway pod per call and attaches to it,
+// and `kubectl run -i` races the sub-second command against the container exiting, intermittently
+// returning empty stdout with exit 0. aws-node is already running, so exec streams reliably, and it
+// ships nft/iptables-legacy/iptables-nft (v1.8.8).
+func awsNodeExec(nodeName string, command ...string) (string, error) {
 	pods, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector("k8s-app", "aws-node")
 	if err != nil {
-		fmt.Fprintf(GinkgoWriter, "Failed to find aws-node pod: %v\n", err)
-		return ""
+		return "", fmt.Errorf("failed to list aws-node pods: %w", err)
 	}
 	pod, found := lo.Find(pods.Items, func(p v1.Pod) bool {
 		return p.Spec.NodeName == nodeName
 	})
 	if !found {
-		fmt.Fprintf(GinkgoWriter, "Failed to find aws-node pod on node %s\n", nodeName)
-		return ""
+		return "", fmt.Errorf("no aws-node pod found on node %s", nodeName)
 	}
-	stdout, _, err := f.K8sResourceManagers.PodManager().PodExecInContainer(pod.Namespace, pod.Name, "aws-node", []string{"iptables", "--version"})
+	stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExecInContainer(pod.Namespace, pod.Name, "aws-node", command)
+	if err != nil {
+		return stdout, fmt.Errorf("aws-node exec %v on %s failed: %w (stderr: %s)", command, nodeName, err, stderr)
+	}
+	return stdout, nil
+}
+
+// detectIptablesBackend determines if the node uses iptables-legacy or nftables
+func detectIptablesBackend(nodeName string) string {
+	stdout, err := awsNodeExec(nodeName, "iptables", "--version")
 	if err != nil {
 		fmt.Fprintf(GinkgoWriter, "Failed to run iptables --version: %v\n", err)
 		return ""
@@ -303,24 +315,28 @@ func detectIptablesBackend(nodeName string) string {
 	return ""
 }
 
-// verifyConnmarkRules checks that CNI connmark rules exist ONLY in the appropriate backend
+// verifyConnmarkRules checks that CNI connmark rules exist ONLY in the appropriate backend.
+// Reads are done via aws-node exec (see awsNodeExec) so they are not subject to the node-shell
+// attach race that can return empty output for a rule that is actually present.
 func verifyConnmarkRules(nodeName, backend string) {
 	if backend == "nftables" {
-		out, err := execNodeShell(nodeName, "nft list table ip aws-cni")
-		fmt.Fprintf(GinkgoWriter, "nftables rules:\n%s\n", string(out))
+		out, err := awsNodeExec(nodeName, "nft", "list", "table", "ip", "aws-cni")
+		fmt.Fprintf(GinkgoWriter, "nftables rules:\n%s\n", out)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(string(out)).To(ContainSubstring("chain nat-prerouting"))
-		Expect(string(out)).To(ContainSubstring("chain snat-mark"))
+		Expect(out).To(ContainSubstring("chain nat-prerouting"))
+		Expect(out).To(ContainSubstring("chain snat-mark"))
 
-		out, _ = execNodeShell(nodeName, "iptables-legacy -t nat -L PREROUTING -n")
-		Expect(string(out)).ToNot(ContainSubstring("AWS-CONNMARK"))
+		out, _ = awsNodeExec(nodeName, "iptables-legacy", "-t", "nat", "-L", "PREROUTING", "-n")
+		Expect(out).ToNot(ContainSubstring("AWS-CONNMARK"))
 	} else {
-		out, err := execNodeShell(nodeName, "iptables-legacy -t nat -L PREROUTING -n")
-		fmt.Fprintf(GinkgoWriter, "iptables-legacy:\n%s\n", string(out))
+		out, err := awsNodeExec(nodeName, "iptables-legacy", "-t", "nat", "-L", "PREROUTING", "-n")
+		fmt.Fprintf(GinkgoWriter, "iptables-legacy:\n%s\n", out)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(string(out)).To(ContainSubstring("AWS-CONNMARK"))
+		Expect(out).To(ContainSubstring("AWS-CONNMARK"))
 
-		_, err = execNodeShell(nodeName, "nft list table ip aws-cni")
-		Expect(err).To(HaveOccurred())
+		// The nft table must be absent; assert on nft's specific "No such file or directory"
+		// so an infra/exec error can't pass this check for the wrong reason.
+		_, err = awsNodeExec(nodeName, "nft", "list", "table", "ip", "aws-cni")
+		Expect(err).To(MatchError(ContainSubstring("No such file or directory")))
 	}
 }
