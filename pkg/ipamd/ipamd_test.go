@@ -1975,6 +1975,78 @@ func TestNodeIPPoolReconcileBadIMDSData(t *testing.T) {
 	assert.Equal(t, 2, curENIs.TotalIPs)
 }
 
+func TestNodeIPPoolReconcileStaleIMDSWithAssignedPods(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+	ctx := context.Background()
+
+	mockContext := &IPAMContext{
+		awsClient:       m.awsutils,
+		networkClient:   m.network,
+		primaryIP:       make(map[string]string),
+		terminating:     int32(0),
+		numNetworkCards: 1,
+	}
+
+	mockContext.dataStoreAccess = testDatastore()
+	ds := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard)
+
+	primaryENIMetadata := getPrimaryENIMetadata()
+	secENIMetadata := getSecondaryENIMetadata()
+	testAddr1 := *primaryENIMetadata.IPv4Addresses[0].PrivateIpAddress
+
+	// Add the primary and secondary ENIs with their IPs to the datastore
+	_ = ds.AddENI(primaryENIid, primaryENIMetadata.DeviceNumber, true, false, false, networkutils.CalculateRouteTableId(primaryENIMetadata.DeviceNumber, 0), "")
+	mockContext.primaryIP[primaryENIid] = testAddr1
+	mockContext.addENIsecondaryIPsToDataStore(primaryENIMetadata.IPv4Addresses, primaryENIid, defaultNetworkCard)
+	_ = ds.AddENI(secENIid, secENIMetadata.DeviceNumber, false, false, false, networkutils.CalculateRouteTableId(secENIMetadata.DeviceNumber, 0), "")
+	mockContext.primaryIP[secENIid] = *secENIMetadata.IPv4Addresses[0].PrivateIpAddress
+	mockContext.addENIsecondaryIPsToDataStore(secENIMetadata.IPv4Addresses, secENIid, defaultNetworkCard)
+
+	curENIs := ds.GetENIInfos()
+	assert.Equal(t, 2, len(curENIs.ENIs))
+
+	// Assign pods to every available IP so that the secondary ENI has pods assigned
+	for i := 0; i < curENIs.TotalIPs; i++ {
+		key := datastore.IPAMKey{
+			NetworkName: "net0",
+			ContainerID: fmt.Sprintf("sandbox-%d", i),
+			IfName:      "eth0",
+		}
+		_, _, _, err := ds.AssignPodIPv4Address(key, datastore.IPAMMetadata{
+			K8SPodNamespace: "default",
+			K8SPodName:      fmt.Sprintf("sample-pod-%d", i),
+		})
+		assert.NoError(t, err)
+	}
+
+	// IMDS omits the secondary ENI even though it is still attached, e.g. shortly after an instance reboot
+	m.awsutils.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{primaryENIMetadata}, nil).Times(3)
+	m.awsutils.EXPECT().IsUnmanagedENI(primaryENIid).Return(false).AnyTimes()
+	m.awsutils.EXPECT().IsUnmanagedNIC(primaryENIMetadata.NetworkCard).Return(false).AnyTimes()
+	m.awsutils.EXPECT().IsEfaOnlyENI(primaryENIMetadata.NetworkCard, primaryENIid).Return(false).AnyTimes()
+
+	// EC2 reports the ENI as still attached, so the stale IMDS data must not orphan the assigned pods
+	m.awsutils.EXPECT().IsENIAttachedToInstance(gomock.Any(), secENIid).Return(true, nil)
+	mockContext.nodeIPPoolReconcile(ctx, 0)
+	curENIs = ds.GetENIInfos()
+	assert.Equal(t, 2, len(curENIs.ENIs))
+
+	// If the EC2 attachment check fails, the ENI must be kept as well
+	m.awsutils.EXPECT().IsENIAttachedToInstance(gomock.Any(), secENIid).Return(false, errors.New("ec2 API call failed"))
+	mockContext.nodeIPPoolReconcile(ctx, 0)
+	curENIs = ds.GetENIInfos()
+	assert.Equal(t, 2, len(curENIs.ENIs))
+
+	// Once EC2 confirms the ENI is no longer attached, it is force-removed from the datastore
+	m.awsutils.EXPECT().IsENIAttachedToInstance(gomock.Any(), secENIid).Return(false, nil)
+	mockContext.nodeIPPoolReconcile(ctx, 0)
+	curENIs = ds.GetENIInfos()
+	assert.Equal(t, 1, len(curENIs.ENIs))
+	_, ok := curENIs.ENIs[primaryENIid]
+	assert.True(t, ok)
+}
+
 func TestNodePrefixPoolReconcileBadIMDSData(t *testing.T) {
 	m := setup(t)
 	defer m.ctrl.Finish()

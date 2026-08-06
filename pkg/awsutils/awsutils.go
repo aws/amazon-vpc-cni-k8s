@@ -136,6 +136,9 @@ type APIs interface {
 	// GetIPv6PrefixesFromEC2 returns the IPv6 prefixes for a given ENI
 	GetIPv6PrefixesFromEC2(ctx context.Context, eniID string) (addrList []ec2types.Ipv6PrefixSpecification, err error)
 
+	// IsENIAttachedToInstance queries the EC2 API to check whether the given ENI is currently attached to this instance
+	IsENIAttachedToInstance(ctx context.Context, eniID string) (bool, error)
+
 	// DescribeAllENIs calls EC2 and returns a fully populated DescribeAllENIsResult struct and an error
 	DescribeAllENIs(ctx context.Context) (DescribeAllENIsResult, error)
 
@@ -1504,6 +1507,44 @@ func (cache *EC2InstanceMetadataCache) getENIAttachmentID(ctx context.Context, e
 		attachID = firstNI.Attachment.AttachmentId
 	}
 	return attachID, nil
+}
+
+// IsENIAttachedToInstance queries the EC2 API to check whether the given ENI is currently
+// attached to this instance. This is used as a safety check before force-removing an ENI
+// (and any pod IPs assigned from it) from the datastore, since IMDS metadata is eventually
+// consistent and can temporarily omit an attached ENI, e.g. right after an instance reboot.
+func (cache *EC2InstanceMetadataCache) IsENIAttachedToInstance(ctx context.Context, eniID string) (bool, error) {
+	input := &ec2.DescribeNetworkInterfacesInput{NetworkInterfaceIds: []string{eniID}}
+
+	start := time.Now()
+	result, err := cache.ec2SVC.DescribeNetworkInterfaces(ctx, input)
+	prometheusmetrics.Ec2ApiReq.WithLabelValues("DescribeNetworkInterfaces").Inc()
+	prometheusmetrics.AwsAPILatency.WithLabelValues("DescribeNetworkInterfaces", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
+	if err != nil {
+		if errors.As(err, &awsAPIError) {
+			if awsAPIError.ErrorCode() == "InvalidNetworkInterfaceID.NotFound" {
+				// The ENI no longer exists, so it cannot be attached
+				return false, nil
+			}
+		}
+		checkAPIErrorAndBroadcastEvent(err, "ec2:DescribeNetworkInterfaces")
+		awsAPIErrInc("DescribeNetworkInterfaces", err)
+		prometheusmetrics.Ec2ApiErr.WithLabelValues("DescribeNetworkInterfaces").Inc()
+		log.Errorf("Failed to get ENI %s information from EC2 control plane %v", eniID, err)
+		return false, errors.Wrap(err, "failed to describe network interface")
+	}
+	// Shouldn't happen, but let's be safe
+	if len(result.NetworkInterfaces) == 0 {
+		return false, nil
+	}
+	// We cannot assume that the NetworkInterface.Attachment field is a non-nil
+	// pointer to a NetworkInterfaceAttachment struct.
+	// Ref: https://github.com/aws/amazon-vpc-cni-k8s/issues/914
+	attachment := result.NetworkInterfaces[0].Attachment
+	if attachment == nil || attachment.InstanceId == nil {
+		return false, nil
+	}
+	return aws.ToString(attachment.InstanceId) == cache.instanceID && attachment.Status != ec2types.AttachmentStatusDetached, nil
 }
 
 func (cache *EC2InstanceMetadataCache) deleteENI(ctx context.Context, eniName string, maxBackoffDelay time.Duration) error {

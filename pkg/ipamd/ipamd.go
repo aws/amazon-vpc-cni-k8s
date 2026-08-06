@@ -1683,6 +1683,26 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 		// Sweep phase: since the marked ENI have been removed, the remaining ones needs to be sweeped
 		for eni := range currentENIs {
 			log.Infof("Reconcile and delete detached ENI %s", eni)
+
+			// IMDS metadata is eventually consistent and can temporarily omit an ENI that is
+			// still attached, e.g. shortly after an instance reboot. If this ENI still has pods
+			// assigned, verify with the EC2 API that it is really detached before force-removing
+			// it. Otherwise, stale IMDS data would orphan in-use pod IPs, and the ENI would later
+			// be re-added to the datastore as empty and freed while pods are still using its IPs.
+			if eniInfo := currentENIs[eni]; eniInfo.AssignedIPv4Addresses() > 0 && !enableImdsOnlyMode() {
+				attached, attachErr := c.awsClient.IsENIAttachedToInstance(ctx, eni)
+				if attachErr != nil {
+					log.Warnf("IP pool reconcile: skipping removal of ENI %s with %d assigned pods, unable to verify attachment with EC2: %v", eni, eniInfo.AssignedIPv4Addresses(), attachErr)
+					ipamdErrInc("eniReconcileDel")
+					continue
+				}
+				if attached {
+					log.Warnf("IP pool reconcile: skipping removal of ENI %s with %d assigned pods, EC2 reports it as still attached to this instance so IMDS metadata is stale", eni, eniInfo.AssignedIPv4Addresses())
+					ipamdErrInc("eniReconcileDel")
+					continue
+				}
+			}
+
 			// Force the delete, since aws local metadata has told us that this ENI is no longer
 			// attached, so any IPs assigned from this ENI will no longer work.
 			err = ds.RemoveENIFromDataStore(eni, true /* force */)
