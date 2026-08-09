@@ -56,6 +56,7 @@ func SetupAddExpectV4(ec egressContext, chain string, actualIptablesRules, actua
 			},
 		}, nil)
 
+	ec.IPTablesIface.(*mock_iptables.MockIPTablesIface).EXPECT().ChainExists("nat", chain).Return(false, nil).Times(1)
 	ec.IPTablesIface.(*mock_iptables.MockIPTablesIface).EXPECT().NewChain("nat", chain).Return(nil)
 
 	macHost := [6]byte{0xCB, 0xB8, 0x33, 0x4C, 0x88, 0x4F}
@@ -123,7 +124,7 @@ func SetupAddExpectV4(ec egressContext, chain string, actualIptablesRules, actua
 }
 
 // SetupDelExpectV4 has all the mock EXPECT required when a container is deleted
-func SetupDelExpectV4(ec egressContext, actualIptablesDel *[]string) error {
+func SetupDelExpectV4(ec egressContext, actualIptablesDel *[]string, clearChainErr error) error {
 	nsParent, err := _ns.GetCurrentNS()
 	if err != nil {
 		return err
@@ -167,7 +168,7 @@ func SetupDelExpectV4(ec egressContext, actualIptablesDel *[]string) error {
 		func(arg1 interface{}, arg2 interface{}) {
 			actualResult := arg1.(string) + " " + arg2.(string)
 			*actualIptablesDel = append(*actualIptablesDel, "clear chain "+actualResult)
-		}).Return(nil).AnyTimes()
+		}).Return(clearChainErr).AnyTimes()
 
 	ec.IPTablesIface.(*mock_iptables.MockIPTablesIface).EXPECT().DeleteChain("nat", gomock.Any()).Do(
 		func(arg1 interface{}, arg2 interface{}) {
@@ -198,6 +199,7 @@ func SetupAddExpectV6(c egressContext, chain string, actualIptablesRules, actual
 			},
 		}, nil)
 
+	c.IPTablesIface.(*mock_iptables.MockIPTablesIface).EXPECT().ChainExists("nat", chain).Return(false, nil).Times(1)
 	c.IPTablesIface.(*mock_iptables.MockIPTablesIface).EXPECT().NewChain("nat", chain).Return(nil)
 
 	macHost := [6]byte{0xCB, 0xB8, 0x33, 0x4C, 0x88, 0x4F}
