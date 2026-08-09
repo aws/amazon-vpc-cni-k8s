@@ -1,13 +1,13 @@
 package cniutils
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"syscall"
 	"time"
 
 	current "github.com/containernetworking/cni/pkg/types/100"
+	"github.com/coreos/go-iptables/iptables"
 	"github.com/vishvananda/netlink"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
@@ -138,27 +138,13 @@ func IsLinkNotFoundError(err error) bool {
 }
 
 // IsIptableTargetNotExist returns true if the error is from iptables indicating
-// that the target does not exist. Retained as a compatibility alias.
+// that the target does not exist.
 func IsIptableTargetNotExist(err error) bool {
-	return IsChainNotExistErr(err)
-}
-
-// IsChainNotExistErr reports whether an iptables chain, target, or rule no
-// longer exists. Prefer the typed go-iptables signal, with a fallback for plain
-// errors returned by wrappers and test doubles.
-func IsChainNotExistErr(err error) bool {
-	if err == nil {
+	e, ok := err.(*iptables.Error)
+	if !ok {
 		return false
 	}
-	var target interface {
-		IsNotExist() bool
-	}
-	if errors.As(err, &target) {
-		return target.IsNotExist()
-	}
-	message := err.Error()
-	return strings.Contains(message, "No chain/target/match by that name") ||
-		strings.Contains(message, "does not exist")
+	return e.IsNotExist()
 }
 
 // PrefixSimilar checks if prefix pool and eni prefix are equivalent.

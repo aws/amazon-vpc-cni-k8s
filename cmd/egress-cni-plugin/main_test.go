@@ -14,7 +14,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"testing"
 
@@ -109,8 +108,10 @@ func TestCmdAddV4(t *testing.T) {
 	fmt.Println()
 }
 
-func cmdDelV4Args() *skel.CmdArgs {
-	return &skel.CmdArgs{
+func TestCmdDelV4(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	args := &skel.CmdArgs{
 		ContainerID: containerIDV4,
 		IfName:      "eth0",
 		StdinData: []byte(`{
@@ -139,25 +140,17 @@ func cmdDelV4Args() *skel.CmdArgs {
 				"vethPrefix":"eni"
 		}`),
 	}
-}
 
-func newCmdDelV4Context(ctrl *gomock.Controller) egressContext {
-	return egressContext{
+	ec := egressContext{
 		Ns:            mock_nswrapper.NewMockNS(ctrl),
 		NsPath:        "/var/run/netns/cni-xxxx",
 		IPTablesIface: mock_iptables.NewMockIPTablesIface(ctrl),
 		Ipam:          mock_ipamwrapper.NewMockHostIpam(ctrl),
 		Link:          mock_netlinkwrapper.NewMockNetLink(ctrl),
 	}
-}
-
-func TestCmdDelV4(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	args := cmdDelV4Args()
-	ec := newCmdDelV4Context(ctrl)
 
 	var actualIptablesDel []string
-	err := SetupDelExpectV4(ec, &actualIptablesDel, nil)
+	err := SetupDelExpectV4(ec, &actualIptablesDel)
 	assert.Nil(t, err)
 
 	err = del(args, &ec)
@@ -168,20 +161,6 @@ func TestCmdDelV4(t *testing.T) {
 		fmt.Sprintf("clear chain nat %s", snatChainV4),
 		fmt.Sprintf("del chain nat %s", snatChainV4)}
 	assert.EqualValues(t, expectIptablesDel, actualIptablesDel)
-}
-
-func TestCmdDelV4SNATErrorPropagates(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	args := cmdDelV4Args()
-	ec := newCmdDelV4Context(ctrl)
-	clearErr := errors.New("iptables lock timeout")
-
-	var actualIptablesDel []string
-	err := SetupDelExpectV4(ec, &actualIptablesDel, clearErr)
-	assert.NoError(t, err)
-
-	err = del(args, &ec)
-	assert.ErrorIs(t, err, clearErr)
 }
 
 func TestCmdAddV6(t *testing.T) {
