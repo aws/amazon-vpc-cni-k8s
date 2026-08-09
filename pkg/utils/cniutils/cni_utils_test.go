@@ -1,6 +1,8 @@
 package cniutils
 
 import (
+	"errors"
+	"fmt"
 	"net"
 	"testing"
 
@@ -10,6 +12,43 @@ import (
 	current "github.com/containernetworking/cni/pkg/types/100"
 	"github.com/stretchr/testify/assert"
 )
+
+type testNotExistError bool
+
+func (e testNotExistError) Error() string {
+	return "iptables error"
+}
+
+func (e testNotExistError) IsNotExist() bool {
+	return bool(e)
+}
+
+func TestIsChainNotExistErr(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "nil"},
+		{name: "typed not found", err: testNotExistError(true), want: true},
+		{name: "wrapped typed not found", err: fmt.Errorf("wrapped: %w", testNotExistError(true)), want: true},
+		{name: "typed error is not not-found", err: testNotExistError(false)},
+		{name: "no chain message", err: errors.New("iptables: No chain/target/match by that name."), want: true},
+		{name: "does not exist message", err: errors.New("rule does not exist"), want: true},
+		{name: "ordinary error", err: errors.New("permission denied")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, IsChainNotExistErr(tt.err))
+		})
+	}
+}
+
+func TestIsIptableTargetNotExist(t *testing.T) {
+	assert.True(t, IsIptableTargetNotExist(testNotExistError(true)))
+	assert.False(t, IsIptableTargetNotExist(nil))
+}
 
 func Test_FindInterfaceByName(t *testing.T) {
 	type args struct {

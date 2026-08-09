@@ -23,6 +23,7 @@ import (
 	current "github.com/containernetworking/cni/pkg/types/100"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/coreos/go-iptables/iptables"
+	"github.com/gofrs/flock"
 	"github.com/vishvananda/netlink"
 
 	"github.com/aws/amazon-vpc-cni-k8s/cmd/egress-cni-plugin/snat"
@@ -47,6 +48,8 @@ const (
 	DadTimeout = 10 * time.Second
 	// routeRetryInterval is the delay between retries when RouteAdd fails with EEXIST
 	routeRetryInterval = 100 * time.Millisecond
+	// snatLockPath serializes complete egress SNAT transactions across CNI processes.
+	snatLockPath = "/run/egress-cni-snat.lock"
 )
 
 // egressContext includes all info to run container ADD or DEL action
@@ -60,6 +63,7 @@ type egressContext struct {
 	Veth          vethwrapper.Veth
 	IPTablesIface iptableswrapper.IPTablesIface
 	IptCreator    func(iptables.Protocol) (iptableswrapper.IPTablesIface, error)
+	SnatLock      snat.Locker
 
 	NetConf   *NetConf
 	Result    *current.Result
@@ -83,6 +87,7 @@ func NewEgressAddContext(nsPath, ifName string) egressContext {
 		NsPath:     nsPath,
 		ArgsIfName: ifName,
 		Veth:       vethwrapper.NewSetupVeth(),
+		SnatLock:   flock.New(snatLockPath),
 		IptCreator: func(protocol iptables.Protocol) (iptableswrapper.IPTablesIface, error) {
 			return iptableswrapper.NewIPTables(protocol)
 		},
@@ -92,10 +97,11 @@ func NewEgressAddContext(nsPath, ifName string) egressContext {
 // NewEgressDelContext create a context for container egress traffic
 func NewEgressDelContext(nsPath string) egressContext {
 	return egressContext{
-		Ipam:   hostipamwrapper.NewIpam(),
-		Link:   netlinkwrapper.NewNetLink(),
-		Ns:     nswrapper.NewNS(),
-		NsPath: nsPath,
+		Ipam:     hostipamwrapper.NewIpam(),
+		Link:     netlinkwrapper.NewNetLink(),
+		Ns:       nswrapper.NewNS(),
+		NsPath:   nsPath,
+		SnatLock: flock.New(snatLockPath),
 		IptCreator: func(protocol iptables.Protocol) (iptableswrapper.IPTablesIface, error) {
 			return iptableswrapper.NewIPTables(protocol)
 		},
@@ -294,7 +300,7 @@ func (ec *egressContext) cmdAddEgressV4() (err error) {
 		for _, ipc := range ec.TmpResult.IPs {
 			if ipc.Address.IP.To4() != nil {
 				// add SNAT chain/rules necessary for the container IPv6 egress traffic
-				if err = snat.Add(ec.IPTablesIface, ec.NetConf.NodeIP, ipc.Address.IP, ipv4MulticastRange, ec.SnatChain, ec.SnatComment, ec.NetConf.RandomizeSNAT); err != nil {
+				if err = snat.Add(ec.IPTablesIface, ec.SnatLock, ec.NetConf.NodeIP, ipc.Address.IP, ipv4MulticastRange, ec.SnatChain, ec.SnatComment, ec.NetConf.RandomizeSNAT); err != nil {
 					return err
 				}
 			}
@@ -357,12 +363,12 @@ func (ec *egressContext) cmdDelEgress(ipv4 bool) (err error) {
 		// NOTE: IsGlobalUnicast returns true for unique-local IPv6 address
 		if (ipv4 && ipAddr.IP.To4() != nil && ipAddr.IP.IsLinkLocalUnicast()) ||
 			(!ipv4 && ipAddr.IP.To4() == nil && ipAddr.IP.IsGlobalUnicast()) {
-			err = snat.Del(ec.IPTablesIface, ipAddr.IP, ec.SnatChain, ec.SnatComment)
+			err = snat.Del(ec.IPTablesIface, ec.SnatLock, ipAddr.IP, ec.SnatChain, ec.SnatComment)
 			if err != nil {
 				ec.Log.Errorf("failed to remove iptables chain %s: %v", ec.SnatChain, err)
-			} else {
-				ec.Log.Infof("successfully removed iptables chain %s", ec.SnatChain)
+				return err
 			}
+			ec.Log.Infof("successfully removed iptables chain %s", ec.SnatChain)
 		}
 	}
 	return nil
@@ -419,7 +425,7 @@ func (ec *egressContext) cmdAddEgressV6() (err error) {
 
 	// set up SNAT in host for container IPv6 egress traffic
 	// following line adds an ip6tables entries to NAT for IPv6 traffic between container v6if0 and node primary ENI (eth0)
-	err = snat.Add(ec.IPTablesIface, ec.NetConf.NodeIP, containerIPv6, ipv6MulticastRange, ec.SnatChain, ec.SnatComment, ec.NetConf.RandomizeSNAT)
+	err = snat.Add(ec.IPTablesIface, ec.SnatLock, ec.NetConf.NodeIP, containerIPv6, ipv6MulticastRange, ec.SnatChain, ec.SnatComment, ec.NetConf.RandomizeSNAT)
 	if err != nil {
 		ec.Log.Errorf("setup host snat failed: %v", err)
 		return err
