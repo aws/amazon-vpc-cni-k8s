@@ -1339,7 +1339,6 @@ trn1n.32xlarge 247
 trn2.3xlarge 30
 trn2.48xlarge 100
 u-12tb1.metal 147
-u-18tb1.112xlarge 737
 u-18tb1.metal 737
 u-24tb1.metal 737
 u-3tb1.56xlarge 234
