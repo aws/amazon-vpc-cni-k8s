@@ -469,6 +469,7 @@ func (s *server) GetNetworkPolicyConfigs(ctx context.Context, e *emptypb.Empty) 
 		NetworkPolicyMode: s.ipamContext.networkPolicyMode,
 		MultiNICEnabled:   s.ipamContext.enableMultiNICSupport,
 		InstanceID:        s.ipamContext.awsClient.GetInstanceID(),
+		Region:            s.ipamContext.awsClient.GetRegion(),
 	}
 
 	// Serve the node IP so the network policy agent doesn't query IMDS itself.
@@ -482,8 +483,8 @@ func (s *server) GetNetworkPolicyConfigs(ctx context.Context, e *emptypb.Empty) 
 		}
 	}
 
-	log.Infof("Send NetworkPolicyAgentConfigReply: NetworkPolicyMode: %v, MultiNICEnabled: %v, NodeIPv4: %v, NodeIPv6: %v, InstanceID: %v",
-		resp.NetworkPolicyMode, resp.MultiNICEnabled, resp.NodeIPv4, resp.NodeIPv6, resp.InstanceID)
+	log.Infof("Send NetworkPolicyAgentConfigReply: NetworkPolicyMode: %v, MultiNICEnabled: %v, NodeIPv4: %v, NodeIPv6: %v, InstanceID: %v, Region: %v",
+		resp.NetworkPolicyMode, resp.MultiNICEnabled, resp.NodeIPv4, resp.NodeIPv6, resp.InstanceID, resp.Region)
 	return resp, nil
 }
 

@@ -111,4 +111,5 @@ message NetworkPolicyAgentConfigReply {
   string NodeIPv4 = 3;
   string NodeIPv6 = 4;
   string InstanceID = 5;
+  string Region = 6;
 }

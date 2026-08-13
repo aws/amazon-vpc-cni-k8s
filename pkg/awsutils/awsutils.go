@@ -220,6 +220,9 @@ type APIs interface {
 	// GetInstanceID returns the instance ID
 	GetInstanceID() string
 
+	// GetRegion returns the AWS region of the instance
+	GetRegion() string
+
 	// FetchInstanceTypeLimits Verify if the InstanceNetworkingLimits has the ENI limits else make EC2 call to fill cache.
 	FetchInstanceTypeLimits(ctx context.Context) error
 
@@ -2506,6 +2509,11 @@ func (cache *EC2InstanceMetadataCache) SetEFAOnlyENIs(efaOnlyENIByNetworkCard []
 // GetInstanceID returns the instance ID
 func (cache *EC2InstanceMetadataCache) GetInstanceID() string {
 	return cache.instanceID
+}
+
+// GetRegion returns the AWS region of the instance
+func (cache *EC2InstanceMetadataCache) GetRegion() string {
+	return cache.region
 }
 
 // IsUnmanagedENI returns if the eni is unmanaged
