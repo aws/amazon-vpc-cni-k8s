@@ -239,6 +239,24 @@ func TestInitWithEC2metadata(t *testing.T) {
 	}
 }
 
+func TestInitWithEC2metadataIPv6(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+	defer cancel()
+
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+	mockMetadata := testMetadata(map[string]interface{}{
+		"ipv6": eni1v6IP,
+	})
+
+	cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2, v6Enabled: true}
+	err := cache.initWithEC2Metadata(ctx)
+	if assert.NoError(t, err) {
+		assert.Equal(t, eni1v6IP, cache.localIPv6.String())
+		assert.Equal(t, eni1v6IP, cache.GetLocalIPv6().String())
+	}
+}
+
 func TestInitWithEC2metadataErr(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
 	defer cancel()
