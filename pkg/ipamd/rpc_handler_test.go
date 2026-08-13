@@ -621,6 +621,7 @@ func TestServer_GetNetworkPolicyConfigs(t *testing.T) {
 				m.awsutils.EXPECT().GetLocalIPv4().Return(tt.localIPv4).AnyTimes()
 			}
 			m.awsutils.EXPECT().GetInstanceID().Return("i-0123456789abcdef0").AnyTimes()
+			m.awsutils.EXPECT().GetRegion().Return("us-west-2").AnyTimes()
 
 			rpcServer := server{
 				ipamContext: mockContext,
@@ -633,6 +634,7 @@ func TestServer_GetNetworkPolicyConfigs(t *testing.T) {
 			assert.Equal(t, tt.wantNodeIPv4, resp.NodeIPv4)
 			assert.Equal(t, tt.wantNodeIPv6, resp.NodeIPv6)
 			assert.Equal(t, "i-0123456789abcdef0", resp.InstanceID)
+			assert.Equal(t, "us-west-2", resp.Region)
 		})
 	}
 }
