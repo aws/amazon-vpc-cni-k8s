@@ -34,7 +34,10 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	testclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestServer_VersionCheck(t *testing.T) {
@@ -872,4 +875,66 @@ func TestServer_DelNetwork_PodENI_InvalidAnnotation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestServer_DelNetwork_PodNotFound(t *testing.T) {
+	// Reset the counter for this test
+	prometheusmetrics.DelIPCnt = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "awscni_del_ip_req_count",
+			Help: "Number of delete IP address requests",
+		},
+		[]string{"reason"},
+	)
+
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	// Create a k8s client that will return NotFound for the pod
+	k8sSchema := runtime.NewScheme()
+	clientgoscheme.AddToScheme(k8sSchema)
+
+	// Create a test client that doesn't have the pod (will return NotFound on Get)
+	k8sClient := testclient.NewClientBuilder().WithScheme(k8sSchema).Build()
+
+	// Create an empty datastore to simulate pod not in datastore (will return ErrUnknownPod)
+	dsAccess := datastore.InitializeDataStores([]bool{false}, "test", false, log)
+
+	mockContext := &IPAMContext{
+		awsClient:       m.awsutils,
+		maxIPsPerENI:    14,
+		maxENI:          4,
+		warmENITarget:   1,
+		warmIPTarget:    3,
+		networkClient:   m.network,
+		dataStoreAccess: dsAccess,
+		k8sClient:       k8sClient,
+		enablePodENI:    true, // Enable pod ENI to trigger the GetPod call in DelNetwork
+	}
+
+	m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return([]string{}, nil).AnyTimes()
+	m.awsutils.EXPECT().GetVPCIPv6CIDRs().Return([]string{}, nil).AnyTimes()
+	m.network.EXPECT().UseExternalSNAT().Return(true).AnyTimes()
+
+	rpcServer := server{
+		version:     "1.2.3",
+		ipamContext: mockContext,
+	}
+
+	delReq := &pb.DelNetworkRequest{
+		ClientVersion:     "1.2.3",
+		NetworkName:       "net0",
+		ContainerID:       "cid",
+		IfName:            "eni",
+		K8S_POD_NAME:      "test-pod",
+		K8S_POD_NAMESPACE: "default",
+		K8S_POD_UID:       "test-uid",
+		Reason:            "test-reason",
+	}
+
+	resp, err := rpcServer.DelNetwork(context.TODO(), delReq)
+
+	// The test should succeed even though the pod is not found in both datastore and Kubernetes
+	assert.NoError(t, err)
+	assert.True(t, resp.Success, "DelNetwork should return success when pod is not found")
 }
