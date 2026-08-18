@@ -48,19 +48,8 @@ var _ = Describe("test SNAT with kube-proxy modes", func() {
 			Port(v1.ContainerPort{ContainerPort: 80, Protocol: "TCP"}).
 			Build()
 
-		deployment = manifest.NewDefaultDeploymentBuilder().
-			Name("snat-test-server").
-			Container(serverContainer).
-			Replicas(maxIPPerInterface*2).
-			NodeName(primaryNode.Name).
-			PodLabel("app", "snat-test").
-			Build()
-
-		deployment, err = f.K8sResourceManagers.DeploymentManager().
-			CreateAndWaitTillDeploymentIsReady(deployment, utils.DefaultDeploymentReadyTimeout)
-		Expect(err).ToNot(HaveOccurred())
-
-		interfaceToPodList = common.GetPodsOnPrimaryAndSecondaryInterface(primaryNode, "app", "snat-test", f)
+		interfaceToPodList, deployment = common.CreateDeploymentSpanningENIs(f, primaryNode,
+			"snat-test-server", "app", "snat-test", serverContainer)
 		Expect(len(interfaceToPodList.PodsOnPrimaryENI)).Should(BeNumerically(">=", 1))
 		Expect(len(interfaceToPodList.PodsOnSecondaryENI)).Should(BeNumerically(">=", 1))
 
@@ -102,6 +91,10 @@ var _ = Describe("test SNAT with kube-proxy modes", func() {
 			DeferCleanup(func() {
 				By(fmt.Sprintf("restoring kube-proxy mode to %s", originalMode))
 				Expect(setKubeProxyMode(originalMode)).To(Succeed())
+				if mode == "ipvs" && originalMode != "ipvs" {
+					By("cleaning up node state left behind by ipvs mode")
+					Expect(cleanupIPVSLeftovers()).To(Succeed())
+				}
 			})
 
 			By(fmt.Sprintf("switching kube-proxy to %s mode", mode))
@@ -246,6 +239,26 @@ func setKubeProxyMode(mode string) error {
 		return err
 	}
 	return restartKubeProxyPods()
+}
+
+// cleanupIPVSLeftovers removes ipvs state that kube-proxy startup never
+// cleans when restoring an iptables-based mode (iptables and ipvs are one
+// family in platformCleanup). A leftover kube-ipvs0 keeps Service ClusterIPs
+// bound to the node and black-holes host-network pods started later.
+// Ref: https://github.com/kubernetes/kubeadm/issues/3133
+func cleanupIPVSLeftovers() error {
+	nodes, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
+	if err != nil {
+		return err
+	}
+	cleanup := "ipvsadm --clear 2>/dev/null; ip link del kube-ipvs0 2>/dev/null; " +
+		"[ ! -e /sys/class/net/kube-ipvs0 ] && ! grep -qE \"^(TCP|UDP|SCTP)\" /proc/net/ip_vs 2>/dev/null"
+	for _, node := range nodes.Items {
+		if out, err := execNodeShellWithTimeout(node.Name, cleanup, 30*time.Second); err != nil {
+			return fmt.Errorf("ipvs cleanup on node %s left interface or virtual services behind: %w (output: %s)", node.Name, err, out)
+		}
+	}
+	return nil
 }
 
 func restartKubeProxyPods() error {

@@ -32,6 +32,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 func TestServer_VersionCheck(t *testing.T) {
@@ -562,22 +565,78 @@ func TestServer_AddNetwork(t *testing.T) {
 }
 
 func TestServer_GetNetworkPolicyConfigs(t *testing.T) {
-	m := setup(t)
-	defer m.ctrl.Finish()
-
-	mockContext := &IPAMContext{
-		networkPolicyMode:     "standard",
-		enableMultiNICSupport: true,
+	tests := []struct {
+		name         string
+		enableIPv6   bool
+		localIPv4    net.IP
+		localIPv6    net.IP
+		wantNodeIPv4 string
+		wantNodeIPv6 string
+	}{
+		{
+			name:         "ipv4 cluster populates NodeIPv4 only",
+			enableIPv6:   false,
+			localIPv4:    net.ParseIP("192.168.1.10"),
+			wantNodeIPv4: "192.168.1.10",
+			wantNodeIPv6: "",
+		},
+		{
+			name:         "ipv6 cluster populates NodeIPv6 only",
+			enableIPv6:   true,
+			localIPv6:    net.ParseIP("2600:1f13::1"),
+			wantNodeIPv4: "",
+			wantNodeIPv6: "2600:1f13::1",
+		},
+		{
+			name:         "ipv4 cluster with nil local IP leaves NodeIPv4 empty",
+			enableIPv6:   false,
+			localIPv4:    nil,
+			wantNodeIPv4: "",
+			wantNodeIPv6: "",
+		},
+		{
+			name:         "ipv6 cluster with nil local IP leaves NodeIPv6 empty",
+			enableIPv6:   true,
+			localIPv6:    nil,
+			wantNodeIPv4: "",
+			wantNodeIPv6: "",
+		},
 	}
 
-	rpcServer := server{
-		ipamContext: mockContext,
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := setup(t)
+			defer m.ctrl.Finish()
 
-	resp, err := rpcServer.GetNetworkPolicyConfigs(context.TODO(), nil)
-	assert.NoError(t, err)
-	assert.Equal(t, "standard", resp.NetworkPolicyMode)
-	assert.True(t, resp.MultiNICEnabled)
+			mockContext := &IPAMContext{
+				awsClient:             m.awsutils,
+				networkPolicyMode:     "standard",
+				enableMultiNICSupport: true,
+				enableIPv6:            tt.enableIPv6,
+			}
+			// Only the branch matching enableIPv6 is exercised by the handler.
+			if tt.enableIPv6 {
+				m.awsutils.EXPECT().GetLocalIPv6().Return(tt.localIPv6).AnyTimes()
+			} else {
+				m.awsutils.EXPECT().GetLocalIPv4().Return(tt.localIPv4).AnyTimes()
+			}
+			m.awsutils.EXPECT().GetInstanceID().Return("i-0123456789abcdef0").AnyTimes()
+			m.awsutils.EXPECT().GetRegion().Return("us-west-2").AnyTimes()
+
+			rpcServer := server{
+				ipamContext: mockContext,
+			}
+
+			resp, err := rpcServer.GetNetworkPolicyConfigs(context.TODO(), nil)
+			assert.NoError(t, err)
+			assert.Equal(t, "standard", resp.NetworkPolicyMode)
+			assert.True(t, resp.MultiNICEnabled)
+			assert.Equal(t, tt.wantNodeIPv4, resp.NodeIPv4)
+			assert.Equal(t, tt.wantNodeIPv6, resp.NodeIPv6)
+			assert.Equal(t, "i-0123456789abcdef0", resp.InstanceID)
+			assert.Equal(t, "us-west-2", resp.Region)
+		})
+	}
 }
 
 func TestRunRPCHandler_UnixSocket(t *testing.T) {
@@ -706,5 +765,111 @@ func TestRunRPCHandler_CreatesSocketDirectory(t *testing.T) {
 		default:
 			time.Sleep(10 * time.Millisecond)
 		}
+	}
+}
+
+func TestServer_DelNetwork_PodENI_InvalidAnnotation(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		awsClient:       m.awsutils,
+		k8sClient:       m.k8sClient,
+		enablePodENI:    true,
+		enableIPv4:      true,
+		networkClient:   m.network,
+		dataStoreAccess: datastore.InitializeDataStores([]bool{false}, "test", false, log),
+	}
+
+	tests := []struct {
+		name       string
+		podName    string
+		podUID     string
+		requestUID string
+		annotation string
+		wantErr    bool
+		wantMsg    string
+	}{
+		{
+			name:       "malformed JSON annotation returns error",
+			podName:    "test-pod-malformed-json",
+			podUID:     "test-uid",
+			requestUID: "test-uid",
+			annotation: "not-valid-json",
+			wantErr:    true,
+		},
+		{
+			name:       "empty JSON array annotation returns error",
+			podName:    "test-pod-empty-array",
+			podUID:     "test-uid",
+			requestUID: "test-uid",
+			annotation: "[]",
+			wantErr:    true,
+			wantMsg:    "parsed PodENIData is empty",
+		},
+		{
+			name:       "pod UID mismatch returns error",
+			podName:    "test-pod-uid-mismatch",
+			podUID:     "actual-uid",
+			requestUID: "wrong-uid",
+			annotation: `[{"eniId":"eni-abc","ifAddress":"01:23:45:67:89:ab","privateIp":"10.0.0.1","vlanID":1,"subnetCidr":"10.0.0.0/24"}]`,
+			wantErr:    true,
+			wantMsg:    "pod UID mismatch",
+		},
+		{
+			name:       "valid annotation succeeds",
+			podName:    "test-pod-valid",
+			podUID:     "test-uid",
+			requestUID: "test-uid",
+			annotation: `[{"eniId":"eni-abc","ifAddress":"01:23:45:67:89:ab","privateIp":"10.0.0.1","vlanID":1,"subnetCidr":"10.0.0.0/24"}]`,
+			wantErr:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a pod with the given annotation
+			pod := corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      tt.podName,
+					Namespace: "default",
+					UID:       types.UID(tt.podUID),
+					Annotations: map[string]string{
+						"vpc.amazonaws.com/pod-eni": tt.annotation,
+					},
+				},
+			}
+			err := m.k8sClient.Create(context.TODO(), &pod)
+			require.NoError(t, err)
+
+			rpcServer := server{
+				version:     "1.0.0",
+				ipamContext: mockContext,
+			}
+
+			delReq := &pb.DelNetworkRequest{
+				ClientVersion:     "1.0.0",
+				K8S_POD_NAME:      pod.Name,
+				K8S_POD_NAMESPACE: pod.Namespace,
+				K8S_POD_UID:       tt.requestUID,
+				NetworkName:       "net0",
+				ContainerID:       "container-id",
+				IfName:            "eth0",
+				Reason:            "PodDeleted",
+			}
+
+			resp, err := rpcServer.DelNetwork(context.TODO(), delReq)
+
+			if tt.wantErr {
+				assert.False(t, resp.Success)
+				assert.Error(t, err)
+				if tt.wantMsg != "" {
+					assert.Contains(t, err.Error(), tt.wantMsg)
+				}
+			} else {
+				assert.True(t, resp.Success)
+				assert.NoError(t, err)
+			}
+		})
 	}
 }

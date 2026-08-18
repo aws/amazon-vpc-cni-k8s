@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/integration/common"
@@ -96,22 +97,9 @@ var _ = Describe("test pod networking", func() {
 			Build()
 
 		By("creating server deployment on the primary node")
-		primaryNodeDeployment = manifest.
-			NewDefaultDeploymentBuilder().
-			Container(serverContainer).
-			Replicas(maxIPPerInterface*2). // X2 so Pods are created on secondary ENI too
-			NodeName(primaryNode.Name).
-			PodLabel("node", "primary").
-			Name("primary-node-server").
-			Build()
-
-		primaryNodeDeployment, err = f.K8sResourceManagers.
-			DeploymentManager().
-			CreateAndWaitTillDeploymentIsReady(primaryNodeDeployment, utils.DefaultDeploymentReadyTimeout)
-		Expect(err).ToNot(HaveOccurred())
-
-		interfaceToPodListOnPrimaryNode =
-			common.GetPodsOnPrimaryAndSecondaryInterface(primaryNode, "node", "primary", f)
+		interfaceToPodListOnPrimaryNode, primaryNodeDeployment =
+			common.CreateDeploymentSpanningENIs(f, primaryNode,
+				"primary-node-server", "node", "primary", serverContainer)
 
 		// At least two Pods should be placed on the Primary and Secondary Interface
 		// on the Primary and Secondary Node in order to test all possible scenarios
@@ -121,22 +109,9 @@ var _ = Describe("test pod networking", func() {
 			Should(BeNumerically(">", 1))
 
 		By("creating server deployment on secondary node")
-		secondaryNodeDeployment = manifest.
-			NewDefaultDeploymentBuilder().
-			Container(serverContainer).
-			Replicas(maxIPPerInterface*2). // X2 so Pods are created on secondary ENI too
-			NodeName(secondaryNode.Name).
-			PodLabel("node", "secondary").
-			Name("secondary-node-server").
-			Build()
-
-		secondaryNodeDeployment, err = f.K8sResourceManagers.
-			DeploymentManager().
-			CreateAndWaitTillDeploymentIsReady(secondaryNodeDeployment, utils.DefaultDeploymentReadyTimeout)
-		Expect(err).ToNot(HaveOccurred())
-
-		interfaceToPodListOnSecondaryNode =
-			common.GetPodsOnPrimaryAndSecondaryInterface(secondaryNode, "node", "secondary", f)
+		interfaceToPodListOnSecondaryNode, secondaryNodeDeployment =
+			common.CreateDeploymentSpanningENIs(f, secondaryNode,
+				"secondary-node-server", "node", "secondary", serverContainer)
 
 		// Same reason as mentioned above
 		Expect(len(interfaceToPodListOnSecondaryNode.PodsOnPrimaryENI)).
@@ -354,6 +329,15 @@ func execNodeShell(nodeName string, command string) ([]byte, error) {
 	cmd := exec.Command("kubectl", "node-shell", nodeName, "--", "bash", "-c", command)
 	output, err := cmd.Output()
 	return output, err
+}
+
+// execNodeShellWithTimeout bounds the remote exec and captures combined output
+// so a wedged node cannot hang cleanup and failures carry their output.
+func execNodeShellWithTimeout(nodeName string, command string, timeout time.Duration) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "kubectl", "node-shell", nodeName, "--", "bash", "-c", command)
+	return cmd.CombinedOutput()
 }
 
 // sets requested policy in drop file and restarts udev
