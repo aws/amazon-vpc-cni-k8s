@@ -81,9 +81,11 @@ var _ = Describe("test pod networking", func() {
 
 	JustBeforeEach(func() {
 		By("authorizing security group ingress on instance security group")
-		err = f.CloudServices.EC2().
-			AuthorizeSecurityGroupIngress(context.TODO(), instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0", false)
-		Expect(err).ToNot(HaveOccurred())
+		for _, cidr := range vpcCIDRs {
+			err = f.CloudServices.EC2().
+				AuthorizeSecurityGroupIngress(context.TODO(), instanceSecurityGroupID, protocol, serverPort, serverPort, cidr, false)
+			Expect(err).ToNot(HaveOccurred())
+		}
 
 		By("authorizing security group egress on instance security group")
 		err = f.CloudServices.EC2().
@@ -122,9 +124,11 @@ var _ = Describe("test pod networking", func() {
 
 	JustAfterEach(func() {
 		By("revoking security group ingress on instance security group")
-		err = f.CloudServices.EC2().
-			RevokeSecurityGroupIngress(context.TODO(), instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0", false)
-		Expect(err).ToNot(HaveOccurred())
+		for _, cidr := range vpcCIDRs {
+			err = f.CloudServices.EC2().
+				RevokeSecurityGroupIngress(context.TODO(), instanceSecurityGroupID, protocol, serverPort, serverPort, cidr, false)
+			Expect(err).ToNot(HaveOccurred())
+		}
 
 		By("revoking security group egress on instance security group")
 		err = f.CloudServices.EC2().
