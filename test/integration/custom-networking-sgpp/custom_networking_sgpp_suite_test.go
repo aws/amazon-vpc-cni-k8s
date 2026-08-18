@@ -26,6 +26,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
+	"github.com/aws/amazon-vpc-cni-k8s/test/integration/common"
 	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/aws/vpc"
 	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
@@ -125,10 +126,16 @@ var _ = BeforeSuite(func() {
 		rtAssociationID, err := f.CloudServices.EC2().AssociateRouteTableToSubnet(context.TODO(), clusterVPCConfig.PublicRouteTableID, subnetID)
 		Expect(err).ToNot(HaveOccurred())
 
+		// Include the cluster security group alongside the custom-networking SG. The
+		// cluster SG carries the "Source: Self" ingress rule the EKS control plane
+		// enforces, so secondary-ENI pods can reach the API server. Without it, a
+		// recycled-node pod that needs the API server at startup (e.g. metrics-server)
+		// has its SYN dropped at the control plane and CrashLoops, even though the
+		// custom-networking SG is fully open.
 		eniConfigBuilder := manifest.NewENIConfigBuilder().
 			Name(az).
 			SubnetID(subnetID).
-			SecurityGroup([]string{customNetworkingSGID})
+			SecurityGroup([]string{clusterSGID, customNetworkingSGID})
 		eniConfig, err := eniConfigBuilder.Build()
 		Expect(err).ToNot(HaveOccurred())
 
@@ -180,9 +187,16 @@ var _ = BeforeSuite(func() {
 	err = awsUtils.TerminateInstances(f)
 	Expect(err).ToNot(HaveOccurred())
 
+	// TerminateInstances only waits for EC2-level InService; wait for k8s Node
+	// readiness before indexing, or GetNodes can return an empty list and [0] panics.
+	By("waiting for replacement nodes to be ready")
+	err = f.K8sResourceManagers.NodeManager().WaitTillNodesReady(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal, numNodes)
+	Expect(err).ToNot(HaveOccurred())
+
 	By("getting target node")
 	nodeList, err = f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
 	Expect(err).ToNot(HaveOccurred())
+	Expect(nodeList.Items).ToNot(BeEmpty(), "expected at least one node after instance recycling")
 	targetNode = nodeList.Items[0]
 })
 
@@ -204,24 +218,29 @@ var _ = AfterSuite(func() {
 	By("terminating instances")
 	errs.Append(awsUtils.TerminateInstances(f))
 
-	By("deleting Custom Networking security group")
-	errs.Append(f.CloudServices.EC2().DeleteSecurityGroup(context.TODO(), customNetworkingSGID))
-
-	By("deleting pod ENI security group")
-	errs.Append(f.CloudServices.EC2().DeleteSecurityGroup(context.TODO(), podEniSGID))
-
+	// Run every cleanup step regardless of earlier failures and aggregate errors:
+	// leaking a subnet or CIDR pins the VPC's CloudFormation stack. Subnets go first
+	// (their bounded polls absorb the CNI's async ENI drain), then the security
+	// groups, whose deletes are unblocked once the ENIs are gone.
 	for _, associationID := range customNetworkingRTAssociationIDs {
 		By(fmt.Sprintf("disassociating route table association %s", associationID))
-		errs.Append(f.CloudServices.EC2().DisassociateRouteTable(context.TODO(), associationID))
+		errs.Append(common.EnsureRouteTableDisassociated(f, associationID))
 	}
 
 	for _, subnet := range customNetworkingSubnetIDList {
 		By(fmt.Sprintf("deleting the subnet %s", subnet))
-		errs.Append(f.CloudServices.EC2().DeleteSubnet(context.TODO(), subnet))
+		errs.Append(common.EnsureSubnetDeleted(f, subnet))
 	}
 
-	By("disassociating the CIDR range to the VPC")
-	errs.Append(f.CloudServices.EC2().DisAssociateVPCCIDRBlock(context.TODO(), cidrBlockAssociationID))
+	By("deleting Custom Networking security group")
+	errs.Append(common.EnsureSecurityGroupDeleted(f, customNetworkingSGID))
 
-	Expect(errs.MaybeUnwrap()).ToNot(HaveOccurred())
+	By("deleting pod ENI security group")
+	errs.Append(common.EnsureSecurityGroupDeleted(f, podEniSGID))
+
+	By("disassociating the CIDR range to the VPC")
+	errs.Append(common.EnsureVPCCIDRDisassociated(f, cidrBlockAssociationID, cidrRange.String()))
+
+	// Fail the suite on a cleanup error rather than swallowing it, so leaks surface in CI.
+	Expect(errs.MaybeUnwrap()).ToNot(HaveOccurred(), "cleanup operations failed")
 })

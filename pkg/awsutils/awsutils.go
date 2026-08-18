@@ -220,6 +220,9 @@ type APIs interface {
 	// GetInstanceID returns the instance ID
 	GetInstanceID() string
 
+	// GetRegion returns the AWS region of the instance
+	GetRegion() string
+
 	// FetchInstanceTypeLimits Verify if the InstanceNetworkingLimits has the ENI limits else make EC2 call to fill cache.
 	FetchInstanceTypeLimits(ctx context.Context) error
 
@@ -243,6 +246,7 @@ type EC2InstanceMetadataCache struct {
 	securityGroups           StringSet
 	subnetID                 string
 	localIPv4                net.IP
+	localIPv6                net.IP
 	v4Enabled                bool
 	v6Enabled                bool
 	instanceID               string
@@ -485,6 +489,16 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata(ctx context.Context) 
 		return err
 	}
 	log.Debugf("Discovered the instance primary IPv4 address: %s", cache.localIPv4)
+
+	// Cache IPv6 so reads don't trigger a live IMDS request per call.
+	if cache.v6Enabled {
+		cache.localIPv6, err = cache.imds.GetLocalIPv6(ctx)
+		if err != nil {
+			awsAPIErrInc("GetLocalIPv6", err)
+			return err
+		}
+		log.Debugf("Discovered the instance primary IPv6 address: %s", cache.localIPv6)
+	}
 
 	// retrieve instance-id
 	cache.instanceID, err = cache.imds.GetInstanceID(ctx)
@@ -2444,16 +2458,9 @@ func (cache *EC2InstanceMetadataCache) GetLocalIPv4() net.IP {
 	return cache.localIPv4
 }
 
-// GetLocalIPv4 returns the primary IP address on the primary interface
+// GetLocalIPv6 returns the cached primary IPv6 address (no live IMDS call).
 func (cache *EC2InstanceMetadataCache) GetLocalIPv6() net.IP {
-	ctx := context.TODO()
-
-	localIPv6, err := cache.imds.GetLocalIPv6(ctx)
-	if err != nil {
-		awsAPIErrInc("GetIPv6", err)
-	}
-
-	return localIPv6
+	return cache.localIPv6
 }
 
 // GetVPCIPv6CIDRs returns VPC CIDRs
@@ -2502,6 +2509,11 @@ func (cache *EC2InstanceMetadataCache) SetEFAOnlyENIs(efaOnlyENIByNetworkCard []
 // GetInstanceID returns the instance ID
 func (cache *EC2InstanceMetadataCache) GetInstanceID() string {
 	return cache.instanceID
+}
+
+// GetRegion returns the AWS region of the instance
+func (cache *EC2InstanceMetadataCache) GetRegion() string {
+	return cache.region
 }
 
 // IsUnmanagedENI returns if the eni is unmanaged

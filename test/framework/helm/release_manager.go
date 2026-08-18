@@ -102,6 +102,7 @@ func (d *defaultReleaseManager) UninstallRelease(namespace string, releaseName s
 	actionConfig := d.obtainActionConfig(namespace)
 
 	uninstallAction := action.NewUninstall(actionConfig)
+	uninstallAction.WaitStrategy = kube.StatusWatcherStrategy
 	return uninstallAction.Run(releaseName)
 }
 

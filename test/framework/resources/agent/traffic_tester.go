@@ -15,8 +15,10 @@ package agent
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/agent/pkg/input"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
@@ -62,9 +64,50 @@ type TrafficTest struct {
 
 // Tests traffic by creating multiple server pods using a deployment and multiple client pods
 // using a Job. Each client Pod tests connectivity to each Server Pod.
-func (t *TrafficTest) TestTraffic() (float64, error) {
+func (t *TrafficTest) TestTraffic() (successRate float64, err error) {
+	var serverDeployment *appsV1.Deployment
+	var metricServerPod *v1.Pod
+	var clientJob *batchV1.Job
+	// Clean up test resources on every exit path. Failures are aggregated and
+	// surfaced, and each deletion is bounded so a stuck resource cannot hang
+	// teardown indefinitely.
+	defer func() {
+		var cleanupErrs []error
+		cleanup := func(name string, del func() error) {
+			done := make(chan error, 1)
+			go func() { done <- del() }()
+			select {
+			case delErr := <-done:
+				if delErr != nil {
+					cleanupErrs = append(cleanupErrs, fmt.Errorf("%s deletion failed: %w", name, delErr))
+				}
+			case <-time.After(2 * time.Minute):
+				cleanupErrs = append(cleanupErrs, fmt.Errorf("%s deletion timed out after 2m", name))
+			}
+		}
+		if clientJob != nil {
+			cleanup("client job", func() error {
+				return t.Framework.K8sResourceManagers.JobManager().DeleteAndWaitTillJobIsDeleted(clientJob)
+			})
+		}
+		if metricServerPod != nil {
+			cleanup("metric server pod", func() error {
+				return t.Framework.K8sResourceManagers.PodManager().DeleteAndWaitTillPodDeleted(metricServerPod)
+			})
+		}
+		if serverDeployment != nil {
+			cleanup("server deployment", func() error {
+				return t.Framework.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(serverDeployment)
+			})
+		}
+		if err == nil && len(cleanupErrs) > 0 {
+			successRate = 0
+			err = fmt.Errorf("teardown failures: %w", errors.Join(cleanupErrs...))
+		}
+	}()
+
 	// Server listens on a given TCP/UDP Port
-	serverDeployment, err := t.startTrafficServer()
+	serverDeployment, err = t.startTrafficServer()
 	if err != nil {
 		return 0, fmt.Errorf("failed to start server deployment: %v", err)
 	}
@@ -73,7 +116,7 @@ func (t *TrafficTest) TestTraffic() (float64, error) {
 
 	// The Metric Server Aggregates all metrics from all the client Pod so we
 	// don't have to query each client Pod to get the metric
-	metricServerPod, err := t.startMetricServerPod()
+	metricServerPod, err = t.startMetricServerPod()
 	if err != nil {
 		return 0, fmt.Errorf("failed to start metric server pod: %v", err)
 	}
@@ -109,7 +152,7 @@ func (t *TrafficTest) TestTraffic() (float64, error) {
 
 	// To the Client Job pass the list of Server IPs, so each client Pod tests connectivity to each
 	// server
-	clientJob, err := t.startTrafficClient(strings.Join(serverIPs, ","), metricServerPod.Status.PodIP)
+	clientJob, err = t.startTrafficClient(strings.Join(serverIPs, ","), metricServerPod.Status.PodIP)
 	if err != nil {
 		return 0, fmt.Errorf("failed to start client jobs: %v", err)
 	}
@@ -143,27 +186,11 @@ func (t *TrafficTest) TestTraffic() (float64, error) {
 
 	fmt.Fprintln(GinkgoWriter, "successfully fetched the metrics from metric server")
 
-	successRate := t.calculateSuccessRate(testInputs)
+	successRate = t.calculateSuccessRate(testInputs)
 	if successRate != float64(100) {
 		fmt.Fprintf(GinkgoWriter, "SuccessRate: %v, Input List: %v", successRate, testInputs)
 	} else {
 		fmt.Fprintf(GinkgoWriter, "SuccessRate: %v", successRate)
-	}
-
-	// Clean up all the resources
-	err = t.Framework.K8sResourceManagers.JobManager().DeleteAndWaitTillJobIsDeleted(clientJob)
-	if err != nil {
-		return 0, fmt.Errorf("failed to delete client job: %v", err)
-	}
-
-	err = t.Framework.K8sResourceManagers.PodManager().DeleteAndWaitTillPodDeleted(metricServerPod)
-	if err != nil {
-		return 0, fmt.Errorf("failed to delete metric server pod: %v", err)
-	}
-
-	err = t.Framework.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(serverDeployment)
-	if err != nil {
-		return 0, fmt.Errorf("failed to delete server deployment: %v", err)
 	}
 
 	return successRate, nil

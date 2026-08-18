@@ -450,6 +450,45 @@ func addManualLimits(limitMap map[string]vpc.InstanceTypeLimits) map[string]vpc.
 			},
 			IsBareMetal: false,
 		},
+		// c7i.32xlarge, dl1.24xlarge is missing from the EC2 API, but is documented. Remove after July 2027
+		"c7i.32xlarge": {
+			ENILimit:                15,
+			IPv4Limit:               50,
+			HypervisorType:          strconv.Quote("nitro"),
+			DefaultNetworkCardIndex: 0,
+			NetworkCards: []vpc.NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex:         0,
+				},
+			},
+			IsBareMetal: false,
+		},
+		"dl1.24xlarge": {
+			ENILimit:                15,
+			IPv4Limit:               50,
+			HypervisorType:          strconv.Quote("nitro"),
+			DefaultNetworkCardIndex: 0,
+			NetworkCards: []vpc.NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex:         0,
+				},
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex:         1,
+				},
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex:         2,
+				},
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex:         3,
+				},
+			},
+			IsBareMetal: false,
+		},
 	}
 	for instanceType, instanceLimits := range manuallyAddedLimits {
 		val, ok := limitMap[instanceType]

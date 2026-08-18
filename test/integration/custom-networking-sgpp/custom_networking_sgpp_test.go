@@ -82,7 +82,9 @@ var _ = Describe("Custom Networking + Security Groups for Pods Test", func() {
 
 	JustAfterEach(func() {
 		By("deleting test namespace")
-		f.K8sResourceManagers.NamespaceManager().
+		// Deferred assert below: a namespace still Terminating would fail the next
+		// spec with an unattributable NamespaceTerminating 403 on its SGP create.
+		nsErr := f.K8sResourceManagers.NamespaceManager().
 			DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
 
 		By("Deleting Security Group Policy")
@@ -90,6 +92,9 @@ var _ = Describe("Custom Networking + Security Groups for Pods Test", func() {
 
 		By("waiting for the branch ENI to be cooled down")
 		time.Sleep(time.Second * 60)
+
+		Expect(nsErr).ToNot(HaveOccurred(),
+			"test namespace did not finish terminating within the bounded wait")
 	})
 
 	Context("when testing traffic between branch ENI pods and regular pods", func() {

@@ -88,6 +88,16 @@ type cloudWatchPublisher struct {
 	log                  logger.Logger
 }
 
+// regionFromIMDS returns the region reported by IMDS. GetRegion returns a nil output
+// alongside the error, so the error must be checked before the output is dereferenced.
+func regionFromIMDS(ctx context.Context, client ec2metadatawrapper.EC2MetadataClient) (string, error) {
+	output, err := client.GetRegion(ctx, &ec2metadata.GetRegionInput{})
+	if err != nil {
+		return "", errors.Wrap(err, "publisher: unable to obtain region from instance metadata")
+	}
+	return output.Region, nil
+}
+
 // Logic to fetch Region and CLUSTER_ID
 // Case 1: Cx not using IRSA, we need to get region and clusterID using IMDS
 // Case 2: Cx using IRSA but not specified clusterID, we can still get this info if IMDS is not blocked
@@ -116,8 +126,7 @@ func New(ctx context.Context, region string, clusterID string, log logger.Logger
 		if err != nil {
 			return nil, err
 		}
-		output, err := ec2Metadataclient.GetRegion(ctx, &ec2metadata.GetRegionInput{})
-		region = output.Region
+		region, err = regionFromIMDS(ctx, ec2Metadataclient)
 		if err != nil {
 			return nil, err
 		}

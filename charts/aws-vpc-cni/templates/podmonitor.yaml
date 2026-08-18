@@ -19,6 +19,7 @@ spec:
       - {{ .Release.Namespace }}
   podMetricsEndpoints:
   - interval: {{ .Values.podMonitor.interval }}
+    scrapeTimeout: {{ .Values.podMonitor.scrapeTimeout }}
     path: /metrics
     port: metrics
     {{- with .Values.podMonitor.relabelings }}
@@ -27,6 +28,7 @@ spec:
     {{- end }}
   {{- if .Values.nodeAgent.enabled }}
   - interval: {{ .Values.podMonitor.interval }}
+    scrapeTimeout: {{ .Values.podMonitor.scrapeTimeout }}
     path: /metrics
     port: agentmetrics
     {{- with .Values.podMonitor.relabelings }}

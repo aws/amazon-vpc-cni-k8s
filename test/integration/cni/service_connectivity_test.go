@@ -145,14 +145,19 @@ var _ = Describe("[CANARY] test service connectivity", FlakeAttempts(3), func() 
 			CreateAndWaitTillJobCompleted(negativeTesterJob)
 		Expect(err).To(HaveOccurred())
 
-		// After each test case, validate that no more than maxENIs have been allocated to verify
-		// that IPs have not leaked or gotten stuck in cooldown. We chose 3 as the value of maxENIs
-		// since pod placement is not guaranteed to be equally distributed
-		By("checking number of ENIs is less than or equal to maxENIs")
+		// Validate no more than maxENIs stay allocated (no leaked or stuck IPs).
+		// The count is eventually consistent: ipamd detaches surplus ENIs over
+		// ~45s reconcile cycles, so poll for convergence; a real leak never
+		// converges and still fails here.
+		By("checking number of ENIs converges to no more than maxENIs")
 		instanceID := k8sUtils.GetInstanceIDFromNode(primaryNode)
-		primaryInstance, err := f.CloudServices.EC2().DescribeInstance(context.TODO(), instanceID)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(len(primaryInstance.NetworkInterfaces) <= 3).To(BeTrue())
+		Eventually(func() (int, error) {
+			primaryInstance, err := f.CloudServices.EC2().DescribeInstance(context.TODO(), instanceID)
+			if err != nil {
+				return 0, err
+			}
+			return len(primaryInstance.NetworkInterfaces), nil
+		}, 3*time.Minute, 10*time.Second).Should(BeNumerically("<=", 3))
 	})
 
 	JustAfterEach(func() {
@@ -179,6 +184,12 @@ var _ = Describe("[CANARY] test service connectivity", FlakeAttempts(3), func() 
 
 		// Sleep for IP cooldown period to ensure IPs are added back to datastore for future test runs
 		time.Sleep(5 * time.Second)
+
+		// Restore the ipamd cooldown default for later specs.
+		k8sUtils.RemoveVarFromDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName,
+			utils.AwsNodeNamespace, utils.AwsNodeName, map[string]struct{}{
+				"IP_COOLDOWN_PERIOD": {},
+			})
 	})
 
 	Context("when a deployment behind clb service is created", func() {
