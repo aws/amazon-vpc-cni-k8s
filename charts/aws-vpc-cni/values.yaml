@@ -55,6 +55,22 @@ nodeAgent:
   conntrackCacheTableSize: 524288
   logLevel: "debug"
   resources: {}
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: health
+    initialDelaySeconds: 60
+    periodSeconds: 30
+    failureThreshold: 10
+    timeoutSeconds: 10
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: health
+    initialDelaySeconds: 1
+    periodSeconds: 10
+    failureThreshold: 3
+    timeoutSeconds: 10
 
 image:
   tag: v1.23.0
