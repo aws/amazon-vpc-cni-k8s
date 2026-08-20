@@ -6,9 +6,11 @@ metadata:
   name: cni-metrics-helper
   namespace: kube-system
   labels:
+    helm.sh/chart: cni-metrics-helper-1.23.0
     app.kubernetes.io/name: cni-metrics-helper
     app.kubernetes.io/instance: cni-metrics-helper
-    app.kubernetes.io/version: "v1.23.0"
+    app.kubernetes.io/version: "v1.23.1"
+    app.kubernetes.io/managed-by: Helm
 ---
 # Source: cni-metrics-helper/templates/clusterrole.yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -16,9 +18,11 @@ kind: ClusterRole
 metadata:
   name: cni-metrics-helper
   labels:
+    helm.sh/chart: cni-metrics-helper-1.23.0
     app.kubernetes.io/name: cni-metrics-helper
     app.kubernetes.io/instance: cni-metrics-helper
-    app.kubernetes.io/version: "v1.23.0"
+    app.kubernetes.io/version: "v1.23.1"
+    app.kubernetes.io/managed-by: Helm
 rules:
   - apiGroups: [""]
     resources:
@@ -32,9 +36,11 @@ kind: ClusterRoleBinding
 metadata:
   name: cni-metrics-helper
   labels:
+    helm.sh/chart: cni-metrics-helper-1.23.0
     app.kubernetes.io/name: cni-metrics-helper
     app.kubernetes.io/instance: cni-metrics-helper
-    app.kubernetes.io/version: "v1.23.0"
+    app.kubernetes.io/version: "v1.23.1"
+    app.kubernetes.io/managed-by: Helm
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -52,9 +58,11 @@ metadata:
   namespace: kube-system
   labels:
     k8s-app: cni-metrics-helper
+    helm.sh/chart: cni-metrics-helper-1.23.0
     app.kubernetes.io/name: cni-metrics-helper
     app.kubernetes.io/instance: cni-metrics-helper
-    app.kubernetes.io/version: "v1.23.0"
+    app.kubernetes.io/version: "v1.23.1"
+    app.kubernetes.io/managed-by: Helm
 spec:
   revisionHistoryLimit: 10
   selector:
@@ -78,5 +86,5 @@ spec:
         - name: USE_PROMETHEUS
           value: "false"
         name: cni-metrics-helper
-        image: "961992271922.dkr.ecr.cn-northwest-1.amazonaws.com.cn/cni-metrics-helper:v1.23.0"
+        image: "961992271922.dkr.ecr.cn-northwest-1.amazonaws.com.cn/cni-metrics-helper:v1.23.1"
       serviceAccountName: cni-metrics-helper
