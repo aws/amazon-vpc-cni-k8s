@@ -6,7 +6,7 @@ metadata:
   name: cni-metrics-helper
   namespace: kube-system
   labels:
-    helm.sh/chart: cni-metrics-helper-1.23.0
+    helm.sh/chart: cni-metrics-helper-1.23.1
     app.kubernetes.io/name: cni-metrics-helper
     app.kubernetes.io/instance: cni-metrics-helper
     app.kubernetes.io/version: "v1.23.1"
@@ -18,7 +18,7 @@ kind: ClusterRole
 metadata:
   name: cni-metrics-helper
   labels:
-    helm.sh/chart: cni-metrics-helper-1.23.0
+    helm.sh/chart: cni-metrics-helper-1.23.1
     app.kubernetes.io/name: cni-metrics-helper
     app.kubernetes.io/instance: cni-metrics-helper
     app.kubernetes.io/version: "v1.23.1"
@@ -36,7 +36,7 @@ kind: ClusterRoleBinding
 metadata:
   name: cni-metrics-helper
   labels:
-    helm.sh/chart: cni-metrics-helper-1.23.0
+    helm.sh/chart: cni-metrics-helper-1.23.1
     app.kubernetes.io/name: cni-metrics-helper
     app.kubernetes.io/instance: cni-metrics-helper
     app.kubernetes.io/version: "v1.23.1"
@@ -58,7 +58,7 @@ metadata:
   namespace: kube-system
   labels:
     k8s-app: cni-metrics-helper
-    helm.sh/chart: cni-metrics-helper-1.23.0
+    helm.sh/chart: cni-metrics-helper-1.23.1
     app.kubernetes.io/name: cni-metrics-helper
     app.kubernetes.io/instance: cni-metrics-helper
     app.kubernetes.io/version: "v1.23.1"

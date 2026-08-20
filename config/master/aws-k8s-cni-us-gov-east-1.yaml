@@ -64,7 +64,7 @@ metadata:
   namespace: kube-system
   labels:
     app.kubernetes.io/name: aws-node
-    helm.sh/chart: aws-vpc-cni-1.23.0
+    helm.sh/chart: aws-vpc-cni-1.23.1
     app.kubernetes.io/instance: aws-vpc-cni
     k8s-app: aws-node
     app.kubernetes.io/version: "v1.23.1"
@@ -78,7 +78,7 @@ metadata:
   namespace: kube-system
   labels:
     app.kubernetes.io/name: aws-node
-    helm.sh/chart: aws-vpc-cni-1.23.0
+    helm.sh/chart: aws-vpc-cni-1.23.1
     app.kubernetes.io/instance: aws-vpc-cni
     k8s-app: aws-node
     app.kubernetes.io/version: "v1.23.1"
@@ -99,7 +99,7 @@ metadata:
   name: aws-node
   labels:
     app.kubernetes.io/name: aws-node
-    helm.sh/chart: aws-vpc-cni-1.23.0
+    helm.sh/chart: aws-vpc-cni-1.23.1
     app.kubernetes.io/instance: aws-vpc-cni
     k8s-app: aws-node
     app.kubernetes.io/version: "v1.23.1"
@@ -151,7 +151,7 @@ metadata:
   name: aws-node
   labels:
     app.kubernetes.io/name: aws-node
-    helm.sh/chart: aws-vpc-cni-1.23.0
+    helm.sh/chart: aws-vpc-cni-1.23.1
     app.kubernetes.io/instance: aws-vpc-cni
     k8s-app: aws-node
     app.kubernetes.io/version: "v1.23.1"
@@ -173,7 +173,7 @@ metadata:
   namespace: kube-system
   labels:
     app.kubernetes.io/name: aws-node
-    helm.sh/chart: aws-vpc-cni-1.23.0
+    helm.sh/chart: aws-vpc-cni-1.23.1
     app.kubernetes.io/instance: aws-vpc-cni
     k8s-app: aws-node
     app.kubernetes.io/version: "v1.23.1"
