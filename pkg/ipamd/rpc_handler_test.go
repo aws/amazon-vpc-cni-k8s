@@ -565,22 +565,78 @@ func TestServer_AddNetwork(t *testing.T) {
 }
 
 func TestServer_GetNetworkPolicyConfigs(t *testing.T) {
-	m := setup(t)
-	defer m.ctrl.Finish()
-
-	mockContext := &IPAMContext{
-		networkPolicyMode:     "standard",
-		enableMultiNICSupport: true,
+	tests := []struct {
+		name         string
+		enableIPv6   bool
+		localIPv4    net.IP
+		localIPv6    net.IP
+		wantNodeIPv4 string
+		wantNodeIPv6 string
+	}{
+		{
+			name:         "ipv4 cluster populates NodeIPv4 only",
+			enableIPv6:   false,
+			localIPv4:    net.ParseIP("192.168.1.10"),
+			wantNodeIPv4: "192.168.1.10",
+			wantNodeIPv6: "",
+		},
+		{
+			name:         "ipv6 cluster populates NodeIPv6 only",
+			enableIPv6:   true,
+			localIPv6:    net.ParseIP("2600:1f13::1"),
+			wantNodeIPv4: "",
+			wantNodeIPv6: "2600:1f13::1",
+		},
+		{
+			name:         "ipv4 cluster with nil local IP leaves NodeIPv4 empty",
+			enableIPv6:   false,
+			localIPv4:    nil,
+			wantNodeIPv4: "",
+			wantNodeIPv6: "",
+		},
+		{
+			name:         "ipv6 cluster with nil local IP leaves NodeIPv6 empty",
+			enableIPv6:   true,
+			localIPv6:    nil,
+			wantNodeIPv4: "",
+			wantNodeIPv6: "",
+		},
 	}
 
-	rpcServer := server{
-		ipamContext: mockContext,
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := setup(t)
+			defer m.ctrl.Finish()
 
-	resp, err := rpcServer.GetNetworkPolicyConfigs(context.TODO(), nil)
-	assert.NoError(t, err)
-	assert.Equal(t, "standard", resp.NetworkPolicyMode)
-	assert.True(t, resp.MultiNICEnabled)
+			mockContext := &IPAMContext{
+				awsClient:             m.awsutils,
+				networkPolicyMode:     "standard",
+				enableMultiNICSupport: true,
+				enableIPv6:            tt.enableIPv6,
+			}
+			// Only the branch matching enableIPv6 is exercised by the handler.
+			if tt.enableIPv6 {
+				m.awsutils.EXPECT().GetLocalIPv6().Return(tt.localIPv6).AnyTimes()
+			} else {
+				m.awsutils.EXPECT().GetLocalIPv4().Return(tt.localIPv4).AnyTimes()
+			}
+			m.awsutils.EXPECT().GetInstanceID().Return("i-0123456789abcdef0").AnyTimes()
+			m.awsutils.EXPECT().GetRegion().Return("us-west-2").AnyTimes()
+
+			rpcServer := server{
+				ipamContext: mockContext,
+			}
+
+			resp, err := rpcServer.GetNetworkPolicyConfigs(context.TODO(), nil)
+			assert.NoError(t, err)
+			assert.Equal(t, "standard", resp.NetworkPolicyMode)
+			assert.True(t, resp.MultiNICEnabled)
+			assert.Equal(t, tt.wantNodeIPv4, resp.NodeIPv4)
+			assert.Equal(t, tt.wantNodeIPv6, resp.NodeIPv6)
+			assert.Equal(t, "i-0123456789abcdef0", resp.InstanceID)
+			assert.Equal(t, "us-west-2", resp.Region)
+		})
+	}
 }
 
 func TestRunRPCHandler_UnixSocket(t *testing.T) {
