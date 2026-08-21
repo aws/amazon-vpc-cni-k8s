@@ -489,6 +489,107 @@ func TestGetENIAttachmentID(t *testing.T) {
 	}
 }
 
+func TestIsENIAttachedToInstance(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	testCases := []struct {
+		name        string
+		output      *ec2.DescribeNetworkInterfacesOutput
+		err         error
+		expAttached bool
+		expErr      bool
+	}{
+		{
+			"attached to this instance",
+			&ec2.DescribeNetworkInterfacesOutput{
+				NetworkInterfaces: []ec2types.NetworkInterface{{
+					Attachment: &ec2types.NetworkInterfaceAttachment{
+						InstanceId: aws.String(instanceID),
+						Status:     ec2types.AttachmentStatusAttached,
+					},
+				}},
+			},
+			nil,
+			true,
+			false,
+		},
+		{
+			"attached to another instance",
+			&ec2.DescribeNetworkInterfacesOutput{
+				NetworkInterfaces: []ec2types.NetworkInterface{{
+					Attachment: &ec2types.NetworkInterfaceAttachment{
+						InstanceId: aws.String("i-0000other0000"),
+						Status:     ec2types.AttachmentStatusAttached,
+					},
+				}},
+			},
+			nil,
+			false,
+			false,
+		},
+		{
+			"detached from this instance",
+			&ec2.DescribeNetworkInterfacesOutput{
+				NetworkInterfaces: []ec2types.NetworkInterface{{
+					Attachment: &ec2types.NetworkInterfaceAttachment{
+						InstanceId: aws.String(instanceID),
+						Status:     ec2types.AttachmentStatusDetached,
+					},
+				}},
+			},
+			nil,
+			false,
+			false,
+		},
+		{
+			"no attachment",
+			&ec2.DescribeNetworkInterfacesOutput{
+				NetworkInterfaces: []ec2types.NetworkInterface{{}},
+			},
+			nil,
+			false,
+			false,
+		},
+		{
+			"empty network interfaces",
+			&ec2.DescribeNetworkInterfacesOutput{
+				NetworkInterfaces: []ec2types.NetworkInterface{},
+			},
+			nil,
+			false,
+			false,
+		},
+		{
+			"eni not found",
+			nil,
+			&smithy.GenericAPIError{Code: "InvalidNetworkInterfaceID.NotFound", Message: "not found", Fault: 0},
+			false,
+			false,
+		},
+		{
+			"api error",
+			nil,
+			&smithy.GenericAPIError{Code: "AuthFailure", Message: "auth failure", Fault: 0},
+			false,
+			true,
+		},
+	}
+
+	for _, tc := range testCases {
+		mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any(), gomock.Any(), gomock.Any()).Return(tc.output, tc.err)
+
+		cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceID: instanceID}
+		attached, err := cache.IsENIAttachedToInstance(context.Background(), "test-eni")
+		assert.Equal(t, tc.expAttached, attached, tc.name)
+		if tc.expErr {
+			assert.Error(t, err, tc.name)
+		} else {
+			assert.NoError(t, err, tc.name)
+		}
+	}
+}
+
 func TestDescribeAllENIs(t *testing.T) {
 	ctrl, mockEC2 := setup(t)
 	defer ctrl.Finish()
