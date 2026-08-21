@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.23.1
+
+* Serve node IP and instance ID to the Network Policy Agent via gRPC — the agent now sources `NodeIPv4`, `NodeIPv6`, and `InstanceID` from ipamd instead of querying IMDS ([#3827](https://github.com/aws/amazon-vpc-cni-k8s/pull/3827), @viveksb007)
+* Add `Region` to `NetworkPolicyAgentConfigReply` so the agent can resolve its region without calling IMDS ([#3829](https://github.com/aws/amazon-vpc-cni-k8s/pull/3829), @viveksb007)
+* Update VPC IP resource limits ([#3801](https://github.com/aws/amazon-vpc-cni-k8s/pull/3801))
+* Don't fail on IPv6-only unmanaged ENIs in an IPv4 cluster (handled via `getENIMetadata`) ([#3681](https://github.com/aws/amazon-vpc-cni-k8s/pull/3681), @cdirubbio)
+* Clean up the `primaryIP` map entry when an ENI is freed in `tryFreeENI` ([#3727](https://github.com/aws/amazon-vpc-cni-k8s/pull/3727))
+* Helm: render `podMonitor.scrapeTimeout` in the PodMonitor template ([#3804](https://github.com/aws/amazon-vpc-cni-k8s/pull/3804), @OdaloV)
+* Pin busybox and curl images used in tests ([#3820](https://github.com/aws/amazon-vpc-cni-k8s/pull/3820))
+* Bump `github.com/go-logr/logr` from 1.4.3 to 1.4.4 ([#3817](https://github.com/aws/amazon-vpc-cni-k8s/pull/3817))
+* Bump the `aws-dependencies` group with 11 updates (aws-sdk-go-v2 services, vpc-resource-controller, smithy-go) ([#3815](https://github.com/aws/amazon-vpc-cni-k8s/pull/3815))
+* Bump `github.com/apparentlymart/go-cidr` from 1.1.0 to 1.1.1 ([#3816](https://github.com/aws/amazon-vpc-cni-k8s/pull/3816))
+* Bump `oras.land/oras-go/v2` from 2.6.1 to 2.6.2 ([#3828](https://github.com/aws/amazon-vpc-cni-k8s/pull/3828))
+* Bump `github.com/aws/amazon-vpc-cni-k8s` (test/agent) from 1.22.3 to 1.22.4 ([#3814](https://github.com/aws/amazon-vpc-cni-k8s/pull/3814))
+* Bump `actions/stale` from 10.4.0 to 11.0.0 ([#3812](https://github.com/aws/amazon-vpc-cni-k8s/pull/3812))
+* Bump `aws-actions/configure-aws-credentials` from 6.2.2 to 6.2.3 ([#3794](https://github.com/aws/amazon-vpc-cni-k8s/pull/3794))
+
 ## v1.23.0
 
 > [!WARNING]

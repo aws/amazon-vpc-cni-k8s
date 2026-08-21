@@ -330,6 +330,20 @@ func (mr *MockAPIsMockRecorder) GetInstanceID() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetInstanceID", reflect.TypeOf((*MockAPIs)(nil).GetInstanceID))
 }
 
+// GetRegion mocks base method.
+func (m *MockAPIs) GetRegion() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetRegion")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetRegion indicates an expected call of GetRegion.
+func (mr *MockAPIsMockRecorder) GetRegion() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRegion", reflect.TypeOf((*MockAPIs)(nil).GetRegion))
+}
+
 // GetInstanceType mocks base method.
 func (m *MockAPIs) GetInstanceType() string {
 	m.ctrl.T.Helper()

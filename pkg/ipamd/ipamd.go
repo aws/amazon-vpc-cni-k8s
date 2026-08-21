@@ -882,9 +882,10 @@ func (c *IPAMContext) tryFreeENI(ctx context.Context, networkCard int) {
 
 	err = c.networkClient.DeleteRulesBySrc(c.primaryIP[eni], c.enableIPv6)
 	if err != nil {
-		log.Errorf("Failed to delete rules for Primary IP of ENI err: %v", err)
-		return
+		ipamdErrInc("freeENIDeleteRulesFailed")
+		log.Errorf("Failed to delete rules for Primary IP of ENI %s, err: %v", eni, err)
 	}
+	delete(c.primaryIP, eni)
 }
 
 // When warm IP/prefix targets are defined, free extra IPs

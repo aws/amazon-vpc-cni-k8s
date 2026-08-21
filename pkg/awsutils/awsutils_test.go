@@ -239,6 +239,24 @@ func TestInitWithEC2metadata(t *testing.T) {
 	}
 }
 
+func TestInitWithEC2metadataIPv6(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+	defer cancel()
+
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+	mockMetadata := testMetadata(map[string]interface{}{
+		"ipv6": eni1v6IP,
+	})
+
+	cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2, v6Enabled: true}
+	err := cache.initWithEC2Metadata(ctx)
+	if assert.NoError(t, err) {
+		assert.Equal(t, eni1v6IP, cache.localIPv6.String())
+		assert.Equal(t, eni1v6IP, cache.GetLocalIPv6().String())
+	}
+}
+
 func TestInitWithEC2metadataErr(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
 	defer cancel()
@@ -3916,4 +3934,30 @@ func TestDescribeAllENIsNoConnectionTracking(t *testing.T) {
 	_, err := cache.DescribeAllENIs(context.Background())
 	assert.NoError(t, err)
 	assert.Nil(t, cache.connectionTrackingSpec)
+}
+
+// TestGetAttachedENIsIPv6OnlyENIInIPv4Cluster tests that an unmanaged-ENI with only IPv6
+// addresses does not cause a crash when the cluster is running in IPv4 mode
+func TestGetAttachedENIsIPv6OnlyENIInIPv4Cluster(t *testing.T) {
+	mockMetadata := testMetadata(map[string]interface{}{
+		metadataMACPath:                                  primaryMAC + " " + eni2MAC,
+		metadataMACPath + eni2MAC:                        imdsMACFieldsV6Only,
+		metadataMACPath + eni2MAC + metadataDeviceNum:    eni2Device,
+		metadataMACPath + eni2MAC + metadataInterface:    eni2ID,
+		metadataMACPath + eni2MAC + metadataSubnetID:     subnetID,
+		metadataMACPath + eni2MAC + metadataIPv6s:        eni2v6IP,
+		metadataMACPath + eni2MAC + metadataSubnetV6CIDR: subnetv6CIDR,
+	})
+
+	// IPv4 mode cluster: v4Enabled=true, v6Enabled=false
+	cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, v4Enabled: true, v6Enabled: false}
+	ens, err := cache.GetAttachedENIs()
+	if assert.NoError(t, err) {
+		assert.Equal(t, 2, len(ens))
+		// The IPv6-only ENI should have its IPv6 addresses populated
+		assert.Len(t, ens[1].IPv6Addresses, 1)
+		assert.Equal(t, eni2v6IP, aws.ToString(ens[1].IPv6Addresses[0].Ipv6Address))
+		// No IPv4 addresses on this ENI
+		assert.Empty(t, ens[1].IPv4Addresses)
+	}
 }

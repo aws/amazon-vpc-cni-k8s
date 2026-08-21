@@ -468,9 +468,23 @@ func (s *server) GetNetworkPolicyConfigs(ctx context.Context, e *emptypb.Empty) 
 	resp := &rpc.NetworkPolicyAgentConfigReply{
 		NetworkPolicyMode: s.ipamContext.networkPolicyMode,
 		MultiNICEnabled:   s.ipamContext.enableMultiNICSupport,
+		InstanceID:        s.ipamContext.awsClient.GetInstanceID(),
+		Region:            s.ipamContext.awsClient.GetRegion(),
 	}
 
-	log.Infof("Send NetworkPolicyAgentConfigReply: NetworkPolicyMode: %v, MultiNICEnabled: %v", resp.NetworkPolicyMode, resp.MultiNICEnabled)
+	// Serve the node IP so the network policy agent doesn't query IMDS itself.
+	if s.ipamContext.enableIPv6 {
+		if ipv6 := s.ipamContext.awsClient.GetLocalIPv6(); ipv6 != nil {
+			resp.NodeIPv6 = ipv6.String()
+		}
+	} else {
+		if ipv4 := s.ipamContext.awsClient.GetLocalIPv4(); ipv4 != nil {
+			resp.NodeIPv4 = ipv4.String()
+		}
+	}
+
+	log.Infof("Send NetworkPolicyAgentConfigReply: NetworkPolicyMode: %v, MultiNICEnabled: %v, NodeIPv4: %v, NodeIPv6: %v, InstanceID: %v, Region: %v",
+		resp.NetworkPolicyMode, resp.MultiNICEnabled, resp.NodeIPv4, resp.NodeIPv6, resp.InstanceID, resp.Region)
 	return resp, nil
 }
 

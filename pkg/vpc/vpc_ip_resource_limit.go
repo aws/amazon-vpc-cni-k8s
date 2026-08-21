@@ -17735,19 +17735,6 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		HypervisorType: "unknown",
 		IsBareMetal:    true,
 	},
-	"u-18tb1.112xlarge": {
-		ENILimit:                15,
-		IPv4Limit:               50,
-		DefaultNetworkCardIndex: 0,
-		NetworkCards: []NetworkCard{
-			{
-				MaximumNetworkInterfaces: 15,
-				NetworkCardIndex:         0,
-			},
-		},
-		HypervisorType: "nitro",
-		IsBareMetal:    false,
-	},
 	"u-18tb1.metal": {
 		ENILimit:                15,
 		IPv4Limit:               50,
