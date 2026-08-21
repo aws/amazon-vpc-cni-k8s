@@ -72,7 +72,13 @@ func Add(ipt iptableswrapper.IPTablesIface, nodeIP, src net.IP, multicastRange, 
 	for _, rule := range rules {
 		_chain := rule[0]
 		if !existingChains[_chain] {
-			if err = ipt.NewChain("nat", _chain); err != nil {
+			// Tolerate "Chain already exists" from a concurrent invocation that won
+			// the race. On a node with many pods starting simultaneously (e.g. at a
+			// cron tick), multiple egress-cni processes snapshot ListChains before
+			// any has called NewChain and all race to create the same chain. The
+			// second caller gets this error, but the chain is already in the desired
+			// state — it is safe to proceed. See https://github.com/aws/amazon-vpc-cni-k8s/pull/3782.
+			if err = ipt.NewChain("nat", _chain); err != nil && !cniutils.IsChainExistErr(err) {
 				return err
 			}
 			existingChains[_chain] = true
@@ -91,18 +97,29 @@ func Add(ipt iptableswrapper.IPTablesIface, nodeIP, src net.IP, multicastRange, 
 
 // Del removes rules added by snat
 func Del(ipt iptableswrapper.IPTablesIface, src net.IP, chain, comment string) (err error) {
+	// Tolerate "rule does not exist" — a concurrent DEL invocation may have
+	// already removed this POSTROUTING jump rule before we reached this point.
+	// The desired end state (rule absent) is already achieved; proceed.
 	err = ipt.Delete("nat", "POSTROUTING", "-s", src.String(), "-j", chain, "-m", "comment", "--comment", comment)
-	if err != nil && !cniutils.IsIptableTargetNotExist(err) {
+	if err != nil && !cniutils.IsChainNotExistErr(err) {
 		return err
 	}
 
+	// Tolerate "No chain/target/match" — a concurrent DEL invocation may have
+	// already cleared and deleted this chain. ClearChain internally calls
+	// NewChain; if the chain was already removed it will be re-created as an
+	// empty chain, so a genuine "not exist" return here would be unexpected.
+	// Guard defensively for any implementation that does return it.
 	err = ipt.ClearChain("nat", chain)
-	if err != nil && !cniutils.IsIptableTargetNotExist(err) {
+	if err != nil && !cniutils.IsChainNotExistErr(err) {
 		return err
 	}
 
+	// Tolerate "No chain/target/match" — a concurrent DEL invocation may have
+	// already deleted the chain (after we cleared it or before we got here).
+	// Either way the chain is gone, which is the desired post-DEL state.
 	err = ipt.DeleteChain("nat", chain)
-	if err != nil && !cniutils.IsIptableTargetNotExist(err) {
+	if err != nil && !cniutils.IsChainNotExistErr(err) {
 		return err
 	}
 
