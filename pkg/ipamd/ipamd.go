@@ -1292,10 +1292,12 @@ func (c *IPAMContext) setupENI(ctx context.Context, eni string, eniMetadata awsu
 		c.primaryIP[eni] = eniMetadata.PrimaryIPv4Address()
 	}
 
-	// Check if this ENI (primary or secondary) is in an excluded subnet and mark it for exclusion
+	// Check if this ENI (primary or secondary) is in an excluded subnet and mark it for exclusion.
+	// Fail open on error: aborting here would leave the ENI in the datastore with allocatable IPs
+	// but never wired up via SetupENINetwork, black-holing any pod that gets one of those IPs.
 	if c.useSubnetDiscovery {
 		if _, err := c.excludedENIBasedOnSubnetTags(ctx, eni, eniMetadata); err != nil {
-			return fmt.Errorf("checking to excluded configured subnet, error: %w", err)
+			log.Warnf("setupENI: subnet-exclusion check failed for ENI %s (subnet %s), treating as not excluded: %v", eni, eniMetadata.SubnetID, err)
 		}
 	}
 

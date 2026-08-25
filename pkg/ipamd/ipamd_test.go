@@ -2348,6 +2348,40 @@ func TestIPAMContext_setupENIwithPDenabled(t *testing.T) {
 	assert.Equal(t, 1, len(mockContext.primaryIP))
 }
 
+// TestIPAMContext_setupENISubnetExclusionThrottled verifies that when the subnet-exclusion
+// check errors, setupENI still wires up the ENI via SetupENINetwork instead of returning
+// early and leaving a half-configured ENI in the datastore.
+func TestIPAMContext_setupENISubnetExclusionThrottled(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		awsClient:          m.awsutils,
+		networkClient:      m.network,
+		primaryIP:          make(map[string]string),
+		terminating:        int32(0),
+		maxENI:             4,
+		numNetworkCards:    1,
+		useSubnetDiscovery: true,
+	}
+
+	mockContext.dataStoreAccess = testDatastore()
+
+	newENIMetadata := getSecondaryENIMetadata()
+	newENIMetadata.SubnetID = "subnet-throttled"
+
+	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid).AnyTimes()
+	m.network.EXPECT().GetRouteTableNumberForENI(defaultNetworkCard, gomock.Any(), secDevice, mockContext.maxENI, false).Return(0, false, nil).Times(1)
+	m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-throttled").Return(false, errors.New("RequestLimitExceeded: Request limit exceeded")).Times(1)
+	// SetupENINetwork must still be called even though the exclusion check errored.
+	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, defaultNetworkCard, secSubnet, maxENIPerNIC, false, gomock.Any(), gomock.Any()).Return(nil).Times(1)
+
+	err := mockContext.setupENI(context.Background(), newENIMetadata.ENIID, newENIMetadata, false, false)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(mockContext.primaryIP))
+	assert.False(t, mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).IsENIExcludedForPodIPs(newENIMetadata.ENIID))
+}
+
 func TestIPAMContext_enableSecurityGroupsForPods(t *testing.T) {
 	m := setup(t)
 	defer m.ctrl.Finish()
@@ -4187,9 +4221,9 @@ func TestSetupENI_HyperPod_SubnetNotFound(t *testing.T) {
 	assert.Equal(t, 1, len(mockContext.primaryIP))
 }
 
-// TestSetupENI_HyperPod_SubnetDiscoveryError verifies that even if IsSubnetExcluded
-// returns an error (e.g., API failure), primaryIP is still recorded before the error
-// propagates. This ensures the safety of the reconcile path.
+// TestSetupENI_HyperPod_SubnetDiscoveryError verifies that when IsSubnetExcluded errors
+// (e.g., DescribeSubnets throttled), setupENI fails open: it logs a warning and completes
+// setup rather than aborting and leaving a half-configured ENI.
 func TestSetupENI_HyperPod_SubnetDiscoveryError(t *testing.T) {
 	m := setup(t)
 	defer m.ctrl.Finish()
@@ -4229,14 +4263,9 @@ func TestSetupENI_HyperPod_SubnetDiscoveryError(t *testing.T) {
 	m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-unreachable").Return(false, errors.New("API error"))
 
 	err := mockContext.setupENI(context.Background(), primaryENIMetadata.ENIID, primaryENIMetadata, false, false)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "checking to excluded configured subnet")
-
-	// Even though setupENI returned an error, primaryIP was recorded before the
-	// subnet check. This is critical: if nodeInit retries and eventually succeeds,
-	// or if the ENI remains in the datastore, the reconcile path will correctly
-	// skip the primary IP.
+	assert.NoError(t, err)
 	assert.Equal(t, ipaddr01, mockContext.primaryIP[primaryENIid])
+	assert.False(t, mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).IsENIExcludedForPodIPs(primaryENIid))
 }
 
 // TestReconcile_HyperPod_PrimaryIPSkipped verifies that the reconcile path correctly
