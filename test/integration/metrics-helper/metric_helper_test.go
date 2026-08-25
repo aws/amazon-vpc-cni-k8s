@@ -15,6 +15,7 @@ package metrics_helper
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
@@ -45,9 +46,10 @@ var _ = Describe("test cni-metrics-helper publishes metrics", func() {
 			// (collect/flush cadence + CloudWatch lag), so a fixed sleep + single read races it.
 			By("recording the baseline assigned-IP count published to CloudWatch")
 			var baseline float64
-			Eventually(func() float64 {
-				baseline = publishedMetricMax(assignedIPsMetric, lookback)
-				return baseline
+			Eventually(func() (float64, error) {
+				v, err := publishedMetricMax(assignedIPsMetric, lookback)
+				baseline = v
+				return v, err
 			}, 5*time.Minute, 20*time.Second).Should(BeNumerically(">=", 0),
 				"cni-metrics-helper should publish %s for CLUSTER_ID=%s before the test drives load", assignedIPsMetric, ngName)
 
@@ -62,7 +64,7 @@ var _ = Describe("test cni-metrics-helper publishes metrics", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			By("waiting for cni-metrics-helper to publish the increased assigned-IP count")
-			Eventually(func() float64 {
+			Eventually(func() (float64, error) {
 				return publishedMetricMax(assignedIPsMetric, lookback)
 			}, 8*time.Minute, 30*time.Second).Should(BeNumerically(">", baseline),
 				"%s should increase after scheduling %d pods on node %s (baseline=%.0f)", assignedIPsMetric, replicas, nodeName, baseline)
@@ -71,9 +73,10 @@ var _ = Describe("test cni-metrics-helper publishes metrics", func() {
 })
 
 // publishedMetricMax returns the max value cni-metrics-helper has published to CloudWatch for the
-// metric and this cluster over the lookback window, or -1 if none yet (or on error) so callers can
-// poll for it to appear and then increase.
-func publishedMetricMax(metricName string, lookback time.Duration) float64 {
+// metric and this cluster over the lookback window, or -1 if no datapoint has appeared yet. A
+// CloudWatch query failure is returned as an error (not the -1 sentinel) so the polling assertions
+// surface it instead of timing out silently.
+func publishedMetricMax(metricName string, lookback time.Duration) (float64, error) {
 	output, statErr := f.CloudServices.CloudWatch().GetMetricStatistics(context.TODO(), &cloudwatch.GetMetricStatisticsInput{
 		Dimensions: []cloudwatchtypes.Dimension{
 			{Name: aws.String("CLUSTER_ID"), Value: aws.String(ngName)},
@@ -86,7 +89,7 @@ func publishedMetricMax(metricName string, lookback time.Duration) float64 {
 		Statistics: []cloudwatchtypes.Statistic{cloudwatchtypes.StatisticMaximum},
 	})
 	if statErr != nil {
-		return -1
+		return -1, fmt.Errorf("get %s statistics for CLUSTER_ID=%s: %w", metricName, ngName, statErr)
 	}
 	maxVal := -1.0 // counts are never negative, so -1 means "no datapoint yet"
 	for _, dp := range output.Datapoints {
@@ -94,5 +97,5 @@ func publishedMetricMax(metricName string, lookback time.Duration) float64 {
 			maxVal = *dp.Maximum
 		}
 	}
-	return maxVal
+	return maxVal, nil
 }

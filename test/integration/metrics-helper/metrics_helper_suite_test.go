@@ -194,7 +194,7 @@ var _ = BeforeSuite(func() {
 
 	By("waiting for cni-metrics-helper to publish initial metrics")
 	// 8m: tolerates cold image pull + publish cadence + CloudWatch lag before the first datapoint.
-	Eventually(func() float64 {
+	Eventually(func() (float64, error) {
 		return publishedMetricMax(assignedIPsMetric, 10*time.Minute)
 	}, 8*time.Minute, 20*time.Second).Should(BeNumerically(">=", 0),
 		"cni-metrics-helper should publish %s for CLUSTER_ID=%s after install", assignedIPsMetric, ngName)
