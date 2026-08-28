@@ -35,10 +35,6 @@ cleanup_on_exit() {
 
     # These lifecycle flags are initialized by run-integration-tests.sh.
     # shellcheck disable=SC2154
-    if [[ $original_status -ne 0 && "$RUN_KOPS_TEST" == true && $__cluster_created -eq 1 && $__cluster_deprovisioned -eq 0 ]]; then
-        collect_kops_diagnostics
-    fi
-
     if [[ "$RUNNING_PERFORMANCE" == false && $__cluster_created -eq 1 && $__cluster_deprovisioned -eq 0 && "$DEPROVISION" == true ]]; then
         echo "Cluster was provisioned already. Deprovisioning it..."
         deprovision_cluster

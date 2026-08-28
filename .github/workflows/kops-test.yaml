@@ -9,10 +9,6 @@ permissions:
   id-token: write
   contents: read
 
-concurrency:
-  group: kops-tests-${{ github.repository_id }}
-  cancel-in-progress: false
-
 jobs:
   daily-kops:
     if: github.repository == 'aws/amazon-vpc-cni-k8s'
@@ -53,21 +49,5 @@ jobs:
           RUN_KOPS_TEST: true
           K8S_VERSION: 1.36.2
           KOPS_VERSION: v1.36.0
-          KOPS_CLEANUP_STATE_FILE: ${{ runner.temp }}/kops-cleanup-state
         run: |
           ./scripts/run-integration-tests.sh
-      - name: Clean up kOps cluster
-        if: always()
-        timeout-minutes: 20
-        env:
-          KOPS_CLEANUP_STATE_FILE: ${{ runner.temp }}/kops-cleanup-state
-        run: |
-          ./scripts/cleanup-kops-cluster.sh "$KOPS_CLEANUP_STATE_FILE"
-      - name: Upload kOps diagnostics
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # refs/tags/v4
-        with:
-          name: kops-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
-          path: scripts/cni-test/**/report/kops-diagnostics/
-          if-no-files-found: ignore
-          retention-days: 7

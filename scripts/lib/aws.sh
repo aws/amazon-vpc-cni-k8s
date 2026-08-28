@@ -20,32 +20,3 @@ emit_cloudwatch_metric() {
     aws cloudwatch put-metric-data --metric-name $1 --namespace TestExecution --unit None --value $2 --region $AWS_DEFAULT_REGION
 }
 
-ensure_ecr_image_exists() {
-    local image=$1
-    local registry=${image%%/*}
-    local repository_and_tag=${image#*/}
-    local repository=${repository_and_tag%:*}
-    local tag=${repository_and_tag##*:}
-    local registry_id=${registry%%.*}
-    local region
-    local image_count
-
-    if [[ ! "$registry" =~ ^[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com(\.cn)?$ || "$repository_and_tag" == "$image" || "$repository" == "$repository_and_tag" || -z "$repository" || -z "$tag" ]]; then
-        echo "Invalid ECR image reference: $image" >&2
-        return 1
-    fi
-
-    region=$(echo "$registry" | cut -d. -f4)
-    image_count=$(aws ecr batch-get-image \
-        --registry-id "$registry_id" \
-        --repository-name "$repository" \
-        --image-ids "imageTag=$tag" \
-        --region "$region" \
-        --query 'length(images)' \
-        --output text)
-
-    if [[ "$image_count" != "1" ]]; then
-        echo "Required image $image is not available" >&2
-        return 1
-    fi
-}

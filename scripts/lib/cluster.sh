@@ -92,10 +92,6 @@ function up-kops-cluster {
     # Ubuntu 22.04 (glibc 2.35): kops installs containerd 2.1.x, which links against
     # glibc 2.35 and cannot exec on 20.04's glibc 2.31. The prior 20.04 pin (#2103) is
     # obsolete since #3354 fixed the host-veth MAC/ARP regression on newer kernels.
-    umask 077
-    printf '%s\n%s\n' "$CLUSTER_NAME" "$KOPS_STATE_STORE" > "${KOPS_CLEANUP_STATE_FILE}.tmp"
-    mv "${KOPS_CLEANUP_STATE_FILE}.tmp" "$KOPS_CLEANUP_STATE_FILE"
-
     $KOPS_BIN create cluster \
     --cloud aws \
     --zones ${AWS_DEFAULT_REGION}a,${AWS_DEFAULT_REGION}b \
@@ -135,25 +131,7 @@ function up-kops-cluster {
     kubectl apply -f https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/${MANIFEST_CNI_VERSION}/config/master/cni-metrics-helper.yaml
 }
 
-function collect_kops_diagnostics {
-    local diagnostic_dir="$REPORT_DIR/kops-diagnostics"
-    local diagnostic_log="$diagnostic_dir/summary.log"
-
-    mkdir -p "$diagnostic_dir"
-    {
-        echo "=== kOps validation ==="
-        ~/kops_bin/kops validate cluster --name "$CLUSTER_NAME" --wait 30s --count 1 || true
-        echo "=== Nodes ==="
-        kubectl --request-timeout=15s get nodes -o wide || true
-        echo "=== Pods ==="
-        kubectl --request-timeout=15s get pods -A -o wide || true
-        echo "=== Recent warning events ==="
-        kubectl --request-timeout=15s get events -A --field-selector=type=Warning --sort-by=.lastTimestamp 2>/dev/null | tail -n 200 || true
-        echo "=== aws-node rollout ==="
-        kubectl --request-timeout=15s -n kube-system describe daemonset aws-node || true
-    } 2>&1 | tee "$diagnostic_log"
-}
-
 function down-kops-cluster {
-    "$SCRIPT_DIR/cleanup-kops-cluster.sh" "$KOPS_CLEANUP_STATE_FILE"
+    KOPS_BIN=~/kops_bin/kops
+    "$KOPS_BIN" delete cluster --name "$CLUSTER_NAME" --yes
 }
