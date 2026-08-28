@@ -19,8 +19,10 @@ function load_deveks_cluster_details() {
 
 function down-test-cluster() {
     echo -n "Deleting cluster  (this may take ~10 mins) ... "
-    eksctl delete cluster $CLUSTER_NAME >>$CLUSTER_MANAGE_LOG_PATH 2>&1 ||
-        (echo "failed. Check $CLUSTER_MANAGE_LOG_PATH." && exit 1)
+    if ! eksctl delete cluster "$CLUSTER_NAME" >>"$CLUSTER_MANAGE_LOG_PATH" 2>&1; then
+        echo "failed. Check $CLUSTER_MANAGE_LOG_PATH."
+        return 1
+    fi
     echo "ok."
 }
 
