@@ -51,7 +51,7 @@ function run_kops_conformance() {
   # If any test failed, return failure
   if [[ "$TEST_RESULT" == "fail" ]]; then
     echo "One or more test suites failed!"
-    exit 1
+    return 1
   fi
 
   echo "All test suites passed successfully!"

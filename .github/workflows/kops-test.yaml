@@ -47,4 +47,3 @@ jobs:
           KOPS_VERSION: v1.36.0
         run: |
           ./scripts/run-integration-tests.sh
-        if: always()
