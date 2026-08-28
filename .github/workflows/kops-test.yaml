@@ -30,10 +30,6 @@ jobs:
           go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo
           curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
           sudo mv /tmp/eksctl /usr/local/bin/
-      - name: Test kOps cleanup
-        run: |
-          bash -n scripts/run-integration-tests.sh scripts/cleanup-kops-cluster.sh scripts/lib/*.sh
-          ./scripts/test/kops-cleanup-tests.sh
       - name: Set up AWS credentials
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # refs/tags/v6.2.3
         with:

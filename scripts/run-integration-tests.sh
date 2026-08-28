@@ -56,6 +56,8 @@ on_error() {
     if [[ $RUN_PERFORMANCE_TESTS == true ]]; then
         emit_cloudwatch_metric "performance_test_status" "0" || true
     fi
+
+    exit "$1"
 }
 
 trap 'on_error $? $LINENO' ERR
