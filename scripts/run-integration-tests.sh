@@ -2,8 +2,6 @@
 
 set -Euo pipefail
 
-trap 'on_error $? $LINENO' ERR
-
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 INTEGRATION_TEST_DIR="$SCRIPT_DIR"/../test/integration
 
@@ -12,6 +10,7 @@ source "$SCRIPT_DIR"/lib/aws.sh
 source "$SCRIPT_DIR"/lib/cluster.sh
 source "$SCRIPT_DIR"/lib/integration.sh
 source "$SCRIPT_DIR"/lib/k8s.sh
+source "$SCRIPT_DIR"/lib/cleanup.sh
 source "$SCRIPT_DIR"/lib/performance_tests.sh
 
 # Variables used in /lib/aws.sh
@@ -45,38 +44,29 @@ __cluster_deprovisioned=0
 
 on_error() {
     echo "Error with exit code $1 occurred on line $2"
-    emit_cloudwatch_metric "error_occurred" "1"
+    emit_cloudwatch_metric "error_occurred" "1" || true
 
-    #Emit test specific error metric 
+    # Emit test-specific error metrics without preventing cleanup.
     if [[ $RUN_KOPS_TEST == true ]]; then
-        emit_cloudwatch_metric "kops_test_status" "0"
+        emit_cloudwatch_metric "kops_test_status" "0" || true
     fi
     if [[ $RUN_BOTTLEROCKET_TEST == true ]]; then
-        emit_cloudwatch_metric "bottlerocket_test_status" "0"
+        emit_cloudwatch_metric "bottlerocket_test_status" "0" || true
     fi
     if [[ $RUN_PERFORMANCE_TESTS == true ]]; then
-        emit_cloudwatch_metric "performance_test_status" "0"
-    fi
-    # Make sure we destroy any cluster that was created if we hit run into an
-    # error when attempting to run tests against the 
-    if [[ $RUNNING_PERFORMANCE == false ]]; then
-        if [[ $__cluster_created -eq 1 && $__cluster_deprovisioned -eq 0 && "$DEPROVISION" == true ]]; then
-            # prevent double-deprovisioning with ctrl-c during deprovisioning...
-            __cluster_deprovisioned=1
-            echo "Cluster was provisioned already. Deprovisioning it..."
-            if [[ $RUN_KOPS_TEST == true ]]; then
-                down-kops-cluster
-            else
-                down-test-cluster
-            fi
-        fi
-        exit 1
+        emit_cloudwatch_metric "performance_test_status" "0" || true
     fi
 }
 
+trap 'on_error $? $LINENO' ERR
+trap cleanup_on_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 # test specific config, results location
-: "${TEST_ID:=$RANDOM}"
+: "${TEST_ID:=${GITHUB_RUN_ID:-$RANDOM}-${GITHUB_RUN_ATTEMPT:-1}}"
 : "${TEST_BASE_DIR:=${SCRIPT_DIR}/cni-test}"
+: "${KOPS_CLEANUP_STATE_FILE:=${TEST_BASE_DIR}/kops-cleanup-state}"
 TEST_DIR=${TEST_BASE_DIR}/$(date "+%Y%M%d%H%M%S")-$TEST_ID
 REPORT_DIR=${TEST_DIR}/report
 TEST_CONFIG_DIR="$TEST_DIR/config"
@@ -102,6 +92,7 @@ TEST_IMAGE_VERSION=${IMAGE_VERSION:-$LOCAL_GIT_VERSION}
 # We perform an upgrade to this manifest, with image replaced
 : "${MANIFEST_CNI_VERSION:=master}"
 BASE_CONFIG_PATH="$SCRIPT_DIR/../config/$MANIFEST_CNI_VERSION/aws-k8s-cni.yaml"
+NETWORK_POLICY_AGENT_IMAGE=$(grep "amazon/aws-network-policy-agent:" "$BASE_CONFIG_PATH" | awk '{print $2}' | head -1)
 TEST_CONFIG_PATH="$TEST_CONFIG_DIR/aws-k8s-cni.yaml"
 # The manifest image version is the image tag we need to replace in the
 # aws-k8s-cni.yaml manifest
@@ -128,6 +119,11 @@ check_aws_credentials
 : "${ROLE_ARN:=""}"
 : "${MNG_ROLE_ARN:=""}"
 : "${BUILDX_BUILDER:="multi-arch-image-builder"}"
+
+if [[ "$RUN_KOPS_TEST" == true ]]; then
+    echo "Checking external image $NETWORK_POLICY_AGENT_IMAGE"
+    ensure_ecr_image_exists "$NETWORK_POLICY_AGENT_IMAGE"
+fi
 
 echo "Logging in to docker repo"
 aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin ${AWS_ECR_REGISTRY}
@@ -291,16 +287,12 @@ fi
 if [[ "$DEPROVISION" == true ]]; then
     START=$SECONDS
 
-    if [[ "$RUN_KOPS_TEST" == true ]]; then
-        down-kops-cluster
-    elif [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
-        eksctl delete cluster $CLUSTER_NAME --disable-nodegroup-eviction
+    deprovision_cluster
+
+    if [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
         emit_cloudwatch_metric "bottlerocket_test_status" "1"
     elif [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
-        eksctl delete cluster $CLUSTER_NAME
         emit_cloudwatch_metric "performance_test_status" "1"
-    else
-        down-test-cluster
     fi
 
     DOWN_DURATION=$((SECONDS - START))
