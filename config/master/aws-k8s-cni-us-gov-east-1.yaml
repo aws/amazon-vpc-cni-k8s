@@ -314,7 +314,7 @@ spec:
           - mountPath: /run/xtables.lock
             name: xtables-lock
         - name: aws-eks-nodeagent
-          image: 151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon/aws-network-policy-agent:v1.4.1
+          image: 151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon/aws-network-policy-agent:v1.4.2
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8162

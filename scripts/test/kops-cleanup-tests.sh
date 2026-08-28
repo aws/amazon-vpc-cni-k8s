@@ -125,8 +125,8 @@ aws() {
     echo "$*" > "$TMP_DIR/aws-call"
     echo "${FAKE_IMAGE_COUNT:-1}"
 }
-ensure_ecr_image_exists '602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon/aws-network-policy-agent:v1.4.1'
-grep -q -- '--registry-id 602401143452 --repository-name amazon/aws-network-policy-agent --image-ids imageTag=v1.4.1 --region us-west-2' "$TMP_DIR/aws-call"
+ensure_ecr_image_exists '602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon/aws-network-policy-agent:v1.4.2'
+grep -q -- '--registry-id 602401143452 --repository-name amazon/aws-network-policy-agent --image-ids imageTag=v1.4.2 --region us-west-2' "$TMP_DIR/aws-call"
 set +e
 FAKE_IMAGE_COUNT=0 ensure_ecr_image_exists '602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon/aws-network-policy-agent:missing'
 result=$?
