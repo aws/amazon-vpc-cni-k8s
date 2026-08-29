@@ -1889,8 +1889,6 @@ func (c *IPAMContext) verifyAndAddPrefixesToDatastore(ctx context.Context, eni s
 				if needEC2Reconcile {
 					// IMDS data might be stale
 					log.Debugf("This IP was recently freed, but is now out of cooldown. We need to verify with EC2 control plane.")
-					// Only call EC2 once for this ENI and post GA fix this logic for both prefixes
-					// and secondary IPs as per "split the loop" comment
 					if ec2VerifiedAddresses == nil {
 						var err error
 						// Call EC2 to verify Prefixes on this ENI
@@ -1916,9 +1914,6 @@ func (c *IPAMContext) verifyAndAddPrefixesToDatastore(ctx context.Context, eni s
 						continue
 					}
 				}
-				// The IP can be removed from the cooldown cache
-				// TODO: Here we could check if the Prefix is still used by a pod stuck in Terminating state. (Issue #1091)
-				c.reconcileCooldownCache.Remove(strPrivateIPv4Cidr)
 			}
 		}
 
@@ -1926,10 +1921,13 @@ func (c *IPAMContext) verifyAndAddPrefixesToDatastore(ctx context.Context, eni s
 		if err != nil && err.Error() != datastore.IPAlreadyInStoreError {
 			log.Errorf("Failed to reconcile Prefix %s on ENI %s", strPrivateIPv4Cidr, eni)
 			ipamdErrInc("prefixReconcileAdd")
-			// Continue to check the other Prefixs instead of bailout due to one wrong IP
+			// Preserve in seenIPs on datastore error to prevent accidental deallocation
+			seenIPs[strPrivateIPv4Cidr] = true
 			continue
-
 		}
+
+		// Remove from cooldown cache ONLY after successful verification & datastore write
+		c.reconcileCooldownCache.Remove(strPrivateIPv4Cidr)
 		// Mark action
 		seenIPs[strPrivateIPv4Cidr] = true
 		prometheusmetrics.ReconcileCnt.With(prometheus.Labels{"fn": "eniDataStorePoolReconcileAdd"}).Inc()
