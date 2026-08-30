@@ -192,8 +192,12 @@ var _ = BeforeSuite(func() {
 	err = f.InstallationManager.InstallCNIMetricsHelper(imageRepository, imageTag, ngName, f.Options.AWSRegion, roleARN)
 	Expect(err).ToNot(HaveOccurred())
 
-	By("waiting for the metrics helper to publish initial metrics")
-	time.Sleep(time.Minute * 1)
+	By("waiting for cni-metrics-helper to publish initial metrics")
+	// 8m: tolerates cold image pull + publish cadence + CloudWatch lag before the first datapoint.
+	Eventually(func() (float64, error) {
+		return publishedMetricMax(assignedIPsMetric, 10*time.Minute)
+	}, 8*time.Minute, 20*time.Second).Should(BeNumerically(">=", 0),
+		"cni-metrics-helper should publish %s for CLUSTER_ID=%s after install", assignedIPsMetric, ngName)
 })
 
 var _ = AfterSuite(func() {
