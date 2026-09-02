@@ -769,7 +769,9 @@ The CNI plugin by default only manages network card 0 and assigns a single IP ad
 A network card will be managed if at least one of the following conditions is met:
 
 a. The network card does not have any devices attached to it
+
 b. The network card has an `efa` OR an `ena` device attached to it
+
 c. The network card has an `efa-only` AND an `ena` device attached to it
 
 ## Annotations
