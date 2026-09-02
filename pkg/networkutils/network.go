@@ -1009,7 +1009,9 @@ func setupENINetwork(eniIP string, eniMac string, networkCard int, eniSubnetCIDR
 	}
 
 	log.Debugf("Adding IP address %s", eniAddr.String())
-	if err = netLink.AddrAdd(link, &netlink.Addr{IPNet: eniAddr}); err != nil {
+	// Avoid letting the kernel install a transient connected prefix route in the
+	// main table. We add the ENI-specific routes explicitly below.
+	if err = netLink.AddrAdd(link, &netlink.Addr{IPNet: eniAddr, Flags: unix.IFA_F_NOPREFIXROUTE}); err != nil {
 		return errors.Wrap(err, "setupENINetwork: failed to add IP addr to ENI")
 	}
 

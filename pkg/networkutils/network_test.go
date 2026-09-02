@@ -115,7 +115,7 @@ func TestSetupENINetwork(t *testing.T) {
 		Mask: testEniSubnetIPNet.Mask,
 	}
 	mockNetLink.EXPECT().AddrList(gomock.Any(), unix.AF_INET).Return([]netlink.Addr{}, nil)
-	mockNetLink.EXPECT().AddrAdd(gomock.Any(), &netlink.Addr{IPNet: testEniAddr}).Return(nil)
+	mockNetLink.EXPECT().AddrAdd(gomock.Any(), &netlink.Addr{IPNet: testEniAddr, Flags: unix.IFA_F_NOPREFIXROUTE}).Return(nil)
 
 	mockNetLink.EXPECT().RouteDel(gomock.Any())
 	mockNetLink.EXPECT().RouteReplace(gomock.Any()).Return(nil)
@@ -172,7 +172,7 @@ func TestSetupENIV6Network(t *testing.T) {
 		Mask: testEniV6SubnetIPNet.Mask,
 	}
 	mockNetLink.EXPECT().AddrList(gomock.Any(), unix.AF_INET6).Return([]netlink.Addr{}, nil)
-	mockNetLink.EXPECT().AddrAdd(gomock.Any(), &netlink.Addr{IPNet: testEniAddr}).Return(nil)
+	mockNetLink.EXPECT().AddrAdd(gomock.Any(), &netlink.Addr{IPNet: testEniAddr, Flags: unix.IFA_F_NOPREFIXROUTE}).Return(nil)
 
 	mockNetLink.EXPECT().RouteDel(gomock.Any())
 	mockNetLink.EXPECT().RouteReplace(gomock.Any()).Return(nil)
