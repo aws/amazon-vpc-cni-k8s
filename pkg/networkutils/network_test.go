@@ -80,6 +80,16 @@ func setup(t *testing.T) (*gomock.Controller,
 }
 
 func TestSetupENINetwork(t *testing.T) {
+	testSetupENINetwork(t, false)
+}
+
+func TestSetupTrunkENINetwork(t *testing.T) {
+	testSetupENINetwork(t, true)
+}
+
+func testSetupENINetwork(t *testing.T, isTrunkENI bool) {
+	t.Helper()
+
 	ctrl, mockNetLink, _, _, _ := setup(t)
 	defer ctrl.Finish()
 
@@ -123,20 +133,32 @@ func TestSetupENINetwork(t *testing.T) {
 	mockNetLink.EXPECT().RouteDel(gomock.Any())
 	mockNetLink.EXPECT().RouteReplace(gomock.Any()).Return(nil)
 
-	mockNetLink.EXPECT().RouteDel(gomock.Any()).Return(nil)
+	mockNetLink.EXPECT().RouteDel(gomock.Any()).Return(syscall.ESRCH)
 
-	ruleForPrimaryIPofENI := netlink.NewRule()
-	ruleForPrimaryIPofENI.Src = &net.IPNet{IP: net.ParseIP(testEniIP), Mask: net.CIDRMask(32, 32)}
-	ruleForPrimaryIPofENI.Table = CalculateRouteTableId(testTable, 0)
-	ruleForPrimaryIPofENI.Priority = FromPrimaryIPofENIRulePriority
-	ruleForPrimaryIPofENI.Family = unix.AF_INET
+	if !isTrunkENI {
+		ruleForPrimaryIPofENI := netlink.NewRule()
+		ruleForPrimaryIPofENI.Src = &net.IPNet{IP: net.ParseIP(testEniIP), Mask: net.CIDRMask(32, 32)}
+		ruleForPrimaryIPofENI.Table = CalculateRouteTableId(testTable, 0)
+		ruleForPrimaryIPofENI.Priority = FromPrimaryIPofENIRulePriority
+		ruleForPrimaryIPofENI.Family = unix.AF_INET
 
-	mockNetLink.EXPECT().RuleAdd(ruleForPrimaryIPofENI)
-	err = setupENINetwork(testEniIP, testMAC2, testNetworkCard, testEniSubnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU, testMaxENIPerNIC, false, CalculateRouteTableId(testTable, 0), false)
+		mockNetLink.EXPECT().RuleAdd(ruleForPrimaryIPofENI)
+	}
+	err = setupENINetwork(testEniIP, testMAC2, testNetworkCard, testEniSubnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU, testMaxENIPerNIC, isTrunkENI, CalculateRouteTableId(testTable, 0), false)
 	assert.NoError(t, err)
 }
 
 func TestSetupENIV6Network(t *testing.T) {
+	testSetupENIV6Network(t, false)
+}
+
+func TestSetupTrunkENIV6Network(t *testing.T) {
+	testSetupENIV6Network(t, true)
+}
+
+func testSetupENIV6Network(t *testing.T, isTrunkENI bool) {
+	t.Helper()
+
 	ctrl, mockNetLink, _, _, _ := setup(t)
 	defer ctrl.Finish()
 
@@ -179,16 +201,18 @@ func TestSetupENIV6Network(t *testing.T) {
 
 	mockNetLink.EXPECT().RouteDel(gomock.Any())
 	mockNetLink.EXPECT().RouteReplace(gomock.Any()).Return(nil)
-	mockNetLink.EXPECT().RouteDel(gomock.Any()).Return(nil)
+	mockNetLink.EXPECT().RouteDel(gomock.Any()).Return(syscall.ESRCH)
 
-	ruleForPrimaryIPofENI := netlink.NewRule()
-	ruleForPrimaryIPofENI.Src = &net.IPNet{IP: net.ParseIP(testEniIP6), Mask: net.CIDRMask(128, 128)}
-	ruleForPrimaryIPofENI.Table = (testNetworkCard * testMaxENIPerNIC) + testTable + 1
-	ruleForPrimaryIPofENI.Priority = FromPrimaryIPofENIRulePriority
-	ruleForPrimaryIPofENI.Family = unix.AF_INET6
-	mockNetLink.EXPECT().RuleAdd(ruleForPrimaryIPofENI)
+	if !isTrunkENI {
+		ruleForPrimaryIPofENI := netlink.NewRule()
+		ruleForPrimaryIPofENI.Src = &net.IPNet{IP: net.ParseIP(testEniIP6), Mask: net.CIDRMask(128, 128)}
+		ruleForPrimaryIPofENI.Table = (testNetworkCard * testMaxENIPerNIC) + testTable + 1
+		ruleForPrimaryIPofENI.Priority = FromPrimaryIPofENIRulePriority
+		ruleForPrimaryIPofENI.Family = unix.AF_INET6
+		mockNetLink.EXPECT().RuleAdd(ruleForPrimaryIPofENI)
+	}
 
-	err = setupENINetwork(testEniIP6, testMAC2, testNetworkCard, testEniV6Subnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU, testMaxENIPerNIC, false, CalculateRouteTableId(testTable, 0), false)
+	err = setupENINetwork(testEniIP6, testMAC2, testNetworkCard, testEniV6Subnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU, testMaxENIPerNIC, isTrunkENI, CalculateRouteTableId(testTable, 0), false)
 	assert.NoError(t, err)
 }
 
