@@ -52,7 +52,7 @@ require (
 	sigs.k8s.io/controller-runtime v0.24.1
 )
 
-require helm.sh/helm/v4 v4.2.2
+require helm.sh/helm/v4 v4.2.4
 
 require (
 	dario.cat/mergo v1.0.1 // indirect
