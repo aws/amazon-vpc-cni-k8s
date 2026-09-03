@@ -18,7 +18,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/iam v1.58.1
 	github.com/aws/smithy-go v1.27.6
 	github.com/containernetworking/cni v1.3.0
-	github.com/containernetworking/plugins v1.9.0
+	github.com/containernetworking/plugins v1.9.1
 	github.com/coreos/go-iptables v0.8.0
 	github.com/go-logr/logr v1.4.4
 	github.com/go-logr/zapr v1.3.0
