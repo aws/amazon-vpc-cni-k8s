@@ -46,6 +46,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/cniutils"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
@@ -1292,10 +1293,17 @@ func (c *IPAMContext) setupENI(ctx context.Context, eni string, eniMetadata awsu
 		c.primaryIP[eni] = eniMetadata.PrimaryIPv4Address()
 	}
 
-	// Check if this ENI (primary or secondary) is in an excluded subnet and mark it for exclusion
+	// Check if this ENI (primary or secondary) is in an excluded subnet and mark it for exclusion.
+	// Fail open on error: aborting here would leave the ENI in the datastore with allocatable IPs
+	// but never wired up via SetupENINetwork, black-holing any pod that gets one of those IPs.
 	if c.useSubnetDiscovery {
 		if _, err := c.excludedENIBasedOnSubnetTags(ctx, eni, eniMetadata); err != nil {
-			return fmt.Errorf("checking to excluded configured subnet, error: %w", err)
+			msg := fmt.Sprintf("subnet-exclusion check failed for ENI %s (subnet %s), treating as not excluded: %v", eni, eniMetadata.SubnetID, err)
+			if eventRecorder := eventrecorder.Get(); eventRecorder != nil {
+				eventRecorder.SendPodEvent(corev1.EventTypeWarning, "SubnetExclusionCheckFailed", "SetupENI", msg)
+			} else {
+				log.Warnf("setupENI: %s", msg)
+			}
 		}
 	}
 
