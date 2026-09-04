@@ -6428,13 +6428,17 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		IsBareMetal:    false,
 	},
 	"i7ie.48xlarge": {
-		ENILimit:                15,
+		ENILimit:                8,
 		IPv4Limit:               50,
 		DefaultNetworkCardIndex: 0,
 		NetworkCards: []NetworkCard{
 			{
-				MaximumNetworkInterfaces: 15,
+				MaximumNetworkInterfaces: 8,
 				NetworkCardIndex:         0,
+			},
+			{
+				MaximumNetworkInterfaces: 7,
+				NetworkCardIndex:         1,
 			},
 		},
 		HypervisorType: "nitro",
@@ -6480,13 +6484,17 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		IsBareMetal:    true,
 	},
 	"i7ie.metal-48xl": {
-		ENILimit:                15,
+		ENILimit:                8,
 		IPv4Limit:               50,
 		DefaultNetworkCardIndex: 0,
 		NetworkCards: []NetworkCard{
 			{
-				MaximumNetworkInterfaces: 15,
+				MaximumNetworkInterfaces: 8,
 				NetworkCardIndex:         0,
+			},
+			{
+				MaximumNetworkInterfaces: 7,
+				NetworkCardIndex:         1,
 			},
 		},
 		HypervisorType: "unknown",
@@ -6714,13 +6722,17 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		IsBareMetal:    false,
 	},
 	"i8ge.48xlarge": {
-		ENILimit:                24,
+		ENILimit:                12,
 		IPv4Limit:               50,
 		DefaultNetworkCardIndex: 0,
 		NetworkCards: []NetworkCard{
 			{
-				MaximumNetworkInterfaces: 24,
+				MaximumNetworkInterfaces: 12,
 				NetworkCardIndex:         0,
+			},
+			{
+				MaximumNetworkInterfaces: 12,
+				NetworkCardIndex:         1,
 			},
 		},
 		HypervisorType: "nitro",
@@ -6766,13 +6778,17 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		IsBareMetal:    true,
 	},
 	"i8ge.metal-48xl": {
-		ENILimit:                24,
+		ENILimit:                12,
 		IPv4Limit:               50,
 		DefaultNetworkCardIndex: 0,
 		NetworkCards: []NetworkCard{
 			{
-				MaximumNetworkInterfaces: 24,
+				MaximumNetworkInterfaces: 12,
 				NetworkCardIndex:         0,
+			},
+			{
+				MaximumNetworkInterfaces: 12,
+				NetworkCardIndex:         1,
 			},
 		},
 		HypervisorType: "unknown",
@@ -17734,19 +17750,6 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		},
 		HypervisorType: "unknown",
 		IsBareMetal:    true,
-	},
-	"u-18tb1.112xlarge": {
-		ENILimit:                15,
-		IPv4Limit:               50,
-		DefaultNetworkCardIndex: 0,
-		NetworkCards: []NetworkCard{
-			{
-				MaximumNetworkInterfaces: 15,
-				NetworkCardIndex:         0,
-			},
-		},
-		HypervisorType: "nitro",
-		IsBareMetal:    false,
 	},
 	"u-18tb1.metal": {
 		ENILimit:                15,
