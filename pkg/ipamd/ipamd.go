@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
+	k8serror "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -2336,7 +2337,7 @@ func (c *IPAMContext) GetPod(podName, namespace string) (*corev1.Pod, error) {
 	}
 	err := c.k8sClient.Get(ctx, podKey, &pod)
 	if err != nil {
-		return nil, fmt.Errorf("error while trying to retrieve pod info: %s", err.Error())
+		return nil, err
 	}
 	return &pod, nil
 }
@@ -2353,9 +2354,8 @@ func (c *IPAMContext) AnnotatePod(podName string, podNamespace string, key strin
 			if err == nil && pod == nil {
 				log.Warnf("get a nil pod for pod name %s and namespace %s", podName, podNamespace)
 			}
-			// since the GetPod() error has been decorated, we have to check key words
 			// releasedIP is not empty meaning del path
-			if releasedIP != "" && err != nil && strings.Contains(err.Error(), "not found") {
+			if releasedIP != "" && err != nil && k8serror.IsNotFound(err) {
 				return nil
 			}
 			return err
