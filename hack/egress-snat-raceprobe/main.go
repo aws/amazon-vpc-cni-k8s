@@ -1,25 +1,26 @@
-// Command egress-snat-raceprobe reproduces the egress-cni POSTROUTING
-// chain-creation race (issue #3782) against a REAL nf_tables backend using the
-// REAL go-iptables wrapper, and validates that the fix in #3826 (NewChain
-// failure -> ChainExists postcondition recovery) resolves it.
+// Command egress-snat-raceprobe demonstrates the race reported in issue #3782.
+// Several simulated Pod ADDs try to create POSTROUTING at the same time. It
+// uses the real iptables-nft backend and the same Go iptables wrapper as CNI.
 //
-// It MUST be run inside an isolated `unshare --net` network namespace so the
-// pristine nat table is not shared with the host, e.g.:
+// Use -mode=unfixed to show that a losing ADD fails. Use -mode=fixed to show
+// that the losing ADD can continue after confirming another ADD created the
+// chain. This program does not explain why POSTROUTING was absent in the
+// customer's initial snapshot.
+//
+// Run it in `unshare --net` so it does not modify the host nat table:
 //
 //	CGO_ENABLED=0 go build -o /tmp/raceprobe ./hack/egress-snat-raceprobe
-//	# unfixed pre-fix loop, forced-collision branch -> every Add fails
+//	# Force all callers to start from a snapshot without POSTROUTING.
 //	unshare --net /tmp/raceprobe -mode=unfixed  -n=40 -barrier -supplymissing
-//	# fix logic on the same collision -> every collision recovers, state complete
 //	unshare --net /tmp/raceprobe -mode=fixed    -n=40 -barrier -supplymissing
-//	# actual snat.Add via real ListChains -> never reaches NewChain(POSTROUTING)
-//	unshare --net /tmp/raceprobe -mode=realfixed -n=40 -barrier -supplymissing
-//	# natural high-concurrency (real ListChains) -> does not reach the collision
+//	# Use the real snat.Add and its real ListChains result.
+//	unshare --net /tmp/raceprobe -mode=realfixed -n=40 -barrier
+//	# Check whether normal high concurrency reaches the race.
 //	unshare --net /tmp/raceprobe -mode=unfixed  -n=1000 -supplymissing=false
 //
-// -supplymissing models the branch snat.Add takes when ListChains returned a
-// snapshot WITHOUT POSTROUTING (the reported production condition); on real
-// nf_tables ListChains otherwise reports the built-in POSTROUTING even on a
-// pristine table, so the natural path never reaches the collision.
+// -supplymissing deliberately makes every caller behave as if ListChains did
+// not return POSTROUTING. On a normal nf_tables host, ListChains includes that
+// built-in chain, so a natural burst does not enter this race.
 package main
 
 import (
@@ -37,8 +38,8 @@ import (
 	"github.com/coreos/go-iptables/iptables"
 )
 
-// iptRules mirrors the unexported snat.iptRules so the "unfixed" replica builds
-// exactly the same rule set the production code builds.
+// iptRules builds the same rules as snat.Add so the old and fixed paths use
+// identical input.
 func iptRules(target, src net.IP, multicastRange, chain, comment string, useRandomFully, useHashRandom bool) [][]string {
 	var rules [][]string
 	rules = append(rules, []string{chain, "-d", multicastRange, "-j", "ACCEPT", "-m", "comment", "--comment", comment})
@@ -61,13 +62,10 @@ type addResult struct {
 	finalErr        error
 }
 
-// runAdd performs the same three-phase Add the production egress-cni code does:
-// build rules, ensure chains exist, append rules. `fixed` toggles the PR #3782
-// postcondition recovery. `supplyMissing` skips ListChains and treats every
-// rule-chain as absent, faithfully modelling the branch the production code
-// takes when ListChains returned a snapshot without POSTROUTING. `bar`, if set,
-// is crossed after the (missing-chain) snapshot is fixed and before NewChain, so
-// all workers attempt creation from the same observed state.
+// runAdd is a small copy of the chain-setup part of snat.Add. fixed selects
+// the new behavior. supplyMissing skips ListChains so every caller starts by
+// believing POSTROUTING is absent. bar holds callers until they have all
+// observed that same starting state.
 func runAdd(ipt iptableswrapper.IPTablesIface, nodeIP, src net.IP, multicastRange, chain, comment string, fixed, supplyMissing bool, bar *barrier) addResult {
 	res := addResult{}
 	useRandomFully, useHashRandom := true, false
@@ -104,9 +102,8 @@ func runAdd(ipt iptableswrapper.IPTablesIface, nodeIP, src net.IP, multicastRang
 					res.finalErr = err
 					return res
 				}
-				// PR #3782 fix: a concurrent ADD may have created the chain
-				// after our snapshot. Verify the resulting state instead of
-				// classifying error text.
+				// Another ADD may have created the chain first. Continue only
+				// when the chain now exists; otherwise preserve the real error.
 				createErr := err
 				exists, existsErr := ipt.ChainExists("nat", ch)
 				if existsErr != nil {
@@ -135,7 +132,7 @@ func runAdd(ipt iptableswrapper.IPTablesIface, nodeIP, src net.IP, multicastRang
 	return res
 }
 
-// barrier is a single-use N-party barrier.
+// barrier releases all callers only after all N callers reach the same point.
 type barrier struct {
 	n     int
 	mu    sync.Mutex
@@ -171,8 +168,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	// Report the pre-state so we can see whether a pristine netns already
-	// exposes POSTROUTING via ListChains.
+	// Show whether real iptables reports POSTROUTING before the simulation.
 	preChains, preErr := ipt.ListChains("nat")
 	fmt.Printf("PRESTATE_LISTCHAINS_ERR=%v\n", preErr)
 	hasPost := false
@@ -208,7 +204,7 @@ func main() {
 			comment := fmt.Sprintf("cni3782-add-race-%d", idx)
 			<-start
 			if *mode == "realfixed" {
-				// Cross the same barrier for timing parity, then call the real code.
+				// Start all callers together, then use the production Add code.
 				if bar != nil {
 					bar.wait()
 				}
