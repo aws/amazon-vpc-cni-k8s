@@ -337,7 +337,37 @@ func execNodeShellWithTimeout(nodeName string, command string, timeout time.Dura
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "kubectl", "node-shell", nodeName, "--", "bash", "-c", command)
-	return cmd.CombinedOutput()
+	output, err := cmd.CombinedOutput()
+	// Surface the context deadline: CombinedOutput reports a killed process
+	// as "signal: killed", which hides that the timeout fired.
+	if err != nil && ctx.Err() != nil {
+		err = fmt.Errorf("%w: %v", ctx.Err(), err)
+	}
+	return output, err
+}
+
+// execNodeShellWithRetries is execNodeShellWithTimeout plus retries on any
+// failure for up to ~5 minutes. This absorbs node-shell scaffolding flakes
+// (e.g. attach racing the nsenter container startup on a busy node) as well
+// as remote commands whose success depends on the node converging. Callers
+// must therefore pass commands that are idempotent and expected to succeed.
+func execNodeShellWithRetries(nodeName string, command string, attemptTimeout time.Duration) ([]byte, error) {
+	const (
+		retryFor      = 5 * time.Minute
+		retryInterval = 10 * time.Second
+	)
+	deadline := time.Now().Add(retryFor)
+	var output []byte
+	var err error
+	for {
+		output, err = execNodeShellWithTimeout(nodeName, command, attemptTimeout)
+		if err == nil || time.Now().After(deadline) {
+			return output, err
+		}
+		fmt.Fprintf(GinkgoWriter, "node-shell on %s failed, retrying in %s: %v (output: %s)\n",
+			nodeName, retryInterval, err, output)
+		time.Sleep(retryInterval)
+	}
 }
 
 // sets requested policy in drop file and restarts udev
