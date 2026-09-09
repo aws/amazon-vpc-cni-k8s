@@ -230,6 +230,22 @@ The symptom for this issue is the presence of routing table 30200 or 30400.
 
 - **pod deletion fails after downgrade** - If you created pods with VPC CNI version >= 1.12.1, then downgraded to a version < 1.12.1 and pod deletion is failing, check if you are hitting [#2321](https://github.com/aws/amazon-vpc-cni-k8s/issues/2321).
 
+- **Stale neighbor/ARP cache entries for reused pod IPs** - Intermittent connection timeouts can occur from a specific source node to a specific destination pod IP, while the same pod IP remains reachable from other nodes. This happens when a pod IP is reassigned to a different pod (on a different node/ENI, with a different MAC), and a source node's neighbor cache still holds the old MAC for that IP. Normally the Linux kernel would eventually re-probe and correct a stale entry, but if the source node keeps receiving *inbound* packets that appear to originate from that pod IP (for example, from a load balancer configured with source IP preservation forwarding traffic back to a NodePort on that node), Linux neighbor unreachability detection may treat this inbound traffic as confirmation that the cached entry is still valid, preventing the stale entry from aging out. New outbound connection to that pod IP then use the wrong MAC, are silently dropped, and time out with SYN retransmits and no SYN-ACK.
+
+  You can confirm this by comparing the MAC in:
+  ```
+  ip -s neigh show <pod-ip>
+  ```
+  with the MAC returned by:
+  ```
+  arping -I eth0 <pod-ip>
+  ```
+  A mismatch indicates a stale neighbor cache entry. The immediate workaround is to clear it so it gets re-resolved:
+  ```
+  ip neigh del <pod-ip> dev eth0
+  ```
+  This may be made less likely by reviewing neighbor cache garbage collection settings such as `net.ipv4.neigh.default.gc_thresh1`. Amazon Linux 2023 AMIs set this value to `0` by default, while Ubuntu-based EKS AMIs use the upstream default of `128`. With `gc_thresh1` at `0`, individual stale entries aren't eligible for cleanup until the neighbor table grows large enough to hit `gc_thresh2`/`gc_thresh3`. See [#3628](https://github.com/aws/amazon-vpc-cni-k8s/issues/3628) for the full investigation.
+
 ## CNI Compatibility
 
 The [CNI image](../scripts/dockerfiles/Dockerfile.release) built for the `aws-node` manifest uses Amazon Linux 2023 (AL23) as the base image. Support for other Linux distributions (custom AMIs) is best-effort. Known issues with other Linux distributions are captured here:
