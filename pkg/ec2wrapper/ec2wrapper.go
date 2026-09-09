@@ -8,7 +8,6 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadatawrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	ec2metadata "github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -43,13 +42,13 @@ func NewMetricsClient() (*EC2Wrapper, error) {
 		return &EC2Wrapper{}, err
 	}
 
-	awsCfg, err := config.LoadDefaultConfig(ctx,
-		config.WithRegion(instanceIdentityDocumentOutput.Region),
-		config.WithHTTPClient(awssession.NewAWSSDKHTTPClient()),
-	)
+	// Route through awssession.New so the EC2 client inherits the hardened retry
+	// policy (max attempts, standard retryer) and HTTP timeout, not just the HTTP client.
+	awsCfg, err := awssession.New(ctx)
 	if err != nil {
 		return &EC2Wrapper{}, err
 	}
+	awsCfg.Region = instanceIdentityDocumentOutput.Region
 	ec2ServiceClient := ec2.NewFromConfig(awsCfg)
 
 	return &EC2Wrapper{

@@ -774,9 +774,10 @@ func (c *IPAMContext) StartNodeIPPoolManager(ctx context.Context) {
 				time.Sleep(ipPoolMonitorInterval)
 			}
 		}
-		// Outside of Security Groups for Pods, no additional ENIs are attached in IPv6 mode.
-		// The prefix used for the primary ENI is more than enough for all pods.
-		return
+		for {
+			time.Sleep(nodeIPPoolReconcileInterval)
+			c.tryIPv6DatastoreSelfHeal(ctx)
+		}
 	}
 
 	log.Infof("IP pool manager - max pods: %d, warm IP target: %d, warm prefix target: %d, warm ENI target: %d, minimum IP target: %d",
@@ -1211,6 +1212,26 @@ func (c *IPAMContext) assignIPv6Prefix(ctx context.Context, eniID string, networ
 	}
 	c.addENIv6prefixesToDataStore(ec2v6Prefixes, eniID, networkCard)
 	return nil
+}
+
+// tryIPv6DatastoreSelfHeal allocates an IPv6 prefix on each network card whose
+// datastore is empty, letting nodes that lost their bootstrap-time
+// AssignIpv6Addresses call recover without an aws-node restart. assignIPv6Prefix
+// is idempotent: it queries EC2 first and skips the alloc if a prefix is attached.
+func (c *IPAMContext) tryIPv6DatastoreSelfHeal(ctx context.Context) {
+	for _, ds := range c.dataStoreAccess.DataStores {
+		if ds.GetIPStats(ipV6AddrFamily).TotalIPs > 0 {
+			continue
+		}
+		networkCard := ds.GetNetworkCard()
+		for eniID := range ds.GetENIInfos().ENIs {
+			if err := c.assignIPv6Prefix(ctx, eniID, networkCard); err != nil {
+				log.Warnf("IPv6 self-heal alloc failed for ENI %s on network card %d: %v", eniID, networkCard, err)
+				continue
+			}
+			log.Infof("IPv6 self-heal alloc succeeded for ENI %s on network card %d", eniID, networkCard)
+		}
+	}
 }
 
 // PRECONDITION: isDatastorePoolTooLow returned true
