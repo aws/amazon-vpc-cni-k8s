@@ -31,8 +31,6 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/utils"
 
 	"github.com/aws/aws-sdk-go-v2/aws/middleware"
-	"github.com/aws/aws-sdk-go-v2/config"
-	smithymiddleware "github.com/aws/smithy-go/middleware"
 
 	"github.com/aws/smithy-go"
 
@@ -442,16 +440,10 @@ func New(ctx context.Context, useSubnetDiscovery, useCustomNetworking, disableLe
 	cache.v6Enabled = v6Enabled
 
 	version := utils.GetEnv(envVpcCniVersion, "")
-	awsCfg, err := config.LoadDefaultConfig(context.TODO(),
-		config.WithRegion(region.Region),
-		config.WithHTTPClient(awssession.NewAWSSDKHTTPClient()),
-		config.WithAPIOptions([]func(*smithymiddleware.Stack) error{
-			middleware.AddUserAgentKeyValue("amazon-vpc-cni-k8s", version),
-		}),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("unable to load SDK config, %v", err)
-	}
+	// Reuse the hardened aws.Config from awssession.New so the EC2 client inherits its retry policy and HTTP timeout, not just the HTTP client.
+	awsCfg := awsconfig.Copy()
+	awsCfg.Region = region.Region
+	awsCfg.APIOptions = append(awsCfg.APIOptions, middleware.AddUserAgentKeyValue("amazon-vpc-cni-k8s", version))
 	ec2SVC := ec2wrapper.New(awsCfg)
 	cache.ec2SVC = ec2SVC
 	err = cache.initWithEC2Metadata(ctx)
@@ -2095,26 +2087,56 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(ctx context.Context, eni
 }
 
 func (cache *EC2InstanceMetadataCache) AllocIPv6Prefixes(ctx context.Context, eniID string) ([]*string, error) {
+	return cache.allocIPv6Prefixes(ctx, eniID, maxENIBackoffDelay)
+}
+
+func (cache *EC2InstanceMetadataCache) allocIPv6Prefixes(ctx context.Context, eniID string, maxBackoffDelay time.Duration) ([]*string, error) {
 	// We only need to allocate one IPv6 prefix per ENI.
 	input := &ec2.AssignIpv6AddressesInput{
 		NetworkInterfaceId: aws.String(eniID),
 		Ipv6PrefixCount:    aws.Int32(1),
 	}
-	start := time.Now()
-	output, err := cache.ec2SVC.AssignIpv6Addresses(ctx, input)
-	prometheusmetrics.Ec2ApiReq.WithLabelValues("AssignIpv6Addresses").Inc()
-	prometheusmetrics.AwsAPILatency.WithLabelValues("AssignIpv6AddressesWithContext", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
+	var output *ec2.AssignIpv6AddressesOutput
+	err := retry.NWithBackoff(retry.NewSimpleBackoff(500*time.Millisecond, maxBackoffDelay, 0.15, 2.0), maxENIEC2APIRetries, func() error {
+		start := time.Now()
+		var ec2Err error
+		output, ec2Err = cache.ec2SVC.AssignIpv6Addresses(ctx, input)
+		prometheusmetrics.Ec2ApiReq.WithLabelValues("AssignIpv6Addresses").Inc()
+		prometheusmetrics.AwsAPILatency.WithLabelValues("AssignIpv6AddressesWithContext", fmt.Sprint(ec2Err != nil), awsReqStatus(ec2Err)).Observe(msSince(start))
+		if ec2Err != nil {
+			checkAPIErrorAndBroadcastEvent(ec2Err, "ec2:AssignIpv6Addresses")
+			awsAPIErrInc("AssignIpv6Addresses", ec2Err)
+			prometheusmetrics.Ec2ApiErr.WithLabelValues("AssignIpv6Addresses").Inc()
+			wrapped := errors.Wrap(ec2Err, "allocate IPv6 prefix: failed to allocate an IPv6 prefix address")
+			if isNonRetryableAssignIpv6Err(ec2Err) {
+				log.Errorf("Non-retryable failure calling AssignIpv6Addresses on ENI %v: %v", eniID, ec2Err)
+				return retry.NewRetriableError(retry.NewRetriable(false), wrapped)
+			}
+			log.Warnf("Retryable failure calling AssignIpv6Addresses on ENI %v: %v", eniID, ec2Err)
+			return wrapped
+		}
+		return nil
+	})
 	if err != nil {
-		checkAPIErrorAndBroadcastEvent(err, "ec2:AssignIpv6Addresses")
-		log.Errorf("Failed to allocate IPv6 Prefixes on ENI %v: %v", eniID, err)
-		awsAPIErrInc("AssignIpv6Addresses", err)
-		prometheusmetrics.Ec2ApiErr.WithLabelValues("AssignIpv6Addresses").Inc()
-		return nil, errors.Wrap(err, "allocate IPv6 prefix: failed to allocate an IPv6 prefix address")
+		return nil, err
 	}
 	if output != nil {
 		log.Debugf("Allocated %d private IPv6 prefix(es)", len(output.AssignedIpv6Prefixes))
 	}
 	return aws.StringSlice(output.AssignedIpv6Prefixes), nil
+}
+
+// isNonRetryableAssignIpv6Err returns true for EC2 error codes that will never succeed on retry.
+func isNonRetryableAssignIpv6Err(err error) bool {
+	if errors.As(err, &awsAPIError) {
+		switch awsAPIError.ErrorCode() {
+		case "UnauthorizedOperation",
+			"InvalidNetworkInterfaceID.NotFound",
+			"InvalidParameterValue":
+			return true
+		}
+	}
+	return false
 }
 
 // WaitForENIAndIPsAttached waits until the ENI has been attached and the secondary IPs have been added

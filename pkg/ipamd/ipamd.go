@@ -41,6 +41,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 
+	"golang.org/x/sync/singleflight"
+
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
@@ -157,6 +159,11 @@ const (
 	// envEnableIPv6 - Env variable to enable/disable IPv6 mode
 	envEnableIPv6 = "ENABLE_IPv6"
 
+	// envEnableIPv6OndemandAlloc controls the on-demand IPv6 prefix allocation trigger
+	// on the pod-IP RPC path when the datastore is empty (fires after a failed
+	// bootstrap-time AssignIpv6Addresses). Default true.
+	envEnableIPv6OndemandAlloc = "ENABLE_IPV6_ONDEMAND_ALLOC"
+
 	ipV4AddrFamily = "4"
 	ipV6AddrFamily = "6"
 
@@ -250,6 +257,9 @@ type IPAMContext struct {
 	networkPolicyMode         string
 	enableMultiNICSupport     bool
 	withApiServer             bool
+
+	enableIPv6OndemandAlloc bool
+	ipv6OndemandFlight      singleflight.Group
 }
 
 type kubeletConfig struct {
@@ -409,6 +419,7 @@ func New(ctx context.Context, k8sClient client.Client, withApiServer bool) (*IPA
 	c.enablePrefixDelegation = usePrefixDelegation()
 	c.enableIPv4 = isIPv4Enabled()
 	c.enableIPv6 = isIPv6Enabled()
+	c.enableIPv6OndemandAlloc = utils.GetBoolAsStringEnvVar(envEnableIPv6OndemandAlloc, true)
 	c.disableENIProvisioning = disableENIProvisioning()
 	client, err := awsutils.New(ctx, c.useSubnetDiscovery, c.useCustomNetworking, disableLeakedENICleanup(), c.enableIPv4, c.enableIPv6)
 	if err != nil {
@@ -1211,6 +1222,37 @@ func (c *IPAMContext) assignIPv6Prefix(ctx context.Context, eniID string, networ
 	}
 	c.addENIv6prefixesToDataStore(ec2v6Prefixes, eniID, networkCard)
 	return nil
+}
+
+// TryOnDemandIPv6Alloc allocates an IPv6 prefix to each ENI managed by the given datastore.
+// It runs at most one flight per network card at a time. This is the self-heal path for
+// nodes that started with an empty IPv6 datastore because the bootstrap-time
+// AssignIpv6Addresses call failed.
+func (c *IPAMContext) TryOnDemandIPv6Alloc(ctx context.Context, ds *datastore.DataStore) error {
+	if !c.enableIPv6 || c.enableIPv4 || !c.enableIPv6OndemandAlloc {
+		return nil
+	}
+	networkCard := ds.GetNetworkCard()
+	key := fmt.Sprintf("nc-%d", networkCard)
+	_, err, _ := c.ipv6OndemandFlight.Do(key, func() (interface{}, error) {
+		enis := ds.GetENIInfos().ENIs
+		if len(enis) == 0 {
+			return nil, fmt.Errorf("on-demand IPv6 alloc: no ENI attached on network card %d", networkCard)
+		}
+		var lastErr error
+		for eniID := range enis {
+			// assignIPv6Prefix is idempotent: it first queries EC2 for prefixes attached to
+			// the ENI and only calls AllocIPv6Prefixes when none are attached.
+			if allocErr := c.assignIPv6Prefix(ctx, eniID, networkCard); allocErr != nil {
+				log.Warnf("On-demand IPv6 alloc failed for ENI %s on network card %d: %v", eniID, networkCard, allocErr)
+				lastErr = allocErr
+				continue
+			}
+			log.Infof("On-demand IPv6 alloc succeeded for ENI %s on network card %d", eniID, networkCard)
+		}
+		return nil, lastErr
+	})
+	return err
 }
 
 // PRECONDITION: isDatastorePoolTooLow returned true

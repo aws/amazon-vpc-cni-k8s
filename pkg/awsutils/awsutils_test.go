@@ -3860,3 +3860,52 @@ func TestGetAttachedENIsIPv6OnlyENIInIPv4Cluster(t *testing.T) {
 		assert.Empty(t, ens[1].IPv4Addresses)
 	}
 }
+
+func TestAllocIPv6PrefixesRetryOnThrottle(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	throttleErr := &smithy.GenericAPIError{Code: "Throttling", Message: "Rate exceeded"}
+	successOut := &ec2.AssignIpv6AddressesOutput{AssignedIpv6Prefixes: []string{"2001:db8::/80"}}
+
+	gomock.InOrder(
+		mockEC2.EXPECT().AssignIpv6Addresses(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, throttleErr),
+		mockEC2.EXPECT().AssignIpv6Addresses(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, throttleErr),
+		mockEC2.EXPECT().AssignIpv6Addresses(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, throttleErr),
+		mockEC2.EXPECT().AssignIpv6Addresses(gomock.Any(), gomock.Any(), gomock.Any()).Return(successOut, nil),
+	)
+
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
+	prefixes, err := cache.allocIPv6Prefixes(context.Background(), eniID, time.Millisecond)
+	assert.NoError(t, err)
+	if assert.Len(t, prefixes, 1) {
+		assert.Equal(t, "2001:db8::/80", aws.ToString(prefixes[0]))
+	}
+}
+
+func TestAllocIPv6PrefixesRetryExhausted(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	throttleErr := &smithy.GenericAPIError{Code: "Throttling", Message: "Rate exceeded"}
+	for i := 0; i < maxENIEC2APIRetries; i++ {
+		mockEC2.EXPECT().AssignIpv6Addresses(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, throttleErr)
+	}
+
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
+	_, err := cache.allocIPv6Prefixes(context.Background(), eniID, time.Millisecond)
+	assert.Error(t, err)
+}
+
+func TestAllocIPv6PrefixesNonRetryable(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	authErr := &smithy.GenericAPIError{Code: "UnauthorizedOperation", Message: "not authorized"}
+	// Exactly one call expected — non-retryable errors must short-circuit.
+	mockEC2.EXPECT().AssignIpv6Addresses(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, authErr).Times(1)
+
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
+	_, err := cache.allocIPv6Prefixes(context.Background(), eniID, time.Millisecond)
+	assert.Error(t, err)
+}
