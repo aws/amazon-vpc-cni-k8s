@@ -237,6 +237,29 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 					continue
 				}
 
+				// Self-heal path for IPv6-only nodes that started with an empty datastore
+				// because the bootstrap-time AssignIpv6Addresses call failed. Try once to
+				// allocate a prefix on demand, then retry the datastore assignment.
+				if err == datastore.ErrNoAvailableIPInDataStore && s.ipamContext.enableIPv6 && !s.ipamContext.enableIPv4 {
+					if allocErr := s.ipamContext.TryOnDemandIPv6Alloc(ctx, ds); allocErr != nil {
+						log.Warnf("On-demand IPv6 alloc did not recover empty datastore on network card %d: %v", networkCard, allocErr)
+					} else {
+						ipv4Addr, ipv6Addr, deviceNumber, routeTableId, err = ds.AssignPodIPAddress(ipamKey, ipamMetadata, s.ipamContext.enableIPv4, s.ipamContext.enableIPv6)
+						if err == nil {
+							log.Infof("Assigned IP after on-demand IPv6 alloc from network card: %d -> IPv6: %s", networkCard, ipv6Addr)
+							ipAddrs = append(ipAddrs, &rpc.IPAllocationMetadata{
+								IPv4Addr:     ipv4Addr,
+								IPv6Addr:     ipv6Addr,
+								DeviceNumber: int32(deviceNumber),
+								RouteTableId: int32(routeTableId),
+							})
+							ipsAllocated += 1
+							continue
+						}
+						log.Warnf("Datastore still empty after on-demand IPv6 alloc on network card %d: %v", networkCard, err)
+					}
+				}
+
 				errors = multiErr.Append(errors, err)
 				break
 			}

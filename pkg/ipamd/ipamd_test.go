@@ -4386,3 +4386,83 @@ func TestIPAMContext_InInsufficientCidrCoolingPeriod(t *testing.T) {
 		})
 	}
 }
+
+func newIPv6TestContext(m *testMocks) *IPAMContext {
+	ds := testDatastorewithPrefix()
+	_ = ds.GetDataStore(defaultNetworkCard).AddENI(primaryENIid, primaryDevice, true, false, false, networkutils.CalculateRouteTableId(primaryDevice, 0), "")
+	return &IPAMContext{
+		awsClient:               m.awsutils,
+		networkClient:           m.network,
+		dataStoreAccess:         ds,
+		enableIPv6:              true,
+		enableIPv4:              false,
+		enableIPv6OndemandAlloc: true,
+	}
+}
+
+func TestTryOnDemandIPv6Alloc_HappyPath(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	c := newIPv6TestContext(m)
+	m.awsutils.EXPECT().GetIPv6PrefixesFromEC2(gomock.Any(), primaryENIid).Return([]ec2types.Ipv6PrefixSpecification{}, nil)
+	prefix := "2001:db8::/80"
+	m.awsutils.EXPECT().AllocIPv6Prefixes(gomock.Any(), primaryENIid).Return([]*string{&prefix}, nil)
+
+	err := c.TryOnDemandIPv6Alloc(context.Background(), c.dataStoreAccess.GetDataStore(defaultNetworkCard))
+	assert.NoError(t, err)
+}
+
+func TestTryOnDemandIPv6Alloc_GuardIPv4Enabled(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	c := newIPv6TestContext(m)
+	c.enableIPv4 = true
+
+	// No EC2 mock expectations: guard must short-circuit.
+	err := c.TryOnDemandIPv6Alloc(context.Background(), c.dataStoreAccess.GetDataStore(defaultNetworkCard))
+	assert.NoError(t, err)
+}
+
+func TestTryOnDemandIPv6Alloc_GuardOndemandDisabled(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	c := newIPv6TestContext(m)
+	c.enableIPv6OndemandAlloc = false
+
+	// No EC2 mock expectations: guard must short-circuit.
+	err := c.TryOnDemandIPv6Alloc(context.Background(), c.dataStoreAccess.GetDataStore(defaultNetworkCard))
+	assert.NoError(t, err)
+}
+
+func TestTryOnDemandIPv6Alloc_NoENIInDatastore(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	// Fresh datastore with no ENI attached.
+	c := &IPAMContext{
+		awsClient:               m.awsutils,
+		networkClient:           m.network,
+		dataStoreAccess:         testDatastorewithPrefix(),
+		enableIPv6:              true,
+		enableIPv4:              false,
+		enableIPv6OndemandAlloc: true,
+	}
+
+	err := c.TryOnDemandIPv6Alloc(context.Background(), c.dataStoreAccess.GetDataStore(defaultNetworkCard))
+	assert.Error(t, err)
+}
+
+func TestTryOnDemandIPv6Alloc_AllocError(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	c := newIPv6TestContext(m)
+	m.awsutils.EXPECT().GetIPv6PrefixesFromEC2(gomock.Any(), primaryENIid).Return([]ec2types.Ipv6PrefixSpecification{}, nil)
+	m.awsutils.EXPECT().AllocIPv6Prefixes(gomock.Any(), primaryENIid).Return(nil, assert.AnError)
+
+	err := c.TryOnDemandIPv6Alloc(context.Background(), c.dataStoreAccess.GetDataStore(defaultNetworkCard))
+	assert.Error(t, err)
+}
