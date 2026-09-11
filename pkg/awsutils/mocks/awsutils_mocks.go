@@ -315,20 +315,6 @@ func (mr *MockAPIsMockRecorder) GetInstanceID() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetInstanceID", reflect.TypeOf((*MockAPIs)(nil).GetInstanceID))
 }
 
-// GetRegion mocks base method.
-func (m *MockAPIs) GetRegion() string {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetRegion")
-	ret0, _ := ret[0].(string)
-	return ret0
-}
-
-// GetRegion indicates an expected call of GetRegion.
-func (mr *MockAPIsMockRecorder) GetRegion() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRegion", reflect.TypeOf((*MockAPIs)(nil).GetRegion))
-}
-
 // GetInstanceType mocks base method.
 func (m *MockAPIs) GetInstanceType() string {
 	m.ctrl.T.Helper()
@@ -413,6 +399,20 @@ func (mr *MockAPIsMockRecorder) GetPrimaryENImac() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPrimaryENImac", reflect.TypeOf((*MockAPIs)(nil).GetPrimaryENImac))
 }
 
+// GetRegion mocks base method.
+func (m *MockAPIs) GetRegion() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetRegion")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetRegion indicates an expected call of GetRegion.
+func (mr *MockAPIsMockRecorder) GetRegion() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRegion", reflect.TypeOf((*MockAPIs)(nil).GetRegion))
+}
+
 // GetVPCIPv4CIDRs mocks base method.
 func (m *MockAPIs) GetVPCIPv4CIDRs() ([]string, error) {
 	m.ctrl.T.Helper()
@@ -470,18 +470,16 @@ func (mr *MockAPIsMockRecorder) InitCachedPrefixDelegation(arg0 interface{}) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InitCachedPrefixDelegation", reflect.TypeOf((*MockAPIs)(nil).InitCachedPrefixDelegation), arg0)
 }
 
-// IsTrunkingCompatible mocks base method.
-func (m *MockAPIs) IsTrunkingCompatible() bool {
+// InitHyperPodFromProviderID mocks base method.
+func (m *MockAPIs) InitHyperPodFromProviderID(arg0 context.Context, arg1 string) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IsTrunkingCompatible")
-	ret0, _ := ret[0].(bool)
-	return ret0
+	m.ctrl.Call(m, "InitHyperPodFromProviderID", arg0, arg1)
 }
 
-// IsTrunkingCompatible indicates an expected call of IsTrunkingCompatible.
-func (mr *MockAPIsMockRecorder) IsTrunkingCompatible() *gomock.Call {
+// InitHyperPodFromProviderID indicates an expected call of InitHyperPodFromProviderID.
+func (mr *MockAPIsMockRecorder) InitHyperPodFromProviderID(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsTrunkingCompatible", reflect.TypeOf((*MockAPIs)(nil).IsTrunkingCompatible))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InitHyperPodFromProviderID", reflect.TypeOf((*MockAPIs)(nil).InitHyperPodFromProviderID), arg0, arg1)
 }
 
 // IsEfaOnlyENI mocks base method.
@@ -539,6 +537,20 @@ func (m *MockAPIs) IsSubnetExcluded(arg0 context.Context, arg1 string) (bool, er
 func (mr *MockAPIsMockRecorder) IsSubnetExcluded(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsSubnetExcluded", reflect.TypeOf((*MockAPIs)(nil).IsSubnetExcluded), arg0, arg1)
+}
+
+// IsTrunkingCompatible mocks base method.
+func (m *MockAPIs) IsTrunkingCompatible() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsTrunkingCompatible")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsTrunkingCompatible indicates an expected call of IsTrunkingCompatible.
+func (mr *MockAPIsMockRecorder) IsTrunkingCompatible() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsTrunkingCompatible", reflect.TypeOf((*MockAPIs)(nil).IsTrunkingCompatible))
 }
 
 // IsUnmanagedENI mocks base method.

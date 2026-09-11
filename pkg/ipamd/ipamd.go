@@ -620,6 +620,8 @@ func (c *IPAMContext) nodeInit(ctx context.Context) error {
 			}
 			c.maxPods = int(maxPods)
 		}
+		// On HyperPod nodes (detected via providerID) the ENI attach is delegated to SageMaker.
+		c.awsClient.InitHyperPodFromProviderID(ctx, node.Spec.ProviderID)
 	} else {
 		maxPods, err := c.getMaxPodsFromFile()
 		if err != nil {
@@ -2864,6 +2866,8 @@ func (c *IPAMContext) SetAPIServerConnectivity(connected bool) {
 				c.maxPods = int(maxPods)
 				log.Infof("Updated maxPods from %d to %d based on node capacity", oldMaxPods, c.maxPods)
 			}
+			// Re-run HyperPod detection, which is skipped when IPAMD starts without API server connectivity.
+			c.awsClient.InitHyperPodFromProviderID(ctx, node.Spec.ProviderID)
 		}
 	} else {
 		// API server connection was lost

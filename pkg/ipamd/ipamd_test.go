@@ -113,13 +113,16 @@ func setup(t *testing.T) *testMocks {
 	eniconfigscheme.AddToScheme(k8sSchema)
 	rcscheme.AddToScheme(k8sSchema)
 
-	return &testMocks{
+	m := &testMocks{
 		ctrl:      ctrl,
 		awsutils:  mock_awsutils.NewMockAPIs(ctrl),
 		k8sClient: testclient.NewClientBuilder().WithScheme(k8sSchema).Build(),
 		network:   mock_networkutils.NewMockNetworkAPIs(ctrl),
 		eniconfig: mock_eniconfig.NewMockENIConfig(ctrl),
 	}
+	// HyperPod detection runs during nodeInit; no-op on non-HyperPod test nodes.
+	m.awsutils.EXPECT().InitHyperPodFromProviderID(gomock.Any(), gomock.Any()).AnyTimes()
+	return m
 }
 
 func TestNodeInit(t *testing.T) {
