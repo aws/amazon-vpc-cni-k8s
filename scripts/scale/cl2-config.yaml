@@ -1,0 +1,52 @@
+{{$NAMESPACE_PREFIX := DefaultParam .NAMESPACE_PREFIX "cni-scale"}}
+{{$OPERATION_TIMEOUT := DefaultParam .OPERATION_TIMEOUT "1800s"}}
+{{$POD_COUNT := DefaultParam .POD_COUNT 2000}}
+{{$POD_IMAGE := DefaultParam .POD_IMAGE "registry.k8s.io/e2e-test-images/busybox:1.36.1-1"}}
+{{$POD_THROUGHPUT := DefaultParam .POD_THROUGHPUT 20}}
+
+name: cni-pod-scale
+namespace:
+  number: 1
+  prefix: {{$NAMESPACE_PREFIX}}
+  deleteStaleNamespaces: true
+  deleteAutomanagedNamespaces: false
+tuningSets:
+- name: UniformQPS
+  qpsLoad:
+    qps: {{$POD_THROUGHPUT}}
+steps:
+- name: Start pod startup measurement
+  measurements:
+  - Identifier: CNIPodStartupLatency
+    Method: PodStartupLatency
+    Params:
+      action: start
+      labelSelector: group = cni-scale
+      threshold: 24h
+- name: Create CNI scale pods
+  phases:
+  - namespaceRange:
+      min: 1
+      max: 1
+    replicasPerNamespace: {{$POD_COUNT}}
+    tuningSet: UniformQPS
+    objectBundle:
+    - basename: cni-scale-pod
+      objectTemplatePath: pod.yaml
+      templateFillMap:
+        Image: {{$POD_IMAGE}}
+- name: Wait for every CNI scale pod to be RunningAndReady
+  measurements:
+  - Identifier: WaitForCNIScalePods
+    Method: WaitForRunningPods
+    Params:
+      action: gather
+      desiredPodCount: {{$POD_COUNT}}
+      labelSelector: group = cni-scale
+      timeout: {{$OPERATION_TIMEOUT}}
+- name: Collect pod startup measurement
+  measurements:
+  - Identifier: CNIPodStartupLatency
+    Method: PodStartupLatency
+    Params:
+      action: gather
