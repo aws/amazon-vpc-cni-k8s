@@ -116,6 +116,20 @@ var (
 		},
 		[]string{"fn"},
 	)
+	SagemakerApiReq = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "awscni_sagemakerapi_req_count",
+			Help: "The number of requests made to SageMaker APIs by CNI (HyperPod nodes)",
+		},
+		[]string{"fn"},
+	)
+	SagemakerApiErr = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "awscni_sagemakerapi_error_count",
+			Help: "The number of failed SageMaker APIs requests (HyperPod nodes)",
+		},
+		[]string{"fn"},
+	)
 	Enis = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "awscni_eni_allocated",
@@ -244,6 +258,8 @@ func PrometheusRegister() {
 	prometheus.MustRegister(AwsUtilsErr)
 	prometheus.MustRegister(Ec2ApiReq)
 	prometheus.MustRegister(Ec2ApiErr)
+	prometheus.MustRegister(SagemakerApiReq)
+	prometheus.MustRegister(SagemakerApiErr)
 	prometheus.MustRegister(Enis)
 	prometheus.MustRegister(TotalIPs)
 	prometheus.MustRegister(AssignedIPs)

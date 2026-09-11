@@ -30,6 +30,7 @@ import (
 	"github.com/aws/smithy-go"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/sagemaker"
 	"github.com/golang/mock/gomock"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -37,6 +38,7 @@ import (
 
 	mock_ec2wrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
+	mock_sagemakerwrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/sagemakerwrapper/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/vpc"
@@ -605,6 +607,113 @@ func TestAllocENI(t *testing.T) {
 		imds:               TypedIMDS{mockMetadata},
 		instanceType:       "c5n.18xlarge",
 		useSubnetDiscovery: true,
+	}
+
+	_, err := cache.AllocENI(context.Background(), nil, "", 5, 0)
+	assert.NoError(t, err)
+}
+
+func TestParseHyperPodProviderID(t *testing.T) {
+	cases := []struct {
+		name         string
+		providerID   string
+		wantInstance string
+		wantCluster  string
+		wantOK       bool
+	}{
+		{
+			name:         "hyperpod node",
+			providerID:   "aws:///us-east-1a/sagemaker/cluster/hyperpod-abc123def456-i-0123456789abcdef0",
+			wantInstance: "i-0123456789abcdef0",
+			wantCluster:  "abc123def456",
+			wantOK:       true,
+		},
+		{
+			name:       "normal eks node",
+			providerID: "aws:///us-east-1a/i-0123456789abcdef0",
+			wantOK:     false,
+		},
+		{
+			name:       "empty",
+			providerID: "",
+			wantOK:     false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			instance, cluster, ok := parseHyperPodProviderID(tc.providerID)
+			assert.Equal(t, tc.wantOK, ok)
+			assert.Equal(t, tc.wantInstance, instance)
+			assert.Equal(t, tc.wantCluster, cluster)
+		})
+	}
+}
+
+// TestInitHyperPodFromProviderID asserts detection is deterministic from the providerID and does not depend on STS.
+func TestInitHyperPodFromProviderID(t *testing.T) {
+	t.Run("hyperpod node is detected without STS", func(t *testing.T) {
+		cache := &EC2InstanceMetadataCache{region: "us-east-1"}
+		cache.InitHyperPodFromProviderID(context.Background(),
+			"aws:///us-east-1a/sagemaker/cluster/hyperpod-abc123-i-0123456789abcdef0")
+		assert.True(t, cache.isHyperPod)
+		assert.Equal(t, "i-0123456789abcdef0", cache.hyperPodNodeID)
+		assert.Equal(t, "abc123", cache.hyperPodClusterID)
+		// ARN is resolved lazily at attach time, not here.
+		assert.Empty(t, cache.hyperPodClusterName)
+	})
+
+	t.Run("non-hyperpod node leaves EC2 attach path", func(t *testing.T) {
+		cache := &EC2InstanceMetadataCache{region: "us-east-1"}
+		cache.InitHyperPodFromProviderID(context.Background(), "aws:///us-east-1a/i-0123456789abcdef0")
+		assert.False(t, cache.isHyperPod)
+		assert.Empty(t, cache.hyperPodNodeID)
+		assert.Empty(t, cache.hyperPodClusterID)
+	})
+}
+
+// TestAllocENIHyperPod verifies that on a HyperPod node the ENI is still created
+// via ec2:CreateNetworkInterface (customer account), but the attach is delegated to
+// sagemaker:AttachClusterNodeNetworkInterface instead of ec2:AttachNetworkInterface.
+// AttachNetworkInterface / DescribeInstances must NOT be called on this path.
+func TestAllocENIHyperPod(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+	mockSM := mock_sagemakerwrapper.NewMockSageMaker(ctrl)
+
+	mockMetadata := testMetadata(nil)
+
+	ipAddressCount := int32(100)
+	subnetResult := &ec2.DescribeSubnetsOutput{
+		Subnets: []ec2types.Subnet{{
+			AvailableIpAddressCount: &ipAddressCount,
+			SubnetId:                aws.String(subnetID),
+			Tags: []ec2types.Tag{
+				{Key: aws.String("kubernetes.io/role/cni"), Value: aws.String("1")},
+			},
+		}},
+	}
+	mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any(), gomock.Any()).Return(subnetResult, nil)
+
+	cureniID := eniID
+	eni := ec2.CreateNetworkInterfaceOutput{NetworkInterface: &ec2types.NetworkInterface{NetworkInterfaceId: &cureniID}}
+	mockEC2.EXPECT().CreateNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(&eni, nil)
+
+	// The attach goes through SageMaker, not EC2. Not setting AttachNetworkInterface /
+	// DescribeInstances expectations asserts they are not invoked on this path.
+	attachmentID := "eni-attach-hyperpod"
+	smOut := &sagemaker.AttachClusterNodeNetworkInterfaceOutput{AttachmentId: &attachmentID}
+	mockSM.EXPECT().AttachClusterNodeNetworkInterface(gomock.Any(), gomock.Any()).Return(smOut, nil)
+	mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+
+	cache := &EC2InstanceMetadataCache{
+		ec2SVC:              mockEC2,
+		sagemakerSVC:        mockSM,
+		imds:                TypedIMDS{mockMetadata},
+		instanceType:        "c5n.18xlarge",
+		useSubnetDiscovery:  true,
+		isHyperPod:          true,
+		hyperPodClusterName: "arn:aws:sagemaker:us-west-2:123456789012:cluster/cluster1",
+		hyperPodNodeID:      "i-1234567890",
 	}
 
 	_, err := cache.AllocENI(context.Background(), nil, "", 5, 0)

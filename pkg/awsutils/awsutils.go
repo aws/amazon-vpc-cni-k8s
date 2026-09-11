@@ -40,6 +40,7 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/awssession"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/sagemakerwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
@@ -50,6 +51,8 @@ import (
 	ec2metadata "github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/sagemaker"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	v1 "k8s.io/api/core/v1"
@@ -66,6 +69,10 @@ const (
 	// 100 is a hard limit because we use vlanID + 100 for pod networking table names
 	maxENIs           = 100
 	clusterNameEnvVar = "CLUSTER_NAME"
+
+	// HyperPod node providerID: aws:///<az>/sagemaker/cluster/hyperpod-<clusterID>-<instanceID>
+	hyperPodProviderIDMarker = "/sagemaker/cluster/"
+	hyperPodNodeIDPrefix     = "hyperpod-"
 
 	// clusterTagKeyPrefix is the prefix for the cluster-specific subnet tags
 	clusterTagKeyPrefix = "cni.networking.k8s.aws/cluster/"
@@ -217,6 +224,9 @@ type APIs interface {
 	// Update cached prefix delegation flag
 	InitCachedPrefixDelegation(bool)
 
+	// Enable SageMaker attach delegation for HyperPod nodes (by providerID)
+	InitHyperPodFromProviderID(context.Context, string)
+
 	// GetInstanceID returns the instance ID
 	GetInstanceID() string
 
@@ -267,6 +277,15 @@ type EC2InstanceMetadataCache struct {
 	imds                     TypedIMDS
 	ec2SVC                   ec2wrapper.EC2
 	connectionTrackingSpec   *ec2types.ConnectionTrackingSpecificationRequest
+
+	// SageMaker HyperPod: attach ENIs via sagemaker:AttachClusterNodeNetworkInterface
+	// instead of ec2:AttachNetworkInterface. Populated by InitHyperPodFromProviderID.
+	awsCfg              aws.Config
+	isHyperPod          bool
+	hyperPodClusterID   string
+	hyperPodClusterName string
+	hyperPodNodeID      string
+	sagemakerSVC        sagemakerwrapper.SageMaker
 }
 
 // ENIMetadata contains information about an ENI
@@ -459,6 +478,11 @@ func New(ctx context.Context, useSubnetDiscovery, useCustomNetworking, disableLe
 		return nil, err
 	}
 
+	// SageMaker client for the HyperPod attach path; detection happens later in
+	// InitHyperPodFromProviderID (needs the k8s node providerID).
+	cache.awsCfg = awsCfg
+	cache.sagemakerSVC = sagemakerwrapper.New(awsCfg)
+
 	// Clean up leaked ENIs in the background
 	if !disableLeakedENICleanup {
 		go wait.Forever(func() { cache.cleanUpLeakedENIs(ctx) }, time.Hour)
@@ -469,6 +493,41 @@ func New(ctx context.Context, useSubnetDiscovery, useCustomNetworking, disableLe
 func (cache *EC2InstanceMetadataCache) InitCachedPrefixDelegation(enablePrefixDelegation bool) {
 	cache.enablePrefixDelegation = enablePrefixDelegation
 	log.Infof("Prefix Delegation enabled %v", cache.enablePrefixDelegation)
+}
+
+// parseHyperPodProviderID returns the EC2 instance id and cluster id from a node
+// providerID (aws:///<az>/sagemaker/cluster/hyperpod-<clusterID>-<instanceID>), or
+// ok=false for non-HyperPod nodes. Mirrors the EBS CSI driver parsing.
+func parseHyperPodProviderID(providerID string) (instanceID, clusterID string, ok bool) {
+	if !strings.Contains(providerID, hyperPodProviderIDMarker) {
+		return "", "", false
+	}
+	nodeID := providerID[strings.LastIndex(providerID, "/")+1:]
+	if !strings.HasPrefix(nodeID, hyperPodNodeIDPrefix) {
+		return "", "", false
+	}
+	parts := strings.SplitN(nodeID, "-", 3) // [hyperpod, clusterID, instanceID]
+	if len(parts) < 3 || parts[1] == "" || parts[2] == "" {
+		return "", "", false
+	}
+	return parts[2], parts[1], true
+}
+
+// InitHyperPodFromProviderID enables SageMaker attach delegation when the node
+// providerID identifies a HyperPod node. Account (for the cluster ARN) comes from
+// STS GetCallerIdentity. Called by ipamd once the node object is available.
+func (cache *EC2InstanceMetadataCache) InitHyperPodFromProviderID(ctx context.Context, providerID string) {
+	instanceID, clusterID, ok := parseHyperPodProviderID(providerID)
+	if !ok {
+		return
+	}
+
+	// Detection is deterministic from the providerID; the account ID is resolved lazily in attachENIHyperPod.
+	cache.isHyperPod = true
+	cache.hyperPodNodeID = instanceID
+	cache.hyperPodClusterID = clusterID
+	log.Infof("HyperPod node detected (cluster %s, node %s); delegating ENI attach to sagemaker:AttachClusterNodeNetworkInterface",
+		clusterID, instanceID)
 }
 
 // InitWithEC2metadata initializes the EC2InstanceMetadataCache with the data retrieved from EC2 metadata service
@@ -1021,6 +1080,11 @@ func (cache *EC2InstanceMetadataCache) AllocENI(ctx context.Context, sg []*strin
 
 // attachENI calls EC2 API to attach the ENI and returns the attachment id
 func (cache *EC2InstanceMetadataCache) attachENI(ctx context.Context, eniID string, networkCard int) (string, error) {
+	// HyperPod nodes delegate the attach to the SageMaker control plane.
+	if cache.isHyperPod {
+		return cache.attachENIHyperPod(ctx, eniID)
+	}
+
 	// attach to instance
 	freeDevice, err := cache.awsGetFreeDeviceNumber(ctx, networkCard)
 	if err != nil {
@@ -1045,6 +1109,38 @@ func (cache *EC2InstanceMetadataCache) attachENI(ctx context.Context, eniID stri
 		return "", errors.Wrap(err, fmt.Sprintf("attachENI: failed to attach ENI for network card %d", networkCard))
 	}
 	return aws.ToString(attachOutput.AttachmentId), err
+}
+
+// attachENIHyperPod delegates the ENI attach to the SageMaker control plane for
+// HyperPod nodes via sagemaker:AttachClusterNodeNetworkInterface.
+func (cache *EC2InstanceMetadataCache) attachENIHyperPod(ctx context.Context, eniID string) (string, error) {
+	// Resolve the cluster ARN lazily and cache it; a transient STS failure only delays the attach (IPAMD retries).
+	if cache.hyperPodClusterName == "" {
+		out, err := sts.NewFromConfig(cache.awsCfg).GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+		if err != nil {
+			log.Errorf("attachENIHyperPod: STS GetCallerIdentity failed, cannot build cluster ARN for ENI %s: %v", eniID, err)
+			return "", errors.Wrap(err, "attachENIHyperPod: failed to resolve account ID via STS GetCallerIdentity")
+		}
+		cache.hyperPodClusterName = fmt.Sprintf("arn:aws:sagemaker:%s:%s:cluster/%s", cache.region, aws.ToString(out.Account), cache.hyperPodClusterID)
+	}
+
+	input := &sagemaker.AttachClusterNodeNetworkInterfaceInput{
+		ClusterName:        aws.String(cache.hyperPodClusterName),
+		NodeId:             aws.String(cache.hyperPodNodeID),
+		NetworkInterfaceId: aws.String(eniID),
+	}
+	start := time.Now()
+	output, err := cache.sagemakerSVC.AttachClusterNodeNetworkInterface(ctx, input)
+	prometheusmetrics.SagemakerApiReq.WithLabelValues("AttachClusterNodeNetworkInterface").Inc()
+	prometheusmetrics.AwsAPILatency.WithLabelValues("AttachClusterNodeNetworkInterface", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
+	if err != nil {
+		checkAPIErrorAndBroadcastEvent(err, "sagemaker:AttachClusterNodeNetworkInterface")
+		awsAPIErrInc("AttachClusterNodeNetworkInterface", err)
+		prometheusmetrics.SagemakerApiErr.WithLabelValues("AttachClusterNodeNetworkInterface").Inc()
+		log.Errorf("Failed to attach ENI %s via SageMaker: %v", eniID, err)
+		return "", errors.Wrap(err, "attachENIHyperPod: failed to attach ENI via SageMaker")
+	}
+	return aws.ToString(output.AttachmentId), err
 }
 
 // createENITags creates all the tags required to be added to the ENI
