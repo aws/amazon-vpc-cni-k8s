@@ -45,6 +45,14 @@ const (
 	//to move to stable state before error'ing out.
 	v6DADTimeout                = 10 * time.Second
 	MAX_MAC_GENERATION_ATTEMPTS = 10
+
+	// maxVlanID is the largest valid 802.1Q VLAN id. Branch ENI VLAN ids arrive
+	// via vpc.amazonaws.com/pod-eni annotation
+	maxVlanID = 4094
+
+	// vlanRouteTableOffset is added to a branch ENI VLAN id to derive the policy
+	// route table used for that pod's traffic.
+	vlanRouteTableOffset = 100
 )
 
 type VirtualInterfaceMetadata struct {
@@ -324,6 +332,19 @@ func (n *linuxNetwork) TeardownPodNetwork(vethMetadata []VirtualInterfaceMetadat
 	return nil
 }
 
+// vlanIDToRouteTable validates a branch ENI VLAN id and returns the policy
+// route table it maps to (vlanID + vlanRouteTableOffset).
+func vlanIDToRouteTable(vlanID int) (int, error) {
+	if vlanID < 1 || vlanID > maxVlanID {
+		return 0, errors.Errorf("invalid vlanID %d", vlanID)
+	}
+	rtTable := vlanID + vlanRouteTableOffset
+	if rtTable >= unix.RT_TABLE_DEFAULT && rtTable <= unix.RT_TABLE_LOCAL {
+		return 0, errors.Errorf("vlanID %d maps to reserved table %d", vlanID, rtTable)
+	}
+	return rtTable, nil
+}
+
 // SetupBranchENIPodNetwork sets up the network ns for pods requesting its own security group
 // we expect v4Addr and v6Addr to have correct IPAddress Family.
 func (n *linuxNetwork) SetupBranchENIPodNetwork(vethMetadata VirtualInterfaceMetadata, netnsPath string,
@@ -354,7 +375,11 @@ func (n *linuxNetwork) SetupBranchENIPodNetwork(vethMetadata VirtualInterfaceMet
 		return errors.Wrapf(err, "SetupBranchENIPodNetwork: failed to delete hostVeth rule for %s", vethMetadata.HostVethName)
 	}
 
-	rtTable := vlanID + 100
+	rtTable, err := vlanIDToRouteTable(vlanID)
+	if err != nil {
+		return errors.Wrap(err, "SetupBranchENIPodNetwork")
+	}
+
 	vlanLink, err := n.setupVlan(vlanID, eniMAC, subnetGW, parentIfIndex, rtTable, log)
 	if err != nil {
 		return errors.Wrapf(err, "SetupBranchENIPodNetwork: failed to setup vlan")
@@ -377,6 +402,13 @@ func (n *linuxNetwork) SetupBranchENIPodNetwork(vethMetadata VirtualInterfaceMet
 func (n *linuxNetwork) TeardownBranchENIPodNetwork(vethMetadata VirtualInterfaceMetadata, vlanID int, _ sgpp.EnforcingMode, log logger.Logger) error {
 	log.Debugf("TeardownBranchENIPodNetwork: containerAddr=%s, vlanID=%d", vethMetadata.IPAddress.String(), vlanID)
 
+	// Validate the VLAN id -> route table mapping before issuing any deletes.
+	rtTable, err := vlanIDToRouteTable(vlanID)
+	if err != nil {
+		log.Errorf("TeardownBranchENIPodNetwork: skipping teardown, %v", err)
+		return nil
+	}
+
 	if err := n.teardownVlan(vlanID, log); err != nil {
 		return errors.Wrapf(err, "TeardownBranchENIPodNetwork: failed to teardown vlan")
 	}
@@ -386,7 +418,6 @@ func (n *linuxNetwork) TeardownBranchENIPodNetwork(vethMetadata VirtualInterface
 		ipFamily = unix.AF_INET6
 	}
 	// to handle the migration between different enforcingMode, we try to clean up rules under both mode since the pod might be setup with a different mode.
-	rtTable := vlanID + 100
 	if err := n.teardownIIFBasedContainerRouteRules(rtTable, ipFamily, log); err != nil {
 		return errors.Wrapf(err, "TeardownBranchENIPodNetwork: unable to teardown IIF based container routes and rules")
 	}

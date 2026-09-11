@@ -1370,6 +1370,124 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 			},
 			wantErr: errors.New("SetupBranchENIPodNetwork: unable to setup IIF based container routes and rules: failed to setup container route, containerAddr=192.168.100.42/32, hostVeth=eni8ea2c11fe35, rtTable=107: some error"),
 		},
+		{
+			name: "vlanID below the valid range is rejected",
+			fields: fields{
+				linkByNameCalls: []linkByNameCall{
+					{
+						linkName: "eni8ea2c11fe35",
+						err:      errors.New("not exists"),
+					},
+					{
+						linkName: "eni8ea2c11fe35",
+						link:     hostVethWithIndex9,
+					},
+				},
+				ruleDelCalls: []ruleDelCall{
+					{
+						rule: oldFromHostVethRule,
+						err:  syscall.ENOENT,
+					},
+				},
+				withNetNSPathCalls: []withNetNSPathCall{
+					{
+						netNSPath: "/proc/42/ns/net",
+					},
+				},
+			},
+			args: args{
+				hostVethName:       "eni8ea2c11fe35",
+				contVethName:       "eth0",
+				netnsPath:          "/proc/42/ns/net",
+				ipAddr:             containerAddr,
+				vlanID:             0,
+				eniMAC:             eniMac,
+				subnetGW:           subnetGW,
+				parentIfIndex:      parentIfIndex,
+				mtu:                9001,
+				podSGEnforcingMode: sgpp.EnforcingModeStandard,
+			},
+			wantErr: errors.New("SetupBranchENIPodNetwork: invalid vlanID 0"),
+		},
+		{
+			name: "vlanID above the valid range is rejected",
+			fields: fields{
+				linkByNameCalls: []linkByNameCall{
+					{
+						linkName: "eni8ea2c11fe35",
+						err:      errors.New("not exists"),
+					},
+					{
+						linkName: "eni8ea2c11fe35",
+						link:     hostVethWithIndex9,
+					},
+				},
+				ruleDelCalls: []ruleDelCall{
+					{
+						rule: oldFromHostVethRule,
+						err:  syscall.ENOENT,
+					},
+				},
+				withNetNSPathCalls: []withNetNSPathCall{
+					{
+						netNSPath: "/proc/42/ns/net",
+					},
+				},
+			},
+			args: args{
+				hostVethName:       "eni8ea2c11fe35",
+				contVethName:       "eth0",
+				netnsPath:          "/proc/42/ns/net",
+				ipAddr:             containerAddr,
+				vlanID:             4095,
+				eniMAC:             eniMac,
+				subnetGW:           subnetGW,
+				parentIfIndex:      parentIfIndex,
+				mtu:                9001,
+				podSGEnforcingMode: sgpp.EnforcingModeStandard,
+			},
+			wantErr: errors.New("SetupBranchENIPodNetwork: invalid vlanID 4095"),
+		},
+		{
+			name: "vlanID mapping to a reserved route table is rejected",
+			fields: fields{
+				linkByNameCalls: []linkByNameCall{
+					{
+						linkName: "eni8ea2c11fe35",
+						err:      errors.New("not exists"),
+					},
+					{
+						linkName: "eni8ea2c11fe35",
+						link:     hostVethWithIndex9,
+					},
+				},
+				ruleDelCalls: []ruleDelCall{
+					{
+						rule: oldFromHostVethRule,
+						err:  syscall.ENOENT,
+					},
+				},
+				withNetNSPathCalls: []withNetNSPathCall{
+					{
+						netNSPath: "/proc/42/ns/net",
+					},
+				},
+			},
+			args: args{
+				hostVethName: "eni8ea2c11fe35",
+				contVethName: "eth0",
+				netnsPath:    "/proc/42/ns/net",
+				ipAddr:       containerAddr,
+				// vlanID 154 maps to rtTable 254 (RT_TABLE_MAIN), which is reserved.
+				vlanID:             154,
+				eniMAC:             eniMac,
+				subnetGW:           subnetGW,
+				parentIfIndex:      parentIfIndex,
+				mtu:                9001,
+				podSGEnforcingMode: sgpp.EnforcingModeStandard,
+			},
+			wantErr: errors.New("SetupBranchENIPodNetwork: vlanID 154 maps to reserved table 254"),
+		},
 	}
 
 	for _, tt := range tests {
@@ -1437,6 +1555,39 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 			}
+		})
+	}
+}
+
+func Test_vlanIDToRouteTable(t *testing.T) {
+	tests := []struct {
+		name      string
+		vlanID    int
+		wantTable int
+		wantErr   bool
+	}{
+		{name: "smallest valid vlanID", vlanID: 1, wantTable: 101},
+		{name: "typical vlanID", vlanID: 7, wantTable: 107},
+		{name: "largest vlanID below reserved range", vlanID: 152, wantTable: 252},
+		{name: "smallest vlanID above reserved range", vlanID: 156, wantTable: 256},
+		{name: "largest valid vlanID", vlanID: 4094, wantTable: 4194},
+		{name: "zero vlanID rejected", vlanID: 0, wantErr: true},
+		{name: "negative vlanID rejected", vlanID: -1, wantErr: true},
+		{name: "above max vlanID rejected", vlanID: 4095, wantErr: true},
+		{name: "maps to RT_TABLE_DEFAULT (253) rejected", vlanID: 153, wantErr: true},
+		{name: "maps to RT_TABLE_MAIN (254) rejected", vlanID: 154, wantErr: true},
+		{name: "maps to RT_TABLE_LOCAL (255) rejected", vlanID: 155, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := vlanIDToRouteTable(tt.vlanID)
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.Equal(t, 0, got)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.wantTable, got)
 		})
 	}
 }
@@ -1788,6 +1939,36 @@ func Test_linuxNetwork_TeardownBranchENIPodNetwork(t *testing.T) {
 				podSGEnforcingMode: sgpp.EnforcingModeStandard,
 			},
 			wantErr: errors.New("TeardownBranchENIPodNetwork: unable to teardown IP based container routes and rules: failed to delete toContainer rule, containerAddr=192.168.100.42/32, rtTable=main: some error"),
+		},
+		{
+			name:   "reserved vlanID mapping to main table (254) issues no deletes",
+			fields: fields{},
+			args: args{
+				containerAddr:      containerAddr,
+				vlanID:             154,
+				podSGEnforcingMode: sgpp.EnforcingModeStrict,
+			},
+		},
+		{
+			// vlanID 155 maps to table 255 (RT_TABLE_LOCAL).
+			name:   "reserved vlanID mapping to local table (255) issues no deletes",
+			fields: fields{},
+			args: args{
+				containerAddr:      containerAddr,
+				vlanID:             155,
+				podSGEnforcingMode: sgpp.EnforcingModeStandard,
+			},
+		},
+		{
+			// Out-of-range ids are skipped as well, and teardown still returns
+			// success so pod deletion is never blocked.
+			name:   "invalid vlanID (0) issues no deletes and does not error",
+			fields: fields{},
+			args: args{
+				containerAddr:      containerAddr,
+				vlanID:             0,
+				podSGEnforcingMode: sgpp.EnforcingModeStandard,
+			},
 		},
 	}
 	for _, tt := range tests {
