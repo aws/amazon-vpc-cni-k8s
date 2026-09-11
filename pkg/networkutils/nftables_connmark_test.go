@@ -71,7 +71,7 @@ func TestNftConnmarkSetup(t *testing.T) {
 	mockNft.EXPECT().FlushChain(baseChain)
 	mockNft.EXPECT().GetRules(table, connmarkChain).Return([]*nftables.Rule{}, nil)
 	mockNft.EXPECT().InsertRule(gomock.Any()).Return(&nftables.Rule{}).Times(3) // fib rule + 2 CIDRs
-	mockNft.EXPECT().AddRule(gomock.Any()).Return(&nftables.Rule{}).Times(4)    // jump, 2 restore rules, set mark
+	mockNft.EXPECT().AddRule(gomock.Any()).Return(&nftables.Rule{}).Times(3)    // jump, restore rule, set mark
 
 	err := connmark.Setup([]string{"10.0.0.0/8", "172.16.0.0/12"})
 	assert.NoError(t, err)
@@ -231,22 +231,13 @@ func TestClassifyRestoreRule(t *testing.T) {
 		rule        func() *nftables.Rule
 		mark        uint32
 		expectedBit uint32
-		expectedSet bool
 		expectedOK  bool
 	}{
 		{
-			name:        "valid clear rule",
-			rule:        func() *nftables.Rule { return newTestRestoreRule(mark, false) },
+			name:        "valid restore rule",
+			rule:        func() *nftables.Rule { return newTestRestoreRule(mark) },
 			mark:        mark,
 			expectedBit: mark,
-			expectedOK:  true,
-		},
-		{
-			name:        "valid set rule",
-			rule:        func() *nftables.Rule { return newTestRestoreRule(mark, true) },
-			mark:        mark,
-			expectedBit: mark,
-			expectedSet: true,
 			expectedOK:  true,
 		},
 		{
@@ -258,10 +249,71 @@ func TestClassifyRestoreRule(t *testing.T) {
 			expectedOK: false,
 		},
 		{
+			name: "two-rule draft clear rule",
+			rule: func() *nftables.Rule {
+				return newTestTwoRuleDraftRestoreRule(mark, false)
+			},
+			mark:       mark,
+			expectedOK: false,
+		},
+		{
+			name: "two-rule draft set rule",
+			rule: func() *nftables.Rule {
+				return newTestTwoRuleDraftRestoreRule(mark, true)
+			},
+			mark:       mark,
+			expectedOK: false,
+		},
+		{
+			name: "missing counter",
+			rule: func() *nftables.Rule {
+				rule := newTestRestoreRule(mark)
+				rule.Exprs = rule.Exprs[1:]
+				return rule
+			},
+			mark: mark,
+		},
+		{
+			name: "packet clear load is a store",
+			rule: func() *nftables.Rule {
+				rule := newTestRestoreRule(mark)
+				rule.Exprs[3].(*expr.Meta).SourceRegister = true
+				return rule
+			},
+			mark: mark,
+		},
+		{
+			name: "wrong packet clear mask",
+			rule: func() *nftables.Rule {
+				rule := newTestRestoreRule(mark)
+				rule.Exprs[4].(*expr.Bitwise).Mask = binaryutil.NativeEndian.PutUint32(0xffffffff)
+				return rule
+			},
+			mark: mark,
+		},
+		{
+			name: "wrong packet clear xor",
+			rule: func() *nftables.Rule {
+				rule := newTestRestoreRule(mark)
+				rule.Exprs[4].(*expr.Bitwise).Xor = binaryutil.NativeEndian.PutUint32(mark)
+				return rule
+			},
+			mark: mark,
+		},
+		{
+			name: "packet clear store is a load",
+			rule: func() *nftables.Rule {
+				rule := newTestRestoreRule(mark)
+				rule.Exprs[5].(*expr.Meta).SourceRegister = false
+				return rule
+			},
+			mark: mark,
+		},
+		{
 			name: "wrong conntrack register",
 			rule: func() *nftables.Rule {
-				rule := newTestRestoreRule(mark, false)
-				rule.Exprs[0].(*expr.Ct).Register = 2
+				rule := newTestRestoreRule(mark)
+				rule.Exprs[1].(*expr.Ct).Register = 1
 				return rule
 			},
 			mark: mark,
@@ -269,8 +321,8 @@ func TestClassifyRestoreRule(t *testing.T) {
 		{
 			name: "wrong conntrack key",
 			rule: func() *nftables.Rule {
-				rule := newTestRestoreRule(mark, false)
-				rule.Exprs[0].(*expr.Ct).Key = expr.CtKeySTATE
+				rule := newTestRestoreRule(mark)
+				rule.Exprs[1].(*expr.Ct).Key = expr.CtKeySTATE
 				return rule
 			},
 			mark: mark,
@@ -278,8 +330,8 @@ func TestClassifyRestoreRule(t *testing.T) {
 		{
 			name: "conntrack load is a store",
 			rule: func() *nftables.Rule {
-				rule := newTestRestoreRule(mark, false)
-				rule.Exprs[0].(*expr.Ct).SourceRegister = true
+				rule := newTestRestoreRule(mark)
+				rule.Exprs[1].(*expr.Ct).SourceRegister = true
 				return rule
 			},
 			mark: mark,
@@ -287,8 +339,8 @@ func TestClassifyRestoreRule(t *testing.T) {
 		{
 			name: "wrong conntrack bitwise source register",
 			rule: func() *nftables.Rule {
-				rule := newTestRestoreRule(mark, false)
-				rule.Exprs[1].(*expr.Bitwise).SourceRegister = 2
+				rule := newTestRestoreRule(mark)
+				rule.Exprs[2].(*expr.Bitwise).SourceRegister = 1
 				return rule
 			},
 			mark: mark,
@@ -296,8 +348,8 @@ func TestClassifyRestoreRule(t *testing.T) {
 		{
 			name: "wrong conntrack bitwise xor",
 			rule: func() *nftables.Rule {
-				rule := newTestRestoreRule(mark, false)
-				rule.Exprs[1].(*expr.Bitwise).Xor = binaryutil.NativeEndian.PutUint32(mark)
+				rule := newTestRestoreRule(mark)
+				rule.Exprs[2].(*expr.Bitwise).Xor = binaryutil.NativeEndian.PutUint32(mark)
 				return rule
 			},
 			mark: mark,
@@ -305,8 +357,8 @@ func TestClassifyRestoreRule(t *testing.T) {
 		{
 			name: "wrong conntrack bitwise length",
 			rule: func() *nftables.Rule {
-				rule := newTestRestoreRule(mark, false)
-				rule.Exprs[1].(*expr.Bitwise).Len = 2
+				rule := newTestRestoreRule(mark)
+				rule.Exprs[2].(*expr.Bitwise).Len = 2
 				return rule
 			},
 			mark: mark,
@@ -314,22 +366,22 @@ func TestClassifyRestoreRule(t *testing.T) {
 		{
 			name: "multi-bit selector",
 			rule: func() *nftables.Rule {
-				return newTestRestoreRule(0xc0, false)
+				return newTestRestoreRule(0xc0)
 			},
 			mark: mark,
 		},
 		{
 			name: "unowned bit",
 			rule: func() *nftables.Rule {
-				return newTestRestoreRule(0x40, false)
+				return newTestRestoreRule(0x40)
 			},
 			mark: mark,
 		},
 		{
 			name: "wrong comparison register",
 			rule: func() *nftables.Rule {
-				rule := newTestRestoreRule(mark, false)
-				rule.Exprs[2].(*expr.Cmp).Register = 2
+				rule := newTestRestoreRule(mark)
+				rule.Exprs[6].(*expr.Cmp).Register = 1
 				return rule
 			},
 			mark: mark,
@@ -337,8 +389,8 @@ func TestClassifyRestoreRule(t *testing.T) {
 		{
 			name: "wrong comparison operation",
 			rule: func() *nftables.Rule {
-				rule := newTestRestoreRule(mark, false)
-				rule.Exprs[2].(*expr.Cmp).Op = expr.CmpOpNeq
+				rule := newTestRestoreRule(mark)
+				rule.Exprs[6].(*expr.Cmp).Op = expr.CmpOpNeq
 				return rule
 			},
 			mark: mark,
@@ -346,62 +398,53 @@ func TestClassifyRestoreRule(t *testing.T) {
 		{
 			name: "wrong comparison value",
 			rule: func() *nftables.Rule {
-				rule := newTestRestoreRule(mark, false)
-				rule.Exprs[2].(*expr.Cmp).Data = binaryutil.NativeEndian.PutUint32(0x40)
+				rule := newTestRestoreRule(mark)
+				rule.Exprs[6].(*expr.Cmp).Data = binaryutil.NativeEndian.PutUint32(0)
 				return rule
 			},
 			mark: mark,
 		},
 		{
-			name: "missing counter",
+			name: "packet set load is a store",
 			rule: func() *nftables.Rule {
-				rule := newTestRestoreRule(mark, false)
-				rule.Exprs = append(rule.Exprs[:3], rule.Exprs[4:]...)
+				rule := newTestRestoreRule(mark)
+				rule.Exprs[7].(*expr.Meta).SourceRegister = true
 				return rule
 			},
 			mark: mark,
 		},
 		{
-			name: "packet mark load is a store",
+			name: "wrong packet set mask",
 			rule: func() *nftables.Rule {
-				rule := newTestRestoreRule(mark, false)
-				rule.Exprs[4].(*expr.Meta).SourceRegister = true
+				rule := newTestRestoreRule(mark)
+				rule.Exprs[8].(*expr.Bitwise).Mask = binaryutil.NativeEndian.PutUint32(0xffffffff)
 				return rule
 			},
 			mark: mark,
 		},
 		{
-			name: "wrong packet mask",
+			name: "wrong packet set destination register",
 			rule: func() *nftables.Rule {
-				rule := newTestRestoreRule(mark, false)
-				rule.Exprs[5].(*expr.Bitwise).Mask = binaryutil.NativeEndian.PutUint32(0xffffffff)
+				rule := newTestRestoreRule(mark)
+				rule.Exprs[8].(*expr.Bitwise).DestRegister = 2
 				return rule
 			},
 			mark: mark,
 		},
 		{
-			name: "wrong packet bitwise destination register",
+			name: "wrong packet set xor",
 			rule: func() *nftables.Rule {
-				rule := newTestRestoreRule(mark, false)
-				rule.Exprs[5].(*expr.Bitwise).DestRegister = 2
+				rule := newTestRestoreRule(mark)
+				rule.Exprs[8].(*expr.Bitwise).Xor = binaryutil.NativeEndian.PutUint32(0)
 				return rule
 			},
 			mark: mark,
 		},
 		{
-			name: "wrong packet xor",
+			name: "packet set store is a load",
 			rule: func() *nftables.Rule {
-				rule := newTestRestoreRule(mark, false)
-				rule.Exprs[5].(*expr.Bitwise).Xor = binaryutil.NativeEndian.PutUint32(mark)
-				return rule
-			},
-			mark: mark,
-		},
-		{
-			name: "wrong packet mark store register",
-			rule: func() *nftables.Rule {
-				rule := newTestRestoreRule(mark, false)
-				rule.Exprs[6].(*expr.Meta).Register = 2
+				rule := newTestRestoreRule(mark)
+				rule.Exprs[9].(*expr.Meta).SourceRegister = false
 				return rule
 			},
 			mark: mark,
@@ -410,15 +453,62 @@ func TestClassifyRestoreRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			bit, set, ok := classifyRestoreRule(tt.rule(), tt.mark)
+			bit, ok := classifyRestoreRule(tt.rule(), tt.mark)
 			assert.Equal(t, tt.expectedBit, bit)
-			assert.Equal(t, tt.expectedSet, set)
 			assert.Equal(t, tt.expectedOK, ok)
 		})
 	}
 }
 
-func newTestRestoreRule(bit uint32, set bool) *nftables.Rule {
+func newTestRestoreRule(bit uint32) *nftables.Rule {
+	bitBytes := binaryutil.NativeEndian.PutUint32(bit)
+	zeroBytes := binaryutil.NativeEndian.PutUint32(0)
+	return &nftables.Rule{
+		Exprs: []expr.Any{
+			&expr.Counter{},
+			&expr.Ct{Key: expr.CtKeyMARK, Register: 2},
+			&expr.Bitwise{SourceRegister: 2, DestRegister: 2, Len: 4, Mask: bitBytes, Xor: zeroBytes},
+			&expr.Meta{Key: expr.MetaKeyMARK, Register: 1},
+			&expr.Bitwise{
+				SourceRegister: 1,
+				DestRegister:   1,
+				Len:            4,
+				Mask:           binaryutil.NativeEndian.PutUint32(^bit),
+				Xor:            zeroBytes,
+			},
+			&expr.Meta{Key: expr.MetaKeyMARK, SourceRegister: true, Register: 1},
+			&expr.Cmp{Op: expr.CmpOpEq, Register: 2, Data: bitBytes},
+			&expr.Meta{Key: expr.MetaKeyMARK, Register: 1},
+			&expr.Bitwise{
+				SourceRegister: 1,
+				DestRegister:   1,
+				Len:            4,
+				Mask:           binaryutil.NativeEndian.PutUint32(^bit),
+				Xor:            bitBytes,
+			},
+			&expr.Meta{Key: expr.MetaKeyMARK, SourceRegister: true, Register: 1},
+		},
+	}
+}
+
+func newTestLegacyRestoreRule(mark uint32) *nftables.Rule {
+	return &nftables.Rule{
+		Exprs: []expr.Any{
+			&expr.Counter{},
+			&expr.Ct{Key: expr.CtKeyMARK, Register: 1},
+			&expr.Bitwise{
+				SourceRegister: 1,
+				DestRegister:   1,
+				Len:            4,
+				Mask:           binaryutil.NativeEndian.PutUint32(mark),
+				Xor:            binaryutil.NativeEndian.PutUint32(0),
+			},
+			&expr.Meta{Key: expr.MetaKeyMARK, SourceRegister: true, Register: 1},
+		},
+	}
+}
+
+func newTestTwoRuleDraftRestoreRule(bit uint32, set bool) *nftables.Rule {
 	bitBytes := binaryutil.NativeEndian.PutUint32(bit)
 	zeroBytes := binaryutil.NativeEndian.PutUint32(0)
 	compareBytes := zeroBytes
@@ -440,23 +530,6 @@ func newTestRestoreRule(bit uint32, set bool) *nftables.Rule {
 				Len:            4,
 				Mask:           binaryutil.NativeEndian.PutUint32(^bit),
 				Xor:            packetXorBytes,
-			},
-			&expr.Meta{Key: expr.MetaKeyMARK, SourceRegister: true, Register: 1},
-		},
-	}
-}
-
-func newTestLegacyRestoreRule(mark uint32) *nftables.Rule {
-	return &nftables.Rule{
-		Exprs: []expr.Any{
-			&expr.Counter{},
-			&expr.Ct{Key: expr.CtKeyMARK, Register: 1},
-			&expr.Bitwise{
-				SourceRegister: 1,
-				DestRegister:   1,
-				Len:            4,
-				Mask:           binaryutil.NativeEndian.PutUint32(mark),
-				Xor:            binaryutil.NativeEndian.PutUint32(0),
 			},
 			&expr.Meta{Key: expr.MetaKeyMARK, SourceRegister: true, Register: 1},
 		},
@@ -506,6 +579,7 @@ func TestAddRestoreRulePreservesUnownedPacketMark(t *testing.T) {
 		&nftables.Table{Family: nftables.TableFamilyIPv4, Name: nftTableName},
 		&nftables.Chain{Name: nftBaseChainName},
 	)
+	require.Len(t, rules, 1)
 
 	tests := []struct {
 		name       string
@@ -562,7 +636,7 @@ func TestAddRestoreRulesCopiesMultipleOwnedBits(t *testing.T) {
 			mockNft.EXPECT().AddRule(gomock.Any()).DoAndReturn(func(rule *nftables.Rule) *nftables.Rule {
 				rules = append(rules, rule)
 				return rule
-			}).Times(2 * bits.OnesCount32(mask))
+			}).Times(bits.OnesCount32(mask))
 
 			connmark.addRestoreRules(
 				&nftables.Table{Family: nftables.TableFamilyIPv4, Name: nftTableName},
@@ -908,30 +982,66 @@ func TestEnsureBaseChainRulesReplacesLegacyOverwriteRestoreRule(t *testing.T) {
 	mockNft.EXPECT().AddRule(gomock.Any()).DoAndReturn(func(rule *nftables.Rule) *nftables.Rule {
 		addedRules = append(addedRules, rule)
 		return rule
-	}).Times(3)
+	}).Times(2)
 
 	assert.NoError(t, connmark.ensureBaseChainRules(table, baseChain, targetChain))
 
 	require.Len(t, insertedRules, 1)
-	require.Len(t, addedRules, 3)
+	require.Len(t, addedRules, 2)
 	assert.True(t, isFibLocalReturnRule(insertedRules[0]))
 	assert.True(t, isJumpRule(addedRules[0], targetChain.Name, connmark.vethPrefix))
-	bit, set, ok := classifyRestoreRule(addedRules[1], connmark.mark)
+	bit, ok := classifyRestoreRule(addedRules[1], connmark.mark)
 	assert.Equal(t, connmark.mark, bit)
-	assert.False(t, set)
-	assert.True(t, ok)
-	bit, set, ok = classifyRestoreRule(addedRules[2], connmark.mark)
-	assert.Equal(t, connmark.mark, bit)
-	assert.True(t, set)
 	assert.True(t, ok)
 
-	installedRules := []*nftables.Rule{insertedRules[0], addedRules[0], addedRules[1], addedRules[2]}
-	for i, handle := range []uint64{400, 100, 300, 200} {
+	installedRules := []*nftables.Rule{insertedRules[0], addedRules[0], addedRules[1]}
+	for i, handle := range []uint64{400, 100, 300} {
 		installedRules[i].Handle = handle
 	}
 	mockNft.EXPECT().GetRules(table, baseChain).Return(installedRules, nil)
 
 	assert.NoError(t, connmark.ensureBaseChainRules(table, baseChain, targetChain))
+}
+
+func TestEnsureBaseChainRulesReplacesTwoRuleDraftRestoreRules(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockNft := mock_nft.NewMockClient(ctrl)
+	connmark := &nftConnmark{
+		nft:        mockNft,
+		vethPrefix: "eni",
+		mark:       0x80,
+	}
+
+	table := &nftables.Table{Family: nftables.TableFamilyIPv4, Name: nftTableName}
+	baseChain := &nftables.Chain{Name: nftBaseChainName, Table: table}
+	targetChain := &nftables.Chain{Name: nftChainName, Table: table}
+	mockNft.EXPECT().GetRules(table, baseChain).Return([]*nftables.Rule{
+		newTestFibRule(1),
+		newTestJumpRule(2),
+		newTestTwoRuleDraftRestoreRule(connmark.mark, false),
+		newTestTwoRuleDraftRestoreRule(connmark.mark, true),
+	}, nil)
+	mockNft.EXPECT().FlushChain(baseChain)
+	var insertedRules, addedRules []*nftables.Rule
+	mockNft.EXPECT().InsertRule(gomock.Any()).DoAndReturn(func(rule *nftables.Rule) *nftables.Rule {
+		insertedRules = append(insertedRules, rule)
+		return rule
+	}).Times(1)
+	mockNft.EXPECT().AddRule(gomock.Any()).DoAndReturn(func(rule *nftables.Rule) *nftables.Rule {
+		addedRules = append(addedRules, rule)
+		return rule
+	}).Times(2)
+
+	require.NoError(t, connmark.ensureBaseChainRules(table, baseChain, targetChain))
+	require.Len(t, insertedRules, 1)
+	require.Len(t, addedRules, 2)
+	assert.True(t, isFibLocalReturnRule(insertedRules[0]))
+	assert.True(t, isJumpRule(addedRules[0], targetChain.Name, connmark.vethPrefix))
+	bit, ok := classifyRestoreRule(addedRules[1], connmark.mark)
+	assert.Equal(t, connmark.mark, bit)
+	assert.True(t, ok)
 }
 
 func TestEnsureBaseChainRulesUsesReturnedRuleOrder(t *testing.T) {
@@ -949,21 +1059,18 @@ func TestEnsureBaseChainRulesUsesReturnedRuleOrder(t *testing.T) {
 	baseChain := &nftables.Chain{Name: nftBaseChainName, Table: table}
 	targetChain := &nftables.Chain{Name: nftChainName, Table: table}
 	fibRule := newTestFibRule(1)
-	clearRule := newTestRestoreRule(connmark.mark, false)
-	clearRule.Handle = 3
+	restoreRule := newTestRestoreRule(connmark.mark)
+	restoreRule.Handle = 3
 	jumpRule := newTestJumpRule(2)
-	setRule := newTestRestoreRule(connmark.mark, true)
-	setRule.Handle = 4
 
 	mockNft.EXPECT().GetRules(table, baseChain).Return([]*nftables.Rule{
 		fibRule,
-		clearRule,
+		restoreRule,
 		jumpRule,
-		setRule,
 	}, nil)
 	mockNft.EXPECT().FlushChain(baseChain)
 	mockNft.EXPECT().InsertRule(gomock.Any()).Return(&nftables.Rule{}).Times(1)
-	mockNft.EXPECT().AddRule(gomock.Any()).Return(&nftables.Rule{}).Times(3)
+	mockNft.EXPECT().AddRule(gomock.Any()).Return(&nftables.Rule{}).Times(2)
 
 	assert.NoError(t, connmark.ensureBaseChainRules(table, baseChain, targetChain))
 }
@@ -1025,7 +1132,7 @@ func TestNftConnmarkSetup_StaleRulesRemoved(t *testing.T) {
 	mockNft.EXPECT().GetRules(table, connmarkChain).Return([]*nftables.Rule{staleRule}, nil)
 	mockNft.EXPECT().DelRule(staleRule).Return(nil) // stale rule should be deleted
 	mockNft.EXPECT().InsertRule(gomock.Any()).Return(&nftables.Rule{}).Times(2)
-	mockNft.EXPECT().AddRule(gomock.Any()).Return(&nftables.Rule{}).Times(4)
+	mockNft.EXPECT().AddRule(gomock.Any()).Return(&nftables.Rule{}).Times(3)
 
 	err := connmark.Setup([]string{"10.0.0.0/8"})
 	assert.NoError(t, err)
