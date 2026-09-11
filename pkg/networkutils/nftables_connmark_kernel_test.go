@@ -60,22 +60,32 @@ func TestNftKernel_Setup(t *testing.T) {
 	require.NoError(t, c.Setup([]string{"10.0.0.0/8", "172.16.0.0/12"}))
 
 	base := getRules(t, nftBaseChainName)
-	var fibH, jumpH, restoreH uint64
-	for _, r := range base {
+	fibIndex, jumpIndex, restoreClearIndex, restoreSetIndex := -1, -1, -1, -1
+	for ruleIndex, r := range base {
 		switch {
 		case isFibLocalReturnRule(r):
-			fibH = r.Handle
+			fibIndex = ruleIndex
 		case isJumpRule(r, nftChainName, "eni"):
-			jumpH = r.Handle
-		case isRestoreRule(r, 0x80):
-			restoreH = r.Handle
+			jumpIndex = ruleIndex
+		default:
+			bit, set, ok := classifyRestoreRule(r, 0x80)
+			if !ok || bit != 0x80 {
+				continue
+			}
+			if set {
+				restoreSetIndex = ruleIndex
+			} else {
+				restoreClearIndex = ruleIndex
+			}
 		}
 	}
-	assert.NotZero(t, fibH, "fib rule missing")
-	assert.NotZero(t, jumpH, "jump rule missing")
-	assert.NotZero(t, restoreH, "restore rule missing")
-	assert.Less(t, fibH, jumpH, "fib must precede jump")
-	assert.Less(t, jumpH, restoreH, "jump must precede restore")
+	assert.NotEqual(t, -1, fibIndex, "fib rule missing")
+	assert.NotEqual(t, -1, jumpIndex, "jump rule missing")
+	assert.NotEqual(t, -1, restoreClearIndex, "restore-clear rule missing")
+	assert.NotEqual(t, -1, restoreSetIndex, "restore-set rule missing")
+	assert.Less(t, fibIndex, jumpIndex, "fib must precede jump")
+	assert.Less(t, jumpIndex, restoreClearIndex, "jump must precede restore-clear")
+	assert.Less(t, restoreClearIndex, restoreSetIndex, "restore-clear must precede restore-set")
 
 	snat := getRules(t, nftChainName)
 	var cidrs []string
@@ -100,7 +110,7 @@ func TestNftKernel_Idempotent(t *testing.T) {
 	require.NoError(t, c.Setup(cidrs))
 	require.NoError(t, c.Setup(cidrs))
 
-	assert.Len(t, getRules(t, nftBaseChainName), 3, "base chain: fib + jump + restore")
+	assert.Len(t, getRules(t, nftBaseChainName), 4, "base chain: fib + jump + 2 restore rules")
 	assert.Len(t, getRules(t, nftChainName), 3, "snat-mark: 2 CIDRs + set-mark")
 }
 
@@ -118,6 +128,48 @@ func TestNftKernel_CIDRReconciliation(t *testing.T) {
 		}
 	}
 	assert.ElementsMatch(t, []string{"10.0.0.0/8", "192.168.0.0/16"}, cidrs)
+}
+
+func TestNftKernel_LegacyRestoreRuleReconciled(t *testing.T) {
+	skipUnlessKernelTest(t)
+	c := newTestConnmark(t)
+	cidrs := []string{"10.0.0.0/8"}
+	require.NoError(t, c.Setup(cidrs))
+
+	conn, err := nftables.New()
+	require.NoError(t, err)
+	table := &nftables.Table{Family: nftables.TableFamilyIPv4, Name: nftTableName}
+	baseChain := &nftables.Chain{Name: nftBaseChainName, Table: table}
+	conn.FlushChain(baseChain)
+	for _, rule := range []*nftables.Rule{
+		newTestFibRule(0),
+		newTestJumpRule(0),
+		newTestLegacyRestoreRule(0x80),
+	} {
+		rule.Table = table
+		rule.Chain = baseChain
+		conn.AddRule(rule)
+	}
+	require.NoError(t, conn.Flush())
+
+	require.NoError(t, c.Setup(cidrs))
+	require.NoError(t, c.Setup(cidrs))
+
+	var clearRules, setRules int
+	for _, rule := range getRules(t, nftBaseChainName) {
+		bit, set, ok := classifyRestoreRule(rule, 0x80)
+		if !ok || bit != 0x80 {
+			continue
+		}
+		if set {
+			setRules++
+		} else {
+			clearRules++
+		}
+	}
+	assert.Equal(t, 1, clearRules)
+	assert.Equal(t, 1, setRules)
+	assert.Len(t, getRules(t, nftBaseChainName), 4)
 }
 
 func TestNftKernel_Cleanup(t *testing.T) {

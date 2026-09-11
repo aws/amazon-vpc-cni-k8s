@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"math/bits"
 	"net"
 	"strings"
 	"sync/atomic"
@@ -61,6 +62,11 @@ type nftConnmark struct {
 	mark        uint32
 	cleanupOnce atomic.Bool
 	newIptables func(iptables.Protocol) (iptableswrapper.IPTablesIface, error)
+}
+
+type restoreRuleKey struct {
+	bit uint32
+	set bool
 }
 
 var _ Connmark = (*nftConnmark)(nil)
@@ -110,7 +116,8 @@ func newNftablesConnmark(vethPrefix string, mark uint32) (Connmark, error) {
 //	        type nat hook prerouting priority -90; policy accept;
 //	        fib daddr type local return
 //	        iifname "eni*" counter jump snat-mark
-//	        counter ct mark & 0x80 meta mark set ct mark & 0x80
+//	        ct mark & 0x80 == 0x0 counter meta mark set meta mark & 0xffffff7f
+//	        ct mark & 0x80 == 0x80 counter meta mark set meta mark | 0x80
 //	    }
 //	    chain snat-mark {
 //	        counter ip daddr 172.16.0.0/12 return
@@ -238,17 +245,17 @@ func (c *nftConnmark) cleanupIptablesConnmarkRules() error {
 	return nil
 }
 
-// ensureBaseChainRules ensures the nat-prerouting base chain contains exactly three
-// rules in the correct order, adding any that are missing:
+// ensureBaseChainRules ensures the nat-prerouting base chain contains the
+// required rules in the correct order, adding any that are missing:
 //
 //  1. fib daddr type local return — short-circuits locally-destined traffic so it
 //     is never marked for SNAT.
 //  2. iifname "<vethPrefix>*" counter jump <targetChain> — matches ingress traffic
 //     from pod veth interfaces and jumps to the snat-mark chain for CIDR-based
 //     exemption checks and conntrack mark setting.
-//  3. counter ct mark & <mark> meta mark set ct mark & <mark> — restores the
-//     conntrack mark into the packet's firewall mark (fwmark) so that the SNAT
-//     decision persists across subsequent packets in the same connection.
+//  3. For each bit in <mark>, two conditional rules copy that conntrack bit to
+//     the packet's firewall mark (fwmark) without changing unrelated bits.
+//     This preserves marks owned by other networking components.
 //
 // This function will remove rules which are not present in above list, and maintain sequence of this rules.
 func (c *nftConnmark) ensureBaseChainRules(table *nftables.Table, baseChain, targetChain *nftables.Chain) error {
@@ -256,30 +263,57 @@ func (c *nftConnmark) ensureBaseChainRules(table *nftables.Table, baseChain, tar
 	if err != nil {
 		return err
 	}
-	var fibRule, restoreRule, jumpRule *nftables.Rule
+	var fibRule, jumpRule *nftables.Rule
+	fibRuleIndex, jumpRuleIndex := -1, -1
+	restoreRules := make(map[restoreRuleKey]*nftables.Rule)
+	restoreRuleIndexes := make(map[restoreRuleKey]int)
 	var staleRules []*nftables.Rule
 
-	for _, rule := range rules {
+	for ruleIndex, rule := range rules {
 		switch {
 		case isFibLocalReturnRule(rule) && fibRule == nil:
 			fibRule = rule
+			fibRuleIndex = ruleIndex
 		case isJumpRule(rule, targetChain.Name, c.vethPrefix) && jumpRule == nil:
 			jumpRule = rule
-		case isRestoreRule(rule, c.mark) && restoreRule == nil:
-			restoreRule = rule
+			jumpRuleIndex = ruleIndex
 		default:
-			staleRules = append(staleRules, rule)
+			bit, set, ok := classifyRestoreRule(rule, c.mark)
+			key := restoreRuleKey{bit: bit, set: set}
+			if ok && restoreRules[key] == nil {
+				restoreRules[key] = rule
+				restoreRuleIndexes[key] = ruleIndex
+			} else {
+				staleRules = append(staleRules, rule)
+			}
 		}
 	}
-	allRulesPresent := fibRule != nil && jumpRule != nil && restoreRule != nil
-	ordered := allRulesPresent && fibRule.Handle < jumpRule.Handle && jumpRule.Handle < restoreRule.Handle
+
+	desiredRestoreRuleCount := 2 * bits.OnesCount32(c.mark)
+	allRulesPresent := fibRule != nil && jumpRule != nil && len(restoreRules) == desiredRestoreRuleCount
+	ordered := allRulesPresent && fibRuleIndex < jumpRuleIndex
+	previousRuleIndex := -1
+	if ordered {
+		previousRuleIndex = jumpRuleIndex
+	}
+	for bit := uint32(1); ordered && bit != 0; bit <<= 1 {
+		if c.mark&bit == 0 {
+			continue
+		}
+		clearRuleIndex := restoreRuleIndexes[restoreRuleKey{bit: bit, set: false}]
+		setRuleIndex := restoreRuleIndexes[restoreRuleKey{bit: bit, set: true}]
+		ordered = previousRuleIndex < clearRuleIndex && clearRuleIndex < setRuleIndex
+		previousRuleIndex = setRuleIndex
+	}
+
+	desiredRuleCount := 2 + desiredRestoreRuleCount
 	if allRulesPresent && ordered && len(staleRules) == 0 {
-		log.Debugf("base chain %s: all 3 desired rules present in correct order; no reconciliation needed", baseChain.Name)
+		log.Debugf("base chain %s: all %d desired rules present in correct order; no reconciliation needed", baseChain.Name, desiredRuleCount)
 		return nil
 	}
 	var errs []error
 	if allRulesPresent && ordered {
-		log.Debugf("base chain %s: 3 desired rules present and ordered, but %d stale rule(s) found; deleting stale rules", baseChain.Name, len(staleRules))
+		log.Debugf("base chain %s: %d desired rules present and ordered, but %d stale rule(s) found; deleting stale rules", baseChain.Name, desiredRuleCount, len(staleRules))
 		for _, r := range staleRules {
 			if err := c.nft.DelRule(r); err != nil {
 				errs = append(errs, fmt.Errorf("failed to delete stale rule with handle %d: %w", r.Handle, err))
@@ -288,12 +322,12 @@ func (c *nftConnmark) ensureBaseChainRules(table *nftables.Table, baseChain, tar
 		return errors.Join(errs...)
 	}
 
-	log.Debugf("base chain %s: rules missing or out of order (fib=%v jump=%v restore=%v ordered=%v stale=%d); flushing and reinstalling all 3 rules",
-		baseChain.Name, fibRule != nil, jumpRule != nil, restoreRule != nil, ordered, len(staleRules))
+	log.Debugf("base chain %s: rules missing or out of order (fib=%v jump=%v restore=%d/%d ordered=%v stale=%d); flushing and reinstalling all %d rules",
+		baseChain.Name, fibRule != nil, jumpRule != nil, len(restoreRules), desiredRestoreRuleCount, ordered, len(staleRules), desiredRuleCount)
 	c.nft.FlushChain(baseChain)
 	c.addFibLocalReturnRule(table, baseChain)
 	c.addJumpRule(table, baseChain, targetChain)
-	c.addRestoreRule(table, baseChain)
+	c.addRestoreRules(table, baseChain)
 	return nil
 }
 
@@ -487,17 +521,46 @@ func (c *nftConnmark) addJumpRule(table *nftables.Table, baseChain, targetChain 
 	})
 }
 
-// addRestoreRule adds: nft add rule ip aws-cni nat-prerouting counter ct mark & 0x80 meta mark set ct mark & 0x80
-func (c *nftConnmark) addRestoreRule(table *nftables.Table, chain *nftables.Chain) {
-	markBytes := binaryutil.NativeEndian.PutUint32(c.mark)
+// addRestoreRules copies each bit owned by the CNI from the conntrack mark to
+// the packet mark. Two mutually exclusive rules per bit are required because
+// nftables' netlink bitwise expression combines a register only with constants.
+func (c *nftConnmark) addRestoreRules(table *nftables.Table, chain *nftables.Chain) {
+	for bit := uint32(1); bit != 0; bit <<= 1 {
+		if c.mark&bit == 0 {
+			continue
+		}
+		c.addRestoreRule(table, chain, bit, false)
+		c.addRestoreRule(table, chain, bit, true)
+	}
+}
+
+func (c *nftConnmark) addRestoreRule(table *nftables.Table, chain *nftables.Chain, bit uint32, set bool) {
+	bitBytes := binaryutil.NativeEndian.PutUint32(bit)
+	zeroBytes := binaryutil.NativeEndian.PutUint32(0)
+	compareBytes := zeroBytes
+	packetXorBytes := zeroBytes
+	if set {
+		compareBytes = bitBytes
+		packetXorBytes = bitBytes
+	}
+
 	c.nft.AddRule(&nftables.Rule{
 		Table: table,
 		Chain: chain,
 		Exprs: []expr.Any{
+			&expr.Ct{Key: expr.CtKeyMARK, Register: 1},
+			&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 4, Mask: bitBytes, Xor: zeroBytes},
+			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: compareBytes},
 			&expr.Counter{},
-			&expr.Ct{Key: expr.CtKeyMARK, Register: 1},                                                          // load ct mark
-			&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 4, Mask: markBytes, Xor: []byte{0, 0, 0, 0}}, // AND with mask
-			&expr.Meta{Key: expr.MetaKeyMARK, SourceRegister: true, Register: 1},                                // store to fwmark
+			&expr.Meta{Key: expr.MetaKeyMARK, Register: 1},
+			&expr.Bitwise{
+				SourceRegister: 1,
+				DestRegister:   1,
+				Len:            4,
+				Mask:           binaryutil.NativeEndian.PutUint32(^bit),
+				Xor:            packetXorBytes,
+			},
+			&expr.Meta{Key: expr.MetaKeyMARK, SourceRegister: true, Register: 1},
 		},
 	})
 }
@@ -527,37 +590,63 @@ func isJumpRule(rule *nftables.Rule, targetChain, vethPrefix string) bool {
 	return hasIFaceMatch && hasJump && hasCounter && hasMetaKeyIIFNAME
 }
 
-// isRestoreRule recognises a rule shaped like:
+// classifyRestoreRule recognises one of the two rules that restores a single
+// owned conntrack-mark bit into the packet mark:
 //
-//	counter ct mark & <mark> meta mark set ct mark & <mark>
-func isRestoreRule(rule *nftables.Rule, mark uint32) bool {
-	hasCounter := false
-	hasCtLoad := false
-	hasBitwise := false
-	hasMetaStore := false
-	markBytes := binaryutil.NativeEndian.PutUint32(mark)
-	for _, e := range rule.Exprs {
-		if _, ok := e.(*expr.Counter); ok {
-			hasCounter = true
-		}
-		// Ct load: read ct mark into reg 1 (SourceRegister=false ⇒ Register is dest)
-		if ct, ok := e.(*expr.Ct); ok &&
-			ct.Key == expr.CtKeyMARK && !ct.SourceRegister && ct.Register == 1 {
-			hasCtLoad = true
-		}
-		// Restore rule uses AND: (ct_mark & mark) ^ 0x00, so Xor must be zero.
-		if bw, ok := e.(*expr.Bitwise); ok &&
-			bw.SourceRegister == 1 && bw.DestRegister == 1 && bw.Len == 4 &&
-			bytes.Equal(bw.Mask, markBytes) && bytes.Equal(bw.Xor, []byte{0, 0, 0, 0}) {
-			hasBitwise = true
-		}
-		// Meta store: write reg 1 into fwmark (SourceRegister=true ⇒ Register is src)
-		if m, ok := e.(*expr.Meta); ok &&
-			m.Key == expr.MetaKeyMARK && m.SourceRegister && m.Register == 1 {
-			hasMetaStore = true
-		}
+//	ct mark & <bit> == <0|bit> counter meta mark set meta mark <&|> <mask>
+func classifyRestoreRule(rule *nftables.Rule, mark uint32) (uint32, bool, bool) {
+	if len(rule.Exprs) != 7 {
+		return 0, false, false
 	}
-	return hasCounter && hasCtLoad && hasBitwise && hasMetaStore
+
+	ctLoad, ok := rule.Exprs[0].(*expr.Ct)
+	if !ok || ctLoad.Key != expr.CtKeyMARK || ctLoad.SourceRegister || ctLoad.Register != 1 {
+		return 0, false, false
+	}
+	ctBitwise, ok := rule.Exprs[1].(*expr.Bitwise)
+	if !ok ||
+		ctBitwise.SourceRegister != 1 || ctBitwise.DestRegister != 1 || ctBitwise.Len != 4 ||
+		len(ctBitwise.Mask) != 4 || !bytes.Equal(ctBitwise.Xor, []byte{0, 0, 0, 0}) {
+		return 0, false, false
+	}
+	bit := binaryutil.NativeEndian.Uint32(ctBitwise.Mask)
+	if bit == 0 || bit&(bit-1) != 0 || mark&bit == 0 {
+		return 0, false, false
+	}
+	cmp, ok := rule.Exprs[2].(*expr.Cmp)
+	if !ok || cmp.Op != expr.CmpOpEq || cmp.Register != 1 || len(cmp.Data) != 4 {
+		return 0, false, false
+	}
+	compareValue := binaryutil.NativeEndian.Uint32(cmp.Data)
+	if compareValue != 0 && compareValue != bit {
+		return 0, false, false
+	}
+	set := compareValue == bit
+	if _, ok := rule.Exprs[3].(*expr.Counter); !ok {
+		return 0, false, false
+	}
+	metaLoad, ok := rule.Exprs[4].(*expr.Meta)
+	if !ok || metaLoad.Key != expr.MetaKeyMARK || metaLoad.SourceRegister || metaLoad.Register != 1 {
+		return 0, false, false
+	}
+	packetBitwise, ok := rule.Exprs[5].(*expr.Bitwise)
+	if !ok ||
+		packetBitwise.SourceRegister != 1 || packetBitwise.DestRegister != 1 || packetBitwise.Len != 4 ||
+		!bytes.Equal(packetBitwise.Mask, binaryutil.NativeEndian.PutUint32(^bit)) {
+		return 0, false, false
+	}
+	expectedXor := binaryutil.NativeEndian.PutUint32(0)
+	if set {
+		expectedXor = binaryutil.NativeEndian.PutUint32(bit)
+	}
+	if !bytes.Equal(packetBitwise.Xor, expectedXor) {
+		return 0, false, false
+	}
+	metaStore, ok := rule.Exprs[6].(*expr.Meta)
+	if !ok || metaStore.Key != expr.MetaKeyMARK || !metaStore.SourceRegister || metaStore.Register != 1 {
+		return 0, false, false
+	}
+	return bit, set, true
 }
 
 // extractCIDRFromRule recovers the daddr CIDR from a rule shaped like:
