@@ -3860,3 +3860,58 @@ func TestGetAttachedENIsIPv6OnlyENIInIPv4Cluster(t *testing.T) {
 		assert.Empty(t, ens[1].IPv4Addresses)
 	}
 }
+
+// TestDescribeAllENIsReconcilesPrefixesMissingFromIMDS covers the case where
+// IMDS has not caught up with a prefix EC2 has already assigned. Everything
+// downstream treats this metadata as the complete set of addresses the ENI
+// owns, and ipamd's datastore drops checkpointed pod allocations that fall
+// outside it, so a short IMDS read here disowns up to 16 running pods per
+// missing /28.
+func TestDescribeAllENIsReconcilesPrefixesMissingFromIMDS(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	// IMDS reports one prefix; EC2 reports that one plus a second.
+	imdsPrefix := eni1Prefix
+	lateEC2Prefix := eni2Prefix
+
+	mockMetadata := testMetadata(map[string]interface{}{
+		metadataMACPath + primaryMAC + metadataIPv4Prefixes: imdsPrefix,
+	})
+
+	result := &ec2.DescribeNetworkInterfacesOutput{
+		NetworkInterfaces: []ec2types.NetworkInterface{{
+			NetworkInterfaceId: aws.String(primaryeniID),
+			Attachment: &ec2types.NetworkInterfaceAttachment{
+				DeviceIndex:      aws.Int32(0),
+				NetworkCardIndex: aws.Int32(0),
+			},
+			PrivateIpAddresses: []ec2types.NetworkInterfacePrivateIpAddress{
+				{PrivateIpAddress: aws.String(eni1PrivateIP), Primary: aws.Bool(true)},
+			},
+			Ipv4Prefixes: []ec2types.Ipv4PrefixSpecification{
+				{Ipv4Prefix: aws.String(imdsPrefix)},
+				{Ipv4Prefix: aws.String(lateEC2Prefix)},
+			},
+		}},
+	}
+
+	mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(result, nil)
+	vpc.SetInstance("test", 4, 10, 0, []vpc.NetworkCard{{MaximumNetworkInterfaces: 4, NetworkCardIndex: 0}}, "nitro", false)
+
+	cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2, instanceType: "test"}
+	metaData, err := cache.DescribeAllENIs(context.Background())
+	assert.NoError(t, err)
+
+	var got []string
+	for _, eni := range metaData.ENIMetadata {
+		if eni.ENIID != primaryeniID {
+			continue
+		}
+		for _, p := range eni.IPv4Prefixes {
+			got = append(got, aws.ToString(p.Ipv4Prefix))
+		}
+	}
+	assert.ElementsMatch(t, []string{imdsPrefix, lateEC2Prefix}, got,
+		"a prefix EC2 lists but IMDS has not reported must survive into the ENI metadata")
+}
