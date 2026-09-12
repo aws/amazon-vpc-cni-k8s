@@ -1788,13 +1788,27 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs(ctx context.Context) (Des
 		// Under prefix delegation the unit is a /28, so a single prefix missing here
 		// disowns up to 16 running pods.
 		//
-		// EC2 is the authority, as logOutOfSyncState already notes. Union rather
-		// than replace: this can only ever add addresses IMDS had not caught up on,
-		// never remove one it reported, so the pool cannot shrink because of this
-		// call. Anything EC2 has genuinely released is handled by reconciliation
-		// later, which is where that decision belongs.
+		// Union rather than replace: this can only add prefixes IMDS had not caught
+		// up on, never remove one it reported, so the pool cannot shrink here.
+		//
+		// Deliberately scoped to PREFIXES ONLY. The symmetric fix for secondary IPs
+		// is not safe by the same argument, because trusting EC2 in one direction
+		// cuts both ways: logOutOfSyncState detects staleness in BOTH directions,
+		// including IMDS addresses absent from DescribeNetworkInterfaces. An address
+		// released shortly before this restart can still appear in an eventually
+		// consistent EC2 response; adding it would let ipamd assign it to a pod that
+		// cannot communicate -- the same blackholed-pod symptom this change exists to
+		// prevent, reintroduced by another route.
+		//
+		// That risk is acceptable to carry for prefixes and not for addresses:
+		//   - prefixes are allocated and released as whole /28 units and churn far
+		//     less than individual secondary IPs, so the stale window is rarer;
+		//   - the cost of getting it wrong is asymmetric. A missing prefix disowns
+		//     up to 16 running pods; a missing secondary IP disowns one;
+		//   - secondary-IP mode already has a backstop that prefix mode lacks, the
+		//     len(IPv4Addresses) == 0 check below. There is no prefix-count
+		//     equivalent anywhere.
 		eniMetadata.IPv4Prefixes = unionIPv4Prefixes(eniID, eniMetadata.IPv4Prefixes, ec2res.Ipv4Prefixes)
-		eniMetadata.IPv4Addresses = unionIPv4Addresses(eniMetadata.IPv4Addresses, ec2res.PrivateIpAddresses)
 		eniMap[eniID] = eniMetadata
 
 		tagMap[eniMetadata.ENIID] = convertSDKTagsToTags(ec2res.TagSet)
@@ -1905,26 +1919,6 @@ func unionIPv4Prefixes(eniID string, imdsPrefixes, ec2Prefixes []ec2types.Ipv4Pr
 	if len(added) > 0 {
 		log.Warnf("DescribeAllENIs: IMDS did not report IPv4 prefixes %s on ENI %s that DescribeNetworkInterfaces lists. Using the EC2 view; pods holding addresses in those prefixes would otherwise be treated as stale.",
 			strings.Join(added, ","), eniID)
-	}
-	return result
-}
-
-// unionIPv4Addresses is the secondary-IP counterpart of unionIPv4Prefixes. The
-// divergence it covers is already detected by logOutOfSyncState, which only
-// logs it.
-func unionIPv4Addresses(imdsIPv4s, ec2IPv4s []ec2types.NetworkInterfacePrivateIpAddress) []ec2types.NetworkInterfacePrivateIpAddress {
-	seen := sets.String{}
-	for _, ip := range imdsIPv4s {
-		seen.Insert(aws.ToString(ip.PrivateIpAddress))
-	}
-	result := imdsIPv4s
-	for _, ip := range ec2IPv4s {
-		addr := aws.ToString(ip.PrivateIpAddress)
-		if addr == "" || seen.Has(addr) {
-			continue
-		}
-		seen.Insert(addr)
-		result = append(result, ip)
 	}
 	return result
 }
