@@ -297,6 +297,14 @@ type DataStore struct {
 	isPDEnabled      bool
 	ipCooldownPeriod time.Duration
 	networkCard      int
+
+	// unrecoveredAllocations holds checkpoint entries that could not be matched to
+	// the ENI pool during recovery. They are not in eniPool, so every subsequent
+	// write of the backing store -- which serializes from eniPool alone -- would
+	// otherwise drop them on the first pod churn after restart. Keeping them here
+	// and re-emitting them in writeBackingStoreUnsafe preserves the record across
+	// writes, so a later restart with a complete pool can still recover the pods.
+	unrecoveredAllocations []CheckpointEntry
 }
 
 // ENIInfos contains ENI IP information
@@ -417,21 +425,23 @@ func (ds *DataStore) ReadBackingStore(isv6Enabled bool) error {
 			// under prefix delegation one missing /28 disowns up to 16 live sandboxes at
 			// once. Record it, but do not treat it as proof of staleness.
 			unrecognized++
-			ds.log.Warnf("datastore: Sandbox %s uses IP Address %s that is absent from the ENI pool - not recovering it. If the pod is still running, its traffic will blackhole until it is recreated.",
+			ds.unrecoveredAllocations = append(ds.unrecoveredAllocations, allocation)
+			ds.log.Warnf("datastore: Sandbox %s uses IP Address %s that is absent from the ENI pool - not recovering it. If the pod is still running, its traffic will blackhole until it is recreated. Retaining the checkpoint entry so a later restart with a complete pool can recover it.",
 				allocation.IPAMKey, ipAddr.String())
 			prometheusmetrics.UnrecoveredCheckpointEntries.Inc()
 		}
 	}
 
-	// Some entries may have been purged during recovery, so write to backing store.
-	// Skip the write when any allocation went unrecognized: rewriting now serializes
-	// from the partially-reconstructed eniPool and erases those entries from the
-	// checkpoint permanently, destroying the only record that could recover them.
-	// Genuinely dead allocations are not leaked by retaining them -- the veth check
-	// at the top of this function prunes them on the next restart.
 	if unrecognized > 0 {
-		ds.log.Warnf("datastore: %d/%d checkpoint allocations were not found in the ENI pool; retaining the checkpoint unchanged so they can be recovered once the ENI pool is complete", unrecognized, len(data.Allocations))
-	} else if err := ds.writeBackingStoreUnsafe(); err != nil {
+		ds.log.Warnf("datastore: %d/%d checkpoint allocations were not found in the ENI pool; retaining them in the checkpoint so they can be recovered once the pool is complete", unrecognized, len(data.Allocations))
+	}
+
+	// Some entries may have been purged during recovery, so write to backing store.
+	// This is safe to do even when allocations went unrecognized: they are held in
+	// ds.unrecoveredAllocations and re-emitted below, so the write no longer erases
+	// them. Writing unconditionally also keeps the veth-existence prunes made
+	// earlier in this function persisted.
+	if err := ds.writeBackingStoreUnsafe(); err != nil {
 		ds.log.Warnf("Unable to update backing store after restoration: %v", err)
 	}
 
@@ -440,7 +450,13 @@ func (ds *DataStore) ReadBackingStore(isv6Enabled bool) error {
 }
 
 func (ds *DataStore) writeBackingStoreUnsafe() error {
-	allocations := make([]CheckpointEntry, 0, ds.assigned)
+	allocations := make([]CheckpointEntry, 0, ds.assigned+len(ds.unrecoveredAllocations))
+
+	// Entries that recovery could not match to the ENI pool are not in eniPool and
+	// so would be dropped by the loops below. Re-emit them: the checkpoint is the
+	// only record of which pod holds which address, and discarding it makes the
+	// pod unrecoverable rather than merely unmanaged.
+	allocations = append(allocations, ds.unrecoveredAllocations...)
 
 	for _, eni := range ds.eniPool {
 		// Loop through ENI's v4 prefixes

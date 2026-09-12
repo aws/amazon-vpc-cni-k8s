@@ -2350,21 +2350,39 @@ func TestDataStore_FindFreeableCidrs(t *testing.T) {
 // eniPool is reconstructed from an incomplete IMDS view at ipamd startup, so a
 // live sandbox's address is absent from the pool. The allocation must not be
 // erased from the checkpoint: doing so destroys the only record that can recover
-// the pod, and under prefix delegation a single missing /28 takes up to 16 live
-// sandboxes with it.
+// the pod, and under prefix delegation a single missing /28 disowns up to 16
+// running pods.
+//
+// The missing allocation carries pod metadata and a matching host veth, so it
+// passes normalizeCheckpointDataByPodVethExistence on the veth-existence path
+// rather than through that function's empty-metadata compatibility skip. That
+// matters because the whole argument for retaining the entry is that the pod has
+// just been confirmed live.
 func TestReadBackingStoreRetainsAllocationsMissingFromENIPool(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
-	netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
-	netLink.EXPECT().LinkList().Return([]netlink.Link{}, nil).AnyTimes()
 
-	// Two live sandboxes. 10.0.0.1 sits in the prefix ipamd did see; 10.0.1.1 sits
-	// in a prefix that EC2 has assigned but IMDS did not return on this read.
+	// enib5faff8a083 is the host-side veth for kube-system/coredns-57ff979f67-qqbdh;
+	// the pairing is taken from TestDataStore_validateAllocationByPodVethExistence.
+	netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
+	netLink.EXPECT().LinkList().Return([]netlink.Link{
+		&netlink.Device{LinkAttrs: netlink.LinkAttrs{Name: "eth0"}},
+		&netlink.Veth{LinkAttrs: netlink.LinkAttrs{Name: "enib5faff8a083"}},
+	}, nil).AnyTimes()
+
+	liveButMissing := CheckpointEntry{
+		IPAMKey: IPAMKey{"net0", "sandbox-missing", "eth0"},
+		IPv4:    "10.0.1.1",
+		Metadata: IPAMMetadata{
+			K8SPodNamespace: "kube-system",
+			K8SPodName:      "coredns-57ff979f67-qqbdh",
+		},
+	}
 	original := CheckpointData{
 		Version: CheckpointFormatVersion,
 		Allocations: []CheckpointEntry{
 			{IPAMKey: IPAMKey{"net0", "sandbox-present", "eth0"}, IPv4: "10.0.0.1"},
-			{IPAMKey: IPAMKey{"net0", "sandbox-missing", "eth0"}, IPv4: "10.0.1.1"},
+			liveButMissing,
 		},
 	}
 	checkpoint := NewTestCheckpoint(original)
@@ -2372,28 +2390,48 @@ func TestReadBackingStoreRetainsAllocationsMissingFromENIPool(t *testing.T) {
 	ds := NewDataStore(Testlog, checkpoint, true, defaultNetworkCard)
 	ds.netLink = netLink
 	assert.NoError(t, ds.AddENI("eni-1", 0, true, false, false, networkutils.CalculateRouteTableId(0, 0), ""))
-	// Only 10.0.0.0/28 is known to the pool. 10.0.1.0/28 is absent.
+	// Only 10.0.0.0/28 is known to the pool. 10.0.1.0/28 is absent, as it would be
+	// after a short IMDS read.
 	assert.NoError(t, ds.AddIPv4CidrToStore("eni-1", net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}, true))
 
 	assert.NoError(t, ds.ReadBackingStore(false))
 
 	// The recoverable sandbox is recovered.
 	assert.Equal(t, 1, ds.assigned)
+	assert.ElementsMatch(t, []string{"sandbox-present", "sandbox-missing"},
+		checkpointContainerIDs(t, checkpoint),
+		"checkpoint must retain an allocation that could not be matched to the ENI pool")
 
-	// The unrecoverable one is still in the checkpoint, not erased.
-	var restored CheckpointData
+	// The entry must also survive a later write. writeBackingStoreUnsafe serializes
+	// from eniPool, which the unrecovered allocation is absent from, and it is called
+	// by every mutating method -- so without the side set the first pod churn after
+	// restart would drop it. Assigning an address is the cheapest such mutation.
+	_, _, _, err := ds.AssignPodIPv4Address(
+		IPAMKey{"net0", "sandbox-new", "eth0"},
+		IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod"})
+	assert.NoError(t, err)
+
+	assert.ElementsMatch(t, []string{"sandbox-present", "sandbox-missing", "sandbox-new"},
+		checkpointContainerIDs(t, checkpoint),
+		"a retained allocation must survive subsequent writes of the backing store")
+}
+
+// checkpointContainerIDs reads the container IDs currently recorded in a test
+// checkpoint, tolerating either a value or pointer payload.
+func checkpointContainerIDs(t *testing.T, checkpoint *TestCheckpoint) []string {
+	t.Helper()
+	var data CheckpointData
 	switch d := checkpoint.Data.(type) {
 	case CheckpointData:
-		restored = d
+		data = d
 	case *CheckpointData:
-		restored = *d
+		data = *d
 	default:
 		t.Fatalf("unexpected checkpoint payload type %T", checkpoint.Data)
 	}
-	var ids []string
-	for _, a := range restored.Allocations {
+	ids := make([]string, 0, len(data.Allocations))
+	for _, a := range data.Allocations {
 		ids = append(ids, a.ContainerID)
 	}
-	assert.ElementsMatch(t, []string{"sandbox-present", "sandbox-missing"}, ids,
-		"checkpoint must retain allocations that could not be matched to the ENI pool")
+	return ids
 }
