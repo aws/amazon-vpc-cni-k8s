@@ -372,6 +372,7 @@ func (ds *DataStore) ReadBackingStore(isv6Enabled bool) error {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
+	unrecognized := 0
 	for _, allocation := range data.Allocations {
 		ipv4Addr := net.ParseIP(allocation.IPv4)
 		ipv6Addr := net.ParseIP(allocation.IPv6)
@@ -408,13 +409,29 @@ func (ds *DataStore) ReadBackingStore(isv6Enabled bool) error {
 			}
 		}
 		if !found {
-			ds.log.Infof("datastore: Sandbox %s uses unknown IP Address %s - presuming stale/dead",
+			// The allocation survived normalizeCheckpointDataByPodVethExistence above,
+			// so the sandbox's host-side veth still exists and the pod is live. Reaching
+			// here means the address is absent from eniPool, which is built from a single
+			// IMDS read in setupENI before this function runs. An incomplete or stale IMDS
+			// view is therefore indistinguishable from a genuinely dead allocation, and
+			// under prefix delegation one missing /28 disowns up to 16 live sandboxes at
+			// once. Record it, but do not treat it as proof of staleness.
+			unrecognized++
+			ds.log.Warnf("datastore: Sandbox %s uses IP Address %s that is absent from the ENI pool - not recovering it. If the pod is still running, its traffic will blackhole until it is recreated.",
 				allocation.IPAMKey, ipAddr.String())
+			prometheusmetrics.UnrecoveredCheckpointEntries.Inc()
 		}
 	}
 
-	// Some entries may have been purged during recovery, so write to backing store
-	if err := ds.writeBackingStoreUnsafe(); err != nil {
+	// Some entries may have been purged during recovery, so write to backing store.
+	// Skip the write when any allocation went unrecognized: rewriting now serializes
+	// from the partially-reconstructed eniPool and erases those entries from the
+	// checkpoint permanently, destroying the only record that could recover them.
+	// Genuinely dead allocations are not leaked by retaining them -- the veth check
+	// at the top of this function prunes them on the next restart.
+	if unrecognized > 0 {
+		ds.log.Warnf("datastore: %d/%d checkpoint allocations were not found in the ENI pool; retaining the checkpoint unchanged so they can be recovered once the ENI pool is complete", unrecognized, len(data.Allocations))
+	} else if err := ds.writeBackingStoreUnsafe(); err != nil {
 		ds.log.Warnf("Unable to update backing store after restoration: %v", err)
 	}
 
