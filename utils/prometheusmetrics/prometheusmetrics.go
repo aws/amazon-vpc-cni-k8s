@@ -146,6 +146,12 @@ var (
 			Help: "The number of IPs force removed while they had assigned pods",
 		},
 	)
+	UnrecoveredCheckpointEntries = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "awscni_unrecovered_checkpoint_entries",
+			Help: "The number of checkpointed pod allocations that could not be matched to the ENI pool during ipam state recovery",
+		},
+	)
 	TotalPrefixes = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "awscni_total_ipv4_prefixes",
@@ -249,6 +255,7 @@ func PrometheusRegister() {
 	prometheus.MustRegister(AssignedIPs)
 	prometheus.MustRegister(ForceRemovedENIs)
 	prometheus.MustRegister(ForceRemovedIPs)
+	prometheus.MustRegister(UnrecoveredCheckpointEntries)
 	prometheus.MustRegister(TotalPrefixes)
 	prometheus.MustRegister(IpsPerCidr)
 	prometheus.MustRegister(NoAvailableIPAddrs)
