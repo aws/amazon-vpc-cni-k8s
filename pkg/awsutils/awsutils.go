@@ -1727,12 +1727,6 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs(ctx context.Context) (Des
 		return DescribeAllENIsResult{}, err
 	}
 
-	// Collect the verified ENIs
-	var verifiedENIs []ENIMetadata
-	for _, eniMetadata := range eniMap {
-		verifiedENIs = append(verifiedENIs, eniMetadata)
-	}
-
 	// Collect ENI response into ENI metadata and tags.
 	var trunkENI string
 	efaENIs := make(map[string]bool, 0)
@@ -1786,8 +1780,33 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs(ctx context.Context) (Des
 		if len(eniMetadata.IPv4Addresses) > 0 {
 			logOutOfSyncState(eniID, eniMetadata.IPv4Addresses, ec2res.PrivateIpAddresses)
 		}
+		// IMDS and EC2 are queried independently and IMDS can lag, which matters
+		// because everything downstream treats this metadata as the complete set
+		// of addresses the ENI owns. ipamd builds its datastore pool from it, and
+		// ReadBackingStore then drops any checkpointed pod allocation whose address
+		// is not in that pool, treating a short IMDS read as proof the pod is dead.
+		// Under prefix delegation the unit is a /28, so a single prefix missing here
+		// disowns up to 16 running pods.
+		//
+		// EC2 is the authority, as logOutOfSyncState already notes. Union rather
+		// than replace: this can only ever add addresses IMDS had not caught up on,
+		// never remove one it reported, so the pool cannot shrink because of this
+		// call. Anything EC2 has genuinely released is handled by reconciliation
+		// later, which is where that decision belongs.
+		eniMetadata.IPv4Prefixes = unionIPv4Prefixes(eniID, eniMetadata.IPv4Prefixes, ec2res.Ipv4Prefixes)
+		eniMetadata.IPv4Addresses = unionIPv4Addresses(eniMetadata.IPv4Addresses, ec2res.PrivateIpAddresses)
+		eniMap[eniID] = eniMetadata
+
 		tagMap[eniMetadata.ENIID] = convertSDKTagsToTags(ec2res.TagSet)
 	}
+
+	// Collect the verified ENIs. This runs after the loop above so that the
+	// reconciled metadata is what callers receive.
+	var verifiedENIs []ENIMetadata
+	for _, eniMetadata := range eniMap {
+		verifiedENIs = append(verifiedENIs, eniMetadata)
+	}
+
 	return DescribeAllENIsResult{
 		ENIMetadata:             verifiedENIs,
 		TagMap:                  tagMap,
@@ -1864,6 +1883,52 @@ func badENIID(errMsg string) string {
 }
 
 // logOutOfSyncState compares the IP and metadata returned by IMDS and the EC2 API DescribeNetworkInterfaces calls
+// unionIPv4Prefixes returns the IMDS prefixes plus any the EC2 response lists
+// that IMDS had not reported yet. There is no prefix equivalent of
+// logOutOfSyncState, so a short prefix list is otherwise entirely silent.
+func unionIPv4Prefixes(eniID string, imdsPrefixes, ec2Prefixes []ec2types.Ipv4PrefixSpecification) []ec2types.Ipv4PrefixSpecification {
+	seen := sets.String{}
+	for _, p := range imdsPrefixes {
+		seen.Insert(aws.ToString(p.Ipv4Prefix))
+	}
+	result := imdsPrefixes
+	var added []string
+	for _, p := range ec2Prefixes {
+		cidr := aws.ToString(p.Ipv4Prefix)
+		if cidr == "" || seen.Has(cidr) {
+			continue
+		}
+		seen.Insert(cidr)
+		result = append(result, p)
+		added = append(added, cidr)
+	}
+	if len(added) > 0 {
+		log.Warnf("DescribeAllENIs: IMDS did not report IPv4 prefixes %s on ENI %s that DescribeNetworkInterfaces lists. Using the EC2 view; pods holding addresses in those prefixes would otherwise be treated as stale.",
+			strings.Join(added, ","), eniID)
+	}
+	return result
+}
+
+// unionIPv4Addresses is the secondary-IP counterpart of unionIPv4Prefixes. The
+// divergence it covers is already detected by logOutOfSyncState, which only
+// logs it.
+func unionIPv4Addresses(imdsIPv4s, ec2IPv4s []ec2types.NetworkInterfacePrivateIpAddress) []ec2types.NetworkInterfacePrivateIpAddress {
+	seen := sets.String{}
+	for _, ip := range imdsIPv4s {
+		seen.Insert(aws.ToString(ip.PrivateIpAddress))
+	}
+	result := imdsIPv4s
+	for _, ip := range ec2IPv4s {
+		addr := aws.ToString(ip.PrivateIpAddress)
+		if addr == "" || seen.Has(addr) {
+			continue
+		}
+		seen.Insert(addr)
+		result = append(result, ip)
+	}
+	return result
+}
+
 func logOutOfSyncState(eniID string, imdsIPv4s, ec2IPv4s []ec2types.NetworkInterfacePrivateIpAddress) {
 	// Comparing the IMDS IPv4 addresses attached to the ENI with the DescribeNetworkInterfaces AWS API call, which
 	// technically should be the source of truth and contain the freshest information. Let's just do a quick scan here
