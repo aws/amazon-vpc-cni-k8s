@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"runtime"
 	"syscall"
 	"testing"
 	"time"
@@ -25,9 +26,11 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
 	"github.com/pkg/errors"
 
+	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/coreos/go-iptables/iptables"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
@@ -35,6 +38,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/iptableswrapper"
 	mock_iptables "github.com/aws/amazon-vpc-cni-k8s/pkg/iptableswrapper/mocks"
 	mocks_ip "github.com/aws/amazon-vpc-cni-k8s/pkg/ipwrapper/mocks"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper/mock_netlink"
 	mock_netlinkwrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper/mocks"
 	mock_nswrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/nswrapper/mocks"
@@ -85,6 +89,154 @@ func TestSetupENINetwork(t *testing.T) {
 
 func TestSetupTrunkENINetwork(t *testing.T) {
 	testSetupENINetwork(t, true)
+}
+
+// Run on Linux with CAP_SYS_ADMIN and CAP_NET_ADMIN:
+// RUN_ENI_KERNEL_TESTS=1 go test ./pkg/networkutils -run TestSetupENINetworkNoPrefixRoute -v
+func TestSetupENINetworkNoPrefixRoute(t *testing.T) {
+	if os.Getenv("RUN_ENI_KERNEL_TESTS") != "1" {
+		t.Skip("set RUN_ENI_KERNEL_TESTS=1 to run the isolated network-namespace test")
+	}
+	for _, tc := range []struct {
+		name, ip, subnet string
+		family           int
+	}{
+		{"IPv4", testEniIP, testEniSubnet, unix.AF_INET},
+		{"IPv6", testEniIP6, testEniV6Subnet, unix.AF_INET6},
+	} {
+		for _, trunk := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/trunk=%t", tc.name, trunk), func(t *testing.T) {
+				// Namespace changes are thread-local. Never run this subtest in parallel.
+				runtime.LockOSThread()
+				originalNS, err := ns.GetCurrentNS()
+				if err != nil {
+					runtime.UnlockOSThread()
+					t.Fatal(err)
+				}
+				defer originalNS.Close()
+				defer func() {
+					if err := originalNS.Set(); err != nil {
+						// Keep the thread locked so Go retires it instead of reusing it.
+						t.Errorf("restore network namespace: %v", err)
+						return
+					}
+					runtime.UnlockOSThread()
+				}()
+				require.NoError(t, unix.Unshare(unix.CLONE_NEWNET))
+				mac, err := net.ParseMAC("02:00:00:00:00:01")
+				require.NoError(t, err)
+				link := &netlink.Dummy{LinkAttrs: netlink.LinkAttrs{Name: "eni-test", HardwareAddr: mac}}
+				require.NoError(t, netlink.LinkAdd(link))
+				require.NoError(t, netlink.LinkSetUp(link))
+				_, prefix, err := net.ParseCIDR(tc.subnet)
+				require.NoError(t, err)
+				addr := &netlink.Addr{IPNet: &net.IPNet{IP: net.ParseIP(tc.ip), Mask: prefix.Mask}}
+				realNetLink := netlinkwrapper.NewNetLink()
+				waitForAddress := func() {
+					// IPv6 DAD may defer the connected route until the address is ready.
+					// Poll on this locked thread; assertion helpers may launch goroutines
+					// which would query a different network namespace.
+					for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+						addrs, err := realNetLink.AddrList(link, tc.family)
+						require.NoError(t, err)
+						for _, installed := range addrs {
+							if installed.IP.Equal(addr.IP) {
+								require.Zero(t, installed.Flags&unix.IFA_F_DADFAILED, "IPv6 DAD failed")
+								if installed.Flags&unix.IFA_F_TENTATIVE == 0 {
+									return
+								}
+							}
+						}
+						time.Sleep(10 * time.Millisecond)
+					}
+					t.Fatal("ENI address did not become ready")
+				}
+				kernelRoutes := func() []netlink.Route {
+					routes, err := netlink.RouteListFiltered(tc.family, &netlink.Route{
+						Table: unix.RT_TABLE_MAIN, Protocol: unix.RTPROT_KERNEL,
+						LinkIndex: link.Attrs().Index, Dst: prefix,
+					}, netlink.RT_FILTER_TABLE|netlink.RT_FILTER_PROTOCOL|netlink.RT_FILTER_OIF|netlink.RT_FILTER_DST)
+					require.NoError(t, err)
+					return routes
+				}
+				// Positive control: the same address without the flag must create a route.
+				require.NoError(t, netlink.AddrAdd(link, addr))
+				waitForAddress()
+				require.NotEmpty(t, kernelRoutes(), "control address did not create a connected route")
+				require.NoError(t, netlink.AddrDel(link, addr))
+				require.Empty(t, kernelRoutes())
+
+				checks := 0
+				observed := &observeENIAddrAdd{NetLink: realNetLink, afterAdd: func() {
+					checks++
+					waitForAddress()
+					// Check before setupENINetwork can hide the regression with RouteDel.
+					require.Empty(t, kernelRoutes(), "AddrAdd installed a transient main-table kernel route")
+				}}
+				for attempt := 0; attempt < 3; attempt++ {
+					require.NoError(t, setupENINetwork(tc.ip, mac.String(), 0, tc.subnet,
+						observed, 0, 0, testMTU, testMaxENIPerNIC, trunk, testTable, attempt == 2))
+					require.Empty(t, kernelRoutes())
+					routes, err := netlink.RouteListFiltered(tc.family, &netlink.Route{Table: testTable}, netlink.RT_FILTER_TABLE)
+					require.NoError(t, err)
+					require.Len(t, routes, 2, "explicit ENI gateway and default routes must survive reconciliation")
+					gateway, hostBits := net.ParseIP("10.10.0.1"), 32
+					if tc.family == unix.AF_INET6 {
+						gateway, hostBits = net.ParseIP("fe80:ec2::1"), 128
+					}
+					gatewayRoutes, defaultRoutes := 0, 0
+					for _, route := range routes {
+						assert.Equal(t, link.Attrs().Index, route.LinkIndex)
+						bits := 0
+						if route.Dst != nil {
+							bits, _ = route.Dst.Mask.Size()
+						}
+						if bits == 0 {
+							defaultRoutes++
+							assert.True(t, route.Gw.Equal(gateway), "wrong default gateway: %v", route)
+						} else {
+							gatewayRoutes++
+							assert.Equal(t, hostBits, bits)
+							assert.True(t, route.Dst.IP.Equal(gateway), "wrong gateway link route: %v", route)
+							assert.Empty(t, route.Gw, "gateway route must be directly connected")
+						}
+					}
+					assert.Equal(t, 1, gatewayRoutes)
+					assert.Equal(t, 1, defaultRoutes)
+					rules, err := netlink.RuleList(tc.family)
+					require.NoError(t, err)
+					count := 0
+					for _, rule := range rules {
+						if rule.Table == testTable && rule.Src != nil && rule.Src.IP.Equal(addr.IP) {
+							count++
+							assert.Equal(t, FromPrimaryIPofENIRulePriority, rule.Priority)
+							bits, _ := rule.Src.Mask.Size()
+							assert.Equal(t, hostBits, bits)
+						}
+					}
+					if trunk {
+						assert.Zero(t, count, "trunk ENIs must not get a source rule")
+					} else {
+						assert.Equal(t, 1, count, "secondary ENIs must keep their source rule")
+					}
+				}
+				require.Equal(t, 3, checks, "fresh setup, reconciliation and an existing source rule must exercise the real AddrAdd")
+			})
+		}
+	}
+}
+
+type observeENIAddrAdd struct {
+	netlinkwrapper.NetLink
+	afterAdd func()
+}
+
+func (n *observeENIAddrAdd) AddrAdd(link netlink.Link, addr *netlink.Addr) error {
+	if err := n.NetLink.AddrAdd(link, addr); err != nil {
+		return err
+	}
+	n.afterAdd()
+	return nil
 }
 
 func testSetupENINetwork(t *testing.T, isTrunkENI bool) {
