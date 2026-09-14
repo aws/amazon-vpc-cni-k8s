@@ -21,6 +21,26 @@ SOAK_TIMEOUT_SECONDS=${SOAK_TIMEOUT_SECONDS:-600}
 SOAK_PROBE_TIMEOUT_SECONDS=${SOAK_PROBE_TIMEOUT_SECONDS:-5}
 NG_LABEL_KEY=${NG_LABEL_KEY:-kubernetes.io/os}
 NG_LABEL_VAL=${NG_LABEL_VAL:-linux}
+WORKLOAD_PROFILE_ID=${WORKLOAD_PROFILE_ID:-cni-functional-soak-v1}
+
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+source "${script_dir}/lib/workload-report.sh"
+WORKLOAD_REPORT_PATH=${WORKLOAD_REPORT_PATH:-"log/cni-soak-workload-report.json"}
+WORKLOAD_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+WORKLOAD_REQUESTED_PODS=$((SOAK_BASE_PODS + SOAK_IP_PRESSURE_PODS + 1))
+WORKLOAD_READY_PODS=0
+WORKLOAD_CREATED_PODS=0
+WORKLOAD_DELETED_PODS=0
+WORKLOAD_POD_THROUGHPUT=0
+WORKLOAD_CHURN_PODS_PER_ROUND=$SOAK_CHURN_PODS
+WORKLOAD_CHURN_INTERVAL_SECONDS=$SOAK_CYCLE_INTERVAL_SECONDS
+WORKLOAD_DURATION_SECONDS=0
+WORKLOAD_ROUNDS_REQUESTED=0
+WORKLOAD_ROUNDS_COMPLETED=0
+WORKLOAD_CONNECTIVITY_STATUS=unknown
+WORKLOAD_UNIQUE_IP_STATUS=unknown
+WORKLOAD_STATUS=running
+WORKLOAD_CLEANUP_STATUS=failed
 
 if [[ -n ${KUBE_CONFIG_PATH:-} && -z ${KUBECONFIG:-} ]]; then
   export KUBECONFIG=$KUBE_CONFIG_PATH
@@ -49,14 +69,30 @@ cleanup() {
   local status=$?
   trap - EXIT
   if ((status != 0)); then
+    WORKLOAD_STATUS=failed
     printf 'CNI soak test failed; collecting diagnostics\n' >&2
     print_diagnostics
+  else
+    WORKLOAD_STATUS=pass
   fi
+  local remaining_pods
+  remaining_pods=$("${KUBECTL[@]}" get pods \
+    --namespace "$NAMESPACE" \
+    --output name 2>/dev/null |
+    wc -l || true)
   if ! "${KUBECTL[@]}" delete namespace "$NAMESPACE" \
     --ignore-not-found=true \
     --wait=true \
     --timeout "${SOAK_TIMEOUT_SECONDS}s"; then
     printf 'Failed to delete namespace %s\n' "$NAMESPACE" >&2
+    status=1
+  else
+    WORKLOAD_DELETED_PODS=$((WORKLOAD_DELETED_PODS + remaining_pods))
+    WORKLOAD_CLEANUP_STATUS=pass
+  fi
+  WORKLOAD_COMPLETED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  if ! cni_write_workload_report; then
+    printf 'Failed to write CNI soak workload report\n' >&2
     status=1
   fi
   exit "$status"
@@ -114,6 +150,32 @@ probe_target() {
     --namespace "$NAMESPACE" \
     deployment/cni-soak-probe \
     -- wget -q -T "$SOAK_PROBE_TIMEOUT_SECONDS" -O /dev/null http://cni-soak-target/
+  WORKLOAD_CONNECTIVITY_STATUS=pass
+}
+
+verify_unique_pod_ips() {
+  local pod_count
+  local unique_ip_count
+  pod_count=$("${KUBECTL[@]}" get pods \
+    --namespace "$NAMESPACE" \
+    --output jsonpath='{range .items[*]}{.status.podIP}{"\n"}{end}' |
+    sed '/^$/d' |
+    wc -l)
+  unique_ip_count=$("${KUBECTL[@]}" get pods \
+    --namespace "$NAMESPACE" \
+    --output jsonpath='{range .items[*]}{.status.podIP}{"\n"}{end}' |
+    sed '/^$/d' |
+    sort -u |
+    wc -l)
+  if ((pod_count == 0 || unique_ip_count != pod_count)); then
+    printf 'CNI soak pod/IP count mismatch: pods=%s uniqueIPs=%s\n' \
+      "$pod_count" "$unique_ip_count" >&2
+    return 1
+  fi
+  if ((pod_count > WORKLOAD_READY_PODS)); then
+    WORKLOAD_READY_PODS=$pod_count
+  fi
+  WORKLOAD_UNIQUE_IP_STATUS=pass
 }
 
 health_check() {
@@ -121,6 +183,7 @@ health_check() {
   verify_deployment_ready cni-soak-probe 1
   verify_ip_pressure
   probe_target
+  verify_unique_pod_ips
 }
 
 restart_base_pods() {
@@ -141,6 +204,7 @@ restart_base_pods() {
   "${KUBECTL[@]}" delete pod "${pods[@]}" \
     --namespace "$NAMESPACE" \
     --wait=false
+  WORKLOAD_DELETED_PODS=$((WORKLOAD_DELETED_PODS + ${#pods[@]}))
   for pod in "${pods[@]}"; do
     "${KUBECTL[@]}" wait "pod/$pod" \
       --namespace "$NAMESPACE" \
@@ -148,6 +212,7 @@ restart_base_pods() {
       --timeout "${SOAK_TIMEOUT_SECONDS}s"
   done
   verify_deployment_ready cni-soak-target "$SOAK_BASE_PODS"
+  WORKLOAD_CREATED_PODS=$((WORKLOAD_CREATED_PODS + ${#pods[@]}))
 }
 
 toggle_ip_pressure() {
@@ -178,6 +243,11 @@ toggle_ip_pressure() {
       --replicas "$next"
     IP_PRESSURE_REPLICAS=$next
     verify_ip_pressure
+    if ((next > previous)); then
+      WORKLOAD_CREATED_PODS=$((WORKLOAD_CREATED_PODS + next - previous))
+    else
+      WORKLOAD_DELETED_PODS=$((WORKLOAD_DELETED_PODS + previous - next))
+    fi
     if ((next < previous)); then
       wait_for_ip_pressure_pod_count "$next"
     fi
@@ -196,6 +266,10 @@ for name in \
   SOAK_PROBE_TIMEOUT_SECONDS; do
   validate_positive_integer "$name" "${!name}"
 done
+if [[ $WORKLOAD_PROFILE_ID != cni-functional-soak-v1 ]]; then
+  printf 'Unsupported CNI soak workload profile %q\n' "$WORKLOAD_PROFILE_ID" >&2
+  exit 2
+fi
 if ((SOAK_CHURN_PODS > SOAK_BASE_PODS)); then
   printf 'SOAK_CHURN_PODS must not exceed SOAK_BASE_PODS\n' >&2
   exit 2
@@ -305,11 +379,14 @@ spec:
 EOF
 
 health_check
+WORKLOAD_CREATED_PODS=$((SOAK_BASE_PODS + 1))
 
 DURATION_SECONDS=$((SOAK_DURATION_MINUTES * 60))
-DEADLINE=$((SECONDS + DURATION_SECONDS))
-NEXT_CYCLE=$SECONDS
-NEXT_HEALTH=$SECONDS
+START_SECONDS=$SECONDS
+DEADLINE=$((START_SECONDS + DURATION_SECONDS))
+WORKLOAD_ROUNDS_REQUESTED=$(((DURATION_SECONDS + SOAK_CYCLE_INTERVAL_SECONDS - 1) / SOAK_CYCLE_INTERVAL_SECONDS))
+NEXT_CYCLE=$START_SECONDS
+NEXT_HEALTH=$START_SECONDS
 printf 'Running CNI soak workload for %s minutes; pressure node=%s\n' \
   "$SOAK_DURATION_MINUTES" "$TARGET_NODE"
 
@@ -317,11 +394,13 @@ while ((SECONDS < DEADLINE)); do
   if ((SECONDS >= NEXT_CYCLE)); then
     restart_base_pods
     toggle_ip_pressure
-    NEXT_CYCLE=$((SECONDS + SOAK_CYCLE_INTERVAL_SECONDS))
+    WORKLOAD_ROUNDS_COMPLETED=$((WORKLOAD_ROUNDS_COMPLETED + 1))
+    NEXT_CYCLE=$((START_SECONDS + WORKLOAD_ROUNDS_COMPLETED * SOAK_CYCLE_INTERVAL_SECONDS))
   fi
   if ((SECONDS >= NEXT_HEALTH)); then
     health_check
-    NEXT_HEALTH=$((SECONDS + SOAK_HEALTH_INTERVAL_SECONDS))
+    completed_health_intervals=$(((SECONDS - START_SECONDS) / SOAK_HEALTH_INTERVAL_SECONDS + 1))
+    NEXT_HEALTH=$((START_SECONDS + completed_health_intervals * SOAK_HEALTH_INTERVAL_SECONDS))
   fi
 
   NEXT_EVENT=$NEXT_CYCLE
@@ -341,4 +420,5 @@ if ((IP_PRESSURE_REPLICAS > 0)); then
   toggle_ip_pressure
 fi
 health_check
+WORKLOAD_DURATION_SECONDS=$((SECONDS - START_SECONDS))
 printf 'CNI soak test completed successfully\n'
