@@ -1372,29 +1372,8 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 		},
 		{
 			name: "vlanID below the valid range is rejected",
-			fields: fields{
-				linkByNameCalls: []linkByNameCall{
-					{
-						linkName: "eni8ea2c11fe35",
-						err:      errors.New("not exists"),
-					},
-					{
-						linkName: "eni8ea2c11fe35",
-						link:     hostVethWithIndex9,
-					},
-				},
-				ruleDelCalls: []ruleDelCall{
-					{
-						rule: oldFromHostVethRule,
-						err:  syscall.ENOENT,
-					},
-				},
-				withNetNSPathCalls: []withNetNSPathCall{
-					{
-						netNSPath: "/proc/42/ns/net",
-					},
-				},
-			},
+			// vlanID is validated before the veth pair is created, so no netlink or netns calls happen.
+			fields: fields{},
 			args: args{
 				hostVethName:       "eni8ea2c11fe35",
 				contVethName:       "eth0",
@@ -1411,29 +1390,8 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 		},
 		{
 			name: "vlanID above the valid range is rejected",
-			fields: fields{
-				linkByNameCalls: []linkByNameCall{
-					{
-						linkName: "eni8ea2c11fe35",
-						err:      errors.New("not exists"),
-					},
-					{
-						linkName: "eni8ea2c11fe35",
-						link:     hostVethWithIndex9,
-					},
-				},
-				ruleDelCalls: []ruleDelCall{
-					{
-						rule: oldFromHostVethRule,
-						err:  syscall.ENOENT,
-					},
-				},
-				withNetNSPathCalls: []withNetNSPathCall{
-					{
-						netNSPath: "/proc/42/ns/net",
-					},
-				},
-			},
+			// vlanID is validated before the veth pair is created, so no netlink or netns calls happen.
+			fields: fields{},
 			args: args{
 				hostVethName:       "eni8ea2c11fe35",
 				contVethName:       "eth0",
@@ -1450,29 +1408,8 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 		},
 		{
 			name: "vlanID mapping to a reserved route table is rejected",
-			fields: fields{
-				linkByNameCalls: []linkByNameCall{
-					{
-						linkName: "eni8ea2c11fe35",
-						err:      errors.New("not exists"),
-					},
-					{
-						linkName: "eni8ea2c11fe35",
-						link:     hostVethWithIndex9,
-					},
-				},
-				ruleDelCalls: []ruleDelCall{
-					{
-						rule: oldFromHostVethRule,
-						err:  syscall.ENOENT,
-					},
-				},
-				withNetNSPathCalls: []withNetNSPathCall{
-					{
-						netNSPath: "/proc/42/ns/net",
-					},
-				},
-			},
+			// vlanID is validated before the veth pair is created, so no netlink or netns calls happen.
+			fields: fields{},
 			args: args{
 				hostVethName: "eni8ea2c11fe35",
 				contVethName: "eth0",

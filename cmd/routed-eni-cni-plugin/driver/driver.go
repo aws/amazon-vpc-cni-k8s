@@ -353,6 +353,11 @@ func (n *linuxNetwork) SetupBranchENIPodNetwork(vethMetadata VirtualInterfaceMet
 	log.Debugf("SetupBranchENIPodNetwork: hostVethName=%s, contVethName=%s, netnsPath=%s, ipAddr=%v, vlanID=%d, eniMAC=%s, subnetGW=%s, parentIfIndex=%d, mtu=%d, podSGEnforcingMode=%v",
 		vethMetadata.HostVethName, vethMetadata.ContainerVethName, netnsPath, vethMetadata.IPAddress, vlanID, eniMAC, subnetGW, parentIfIndex, mtu, podSGEnforcingMode)
 
+	rtTable, err := vlanIDToRouteTable(vlanID)
+	if err != nil {
+		return errors.Wrap(err, "SetupBranchENIPodNetwork")
+	}
+
 	hostVeth, err := n.setupVeth(vethMetadata.HostVethName, vethMetadata.ContainerVethName, netnsPath, vethMetadata.IPAddress, mtu, log, 0)
 	if err != nil {
 		return errors.Wrapf(err, "SetupBranchENIPodNetwork: failed to setup veth pair")
@@ -373,11 +378,6 @@ func (n *linuxNetwork) SetupBranchENIPodNetwork(vethMetadata VirtualInterfaceMet
 	}
 	if err := networkutils.NetLinkRuleDelAll(n.netLink, oldFromHostVethRule); err != nil {
 		return errors.Wrapf(err, "SetupBranchENIPodNetwork: failed to delete hostVeth rule for %s", vethMetadata.HostVethName)
-	}
-
-	rtTable, err := vlanIDToRouteTable(vlanID)
-	if err != nil {
-		return errors.Wrap(err, "SetupBranchENIPodNetwork")
 	}
 
 	vlanLink, err := n.setupVlan(vlanID, eniMAC, subnetGW, parentIfIndex, rtTable, log)
