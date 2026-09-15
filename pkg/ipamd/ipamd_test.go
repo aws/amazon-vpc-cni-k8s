@@ -4386,3 +4386,65 @@ func TestIPAMContext_InInsufficientCidrCoolingPeriod(t *testing.T) {
 		})
 	}
 }
+
+func newIPv6TestContext(m *testMocks) *IPAMContext {
+	ds := testDatastorewithPrefix()
+	_ = ds.GetDataStore(defaultNetworkCard).AddENI(primaryENIid, primaryDevice, true, false, false, networkutils.CalculateRouteTableId(primaryDevice, 0), "")
+	return &IPAMContext{
+		awsClient:       m.awsutils,
+		networkClient:   m.network,
+		dataStoreAccess: ds,
+		enableIPv6:      true,
+		enableIPv4:      false,
+	}
+}
+
+func TestTryIPv6DatastoreSelfHeal_HappyPath(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	c := newIPv6TestContext(m)
+	m.awsutils.EXPECT().GetIPv6PrefixesFromEC2(gomock.Any(), primaryENIid).Return([]ec2types.Ipv6PrefixSpecification{}, nil)
+	prefix := "2001:db8::/80"
+	m.awsutils.EXPECT().AllocIPv6Prefixes(gomock.Any(), primaryENIid).Return([]*string{&prefix}, nil)
+
+	c.tryIPv6DatastoreSelfHeal(context.Background())
+}
+
+func TestTryIPv6DatastoreSelfHeal_NoENIInDatastore(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	c := &IPAMContext{
+		awsClient:       m.awsutils,
+		networkClient:   m.network,
+		dataStoreAccess: testDatastorewithPrefix(),
+		enableIPv6:      true,
+		enableIPv4:      false,
+	}
+
+	c.tryIPv6DatastoreSelfHeal(context.Background())
+}
+
+func TestTryIPv6DatastoreSelfHeal_AllocError(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	c := newIPv6TestContext(m)
+	m.awsutils.EXPECT().GetIPv6PrefixesFromEC2(gomock.Any(), primaryENIid).Return([]ec2types.Ipv6PrefixSpecification{}, nil)
+	m.awsutils.EXPECT().AllocIPv6Prefixes(gomock.Any(), primaryENIid).Return(nil, assert.AnError)
+
+	c.tryIPv6DatastoreSelfHeal(context.Background())
+}
+
+func TestTryIPv6DatastoreSelfHeal_SkipsWhenPrefixAttached(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	c := newIPv6TestContext(m)
+	ds := c.dataStoreAccess.GetDataStore(defaultNetworkCard)
+	_, ipnet, _ := net.ParseCIDR("2001:db8::/80")
+	_ = ds.AddIPv6CidrToStore(primaryENIid, *ipnet, true)
+
+	c.tryIPv6DatastoreSelfHeal(context.Background())
+}
