@@ -127,9 +127,7 @@ func (logConfig *Configuration) createZapLogger(callerSkip int) *zap.Logger {
 
 func (logConfig *Configuration) newZapLogger() *structuredLogger {
 	logger := logConfig.createZapLogger(2)
-	defer logger.Sync()
 	sugar := logger.Sugar()
-
 	return &structuredLogger{
 		zapLogger: sugar,
 	}

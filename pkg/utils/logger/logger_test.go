@@ -15,6 +15,7 @@ package logger
 
 import (
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -37,12 +38,33 @@ func TestLoggerGetSameInstance(t *testing.T) {
 	assert.True(t, log1 == log2)
 }
 
-func TestLoggerNewAndGetSameInstance(t *testing.T) {
+func TestLoggerNewReturnsIndependentLogger(t *testing.T) {
 	logConfig := LoadLogConfig()
+	// New() creates an independent logger for the caller; it must not replace
+	// the singleton returned by Get().
 	log1 := New(logConfig)
 	log2 := Get()
 
-	assert.True(t, log1 == log2)
+	assert.NotNil(t, log1)
+	assert.NotNil(t, log2)
+	assert.False(t, log1 == log2, "New() must not replace the Get() singleton")
+}
+
+func TestGetConcurrentSafety(t *testing.T) {
+	const goroutines = 20
+	instances := make([]Logger, goroutines)
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			instances[idx] = Get()
+		}(i)
+	}
+	wg.Wait()
+	for i := 1; i < goroutines; i++ {
+		assert.True(t, instances[0] == instances[i], "Get() must always return the same singleton")
+	}
 }
 
 func TestGetLogFileLocationReturnsDefaultPath(t *testing.T) {
