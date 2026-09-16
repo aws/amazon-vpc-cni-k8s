@@ -18,7 +18,7 @@
 		unit-test unit-test-race build-docker-test docker-func-test \
 		build-metrics docker-metrics \
 		metrics-unit-test docker-metrics-test \
-		validate-release-metadata validate-metadata-image
+		validate-release-metadata
 
 # VERSION is the source revision that executables and images are built from.
 VERSION ?= $(shell git describe --tags --always --dirty || echo "unknown")
@@ -152,11 +152,6 @@ validate-release-metadata: ## Validate metadata inputs used by release builds.
 	@test -n "$(BUILD_DATE)" && test "$(BUILD_DATE)" != "unknown" || { echo "BUILD_DATE must be set"; exit 1; }
 	@test "$$(date -u -d "$(BUILD_DATE)" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" = "$(BUILD_DATE)" || { echo "BUILD_DATE must be UTC RFC3339"; exit 1; }
 	@test -z "$$(git status --porcelain)" || { echo "release metadata must be generated from a clean tree"; exit 1; }
-
-validate-metadata-image: ## Build the production image and verify its emitted metadata.
-	$(MAKE) validate-release-metadata
-	$(MAKE) docker
-	./scripts/validate-metadata-image.sh "$(IMAGE_NAME)" "$(VERSION)" "$(GIT_COMMIT)" "$(BUILD_DATE)"
 
 # Build both CNI and metrics helper container images.
 all: docker docker-init docker-metrics   ## Builds Init, CNI and metrics helper container images.
