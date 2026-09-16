@@ -113,14 +113,19 @@ func setup(t *testing.T) *testMocks {
 	eniconfigscheme.AddToScheme(k8sSchema)
 	rcscheme.AddToScheme(k8sSchema)
 
-	return &testMocks{
+	m := &testMocks{
 		ctrl:      ctrl,
 		awsutils:  mock_awsutils.NewMockAPIs(ctrl),
 		k8sClient: testclient.NewClientBuilder().WithScheme(k8sSchema).Build(),
 		network:   mock_networkutils.NewMockNetworkAPIs(ctrl),
 		eniconfig: mock_eniconfig.NewMockENIConfig(ctrl),
 	}
+	return m
 }
+
+// testNodeProviderID is a normal (non-HyperPod) EKS providerID used by nodeInit tests to
+// assert the node's providerID is passed through to InitHyperPodFromProviderID.
+const testNodeProviderID = "aws:///us-west-2a/i-0abc123def4567890"
 
 func TestNodeInit(t *testing.T) {
 	m := setup(t)
@@ -209,7 +214,7 @@ func TestNodeInit(t *testing.T) {
 	fakeNode := v1.Node{
 		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
 		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
-		Spec:       v1.NodeSpec{},
+		Spec:       v1.NodeSpec{ProviderID: testNodeProviderID},
 		Status: v1.NodeStatus{
 			Capacity: v1.ResourceList{
 				v1.ResourcePods: maxPods,
@@ -217,6 +222,7 @@ func TestNodeInit(t *testing.T) {
 		},
 	}
 	m.k8sClient.Create(ctx, &fakeNode)
+	m.awsutils.EXPECT().InitHyperPodFromProviderID(context.Background(), testNodeProviderID).Return(nil).Times(1)
 
 	// Add IPs
 	m.awsutils.EXPECT().AllocIPAddresses(gomock.Any(), gomock.Any(), gomock.Any())
@@ -312,7 +318,7 @@ func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 	fakeNode := v1.Node{
 		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
 		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
-		Spec:       v1.NodeSpec{},
+		Spec:       v1.NodeSpec{ProviderID: testNodeProviderID},
 		Status: v1.NodeStatus{
 			Capacity: v1.ResourceList{
 				v1.ResourcePods: maxPods,
@@ -320,6 +326,7 @@ func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 		},
 	}
 	m.k8sClient.Create(ctx, &fakeNode)
+	m.awsutils.EXPECT().InitHyperPodFromProviderID(context.Background(), testNodeProviderID).Return(nil).Times(1)
 
 	os.Setenv("MY_NODE_NAME", myNodeName)
 	err := mockContext.nodeInit(context.Background())
@@ -405,10 +412,11 @@ func TestNodeInitwithPDenabledIPv6Mode(t *testing.T) {
 	fakeNode := v1.Node{
 		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
 		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
-		Spec:       v1.NodeSpec{},
+		Spec:       v1.NodeSpec{ProviderID: testNodeProviderID},
 		Status:     v1.NodeStatus{},
 	}
 	m.k8sClient.Create(ctx, &fakeNode)
+	m.awsutils.EXPECT().InitHyperPodFromProviderID(context.Background(), testNodeProviderID).Return(nil).Times(1)
 	os.Setenv("MY_NODE_NAME", myNodeName)
 
 	err := mockContext.nodeInit(context.Background())
@@ -3121,7 +3129,7 @@ func TestNodeInitPrimarySubnetExclusionWithExistingPodIPs(t *testing.T) {
 	fakeNode := v1.Node{
 		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
 		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
-		Spec:       v1.NodeSpec{},
+		Spec:       v1.NodeSpec{ProviderID: testNodeProviderID},
 		Status: v1.NodeStatus{
 			Capacity: v1.ResourceList{
 				v1.ResourcePods: maxPods,
@@ -3129,6 +3137,7 @@ func TestNodeInitPrimarySubnetExclusionWithExistingPodIPs(t *testing.T) {
 		},
 	}
 	m.k8sClient.Create(ctx, &fakeNode)
+	m.awsutils.EXPECT().InitHyperPodFromProviderID(context.Background(), testNodeProviderID).Return(nil).Times(1)
 
 	// Expect cleanup calls for excluded primary ENI (with existing pod IPs)
 	// The cleanup function will try to unassign any unassigned IPs/prefixes
@@ -3263,7 +3272,7 @@ func TestNodeInitPrimarySubnetExclusionWithoutExistingPodIPs(t *testing.T) {
 	fakeNode := v1.Node{
 		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
 		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
-		Spec:       v1.NodeSpec{},
+		Spec:       v1.NodeSpec{ProviderID: testNodeProviderID},
 		Status: v1.NodeStatus{
 			Capacity: v1.ResourceList{
 				v1.ResourcePods: maxPods,
@@ -3271,6 +3280,7 @@ func TestNodeInitPrimarySubnetExclusionWithoutExistingPodIPs(t *testing.T) {
 		},
 	}
 	m.k8sClient.Create(ctx, &fakeNode)
+	m.awsutils.EXPECT().InitHyperPodFromProviderID(context.Background(), testNodeProviderID).Return(nil).Times(1)
 
 	// Expect cleanup calls for excluded primary ENI
 	// The cleanup function will try to unassign any unassigned IPs/prefixes
@@ -3786,10 +3796,11 @@ func TestNodeInit_IPv6_PrimaryENIExcluded(t *testing.T) {
 	fakeNode := v1.Node{
 		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
 		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
-		Spec:       v1.NodeSpec{},
+		Spec:       v1.NodeSpec{ProviderID: testNodeProviderID},
 		Status:     v1.NodeStatus{},
 	}
 	m.k8sClient.Create(ctx, &fakeNode)
+	m.awsutils.EXPECT().InitHyperPodFromProviderID(context.TODO(), testNodeProviderID).Return(nil).Times(1)
 	os.Setenv("MY_NODE_NAME", myNodeName)
 
 	err := mockContext.nodeInit(context.TODO())
