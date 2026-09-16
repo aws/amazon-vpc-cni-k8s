@@ -86,14 +86,14 @@ You can share log bundle with cni team on this email k8s-awscni-triage@amazon.co
 At startup, `aws-k8s-agent` makes one best-effort attempt to write
 `/var/log/aws-routed-eni/aws-vpc-cni-metadata.json` on the node. The JSON
 includes the schema version, component version, full Git commit, build date,
-Go version, target platform, and publication time. The standard EKS node
-support bundle collects this file.
+Go version, and target platform. The standard EKS node support bundle collects
+this file.
 
 This diagnostic file is not authoritative evidence of the currently running
 image. A missing file does not prevent networking startup, and a downgrade to
-a version that does not publish metadata can leave an older file. Use
-`generatedAt` together with the pod's container image or managed add-on
-information when checking freshness.
+a version that does not publish metadata can leave an older file. Compare its
+version, commit, and build date with the pod's container image or managed
+add-on information.
 
 ### ipamD debugging commands
 
