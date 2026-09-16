@@ -25,7 +25,7 @@ import (
 )
 
 func TestMarshalMetadata(t *testing.T) {
-	setBuildMetadataForTest(t, "v1.2.3", strings.Repeat("a", 40), "2026-09-16T05:00:00Z", "go1.26.6")
+	setBuildMetadataForTest(t, "v1.2.3", strings.Repeat("a", 40), "go1.26.6")
 
 	data, err := marshalMetadata()
 	if err != nil {
@@ -37,7 +37,6 @@ func TestMarshalMetadata(t *testing.T) {
 		"  \"component\": \"aws-vpc-cni\",\n" +
 		"  \"version\": \"v1.2.3\",\n" +
 		"  \"gitCommit\": \"" + strings.Repeat("a", 40) + "\",\n" +
-		"  \"buildDate\": \"2026-09-16T05:00:00Z\",\n" +
 		"  \"goVersion\": \"go1.26.6\",\n" +
 		"  \"platform\": \"" + runtime.GOOS + "/" + runtime.GOARCH + "\"\n" +
 		"}\n"
@@ -47,7 +46,7 @@ func TestMarshalMetadata(t *testing.T) {
 }
 
 func TestMarshalMetadataUsesUnknownFallbacks(t *testing.T) {
-	setBuildMetadataForTest(t, "", "", "", "")
+	setBuildMetadataForTest(t, "", "", "")
 
 	data, err := marshalMetadata()
 	if err != nil {
@@ -58,21 +57,13 @@ func TestMarshalMetadataUsesUnknownFallbacks(t *testing.T) {
 	if err := json.Unmarshal(data, &record); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
-	if record.Version != "unknown" || record.GitCommit != "unknown" || record.BuildDate != "unknown" || record.GoVersion != "unknown" {
+	if record.Version != "unknown" || record.GitCommit != "unknown" || record.GoVersion != "unknown" {
 		t.Fatalf("metadata fallbacks = %#v, want unknown build values", record)
 	}
 }
 
-func TestMarshalMetadataRejectsOversizedRecord(t *testing.T) {
-	setBuildMetadataForTest(t, strings.Repeat("x", maxMetadataSize), "commit", "date", "go")
-
-	if _, err := marshalMetadata(); err == nil {
-		t.Fatal("marshalMetadata() error = nil, want size error")
-	}
-}
-
 func TestWriteMetadataCreatesAndReplacesFile(t *testing.T) {
-	setBuildMetadataForTest(t, "v1.2.3", strings.Repeat("b", 40), "2026-09-16T05:00:00Z", "go1.26.6")
+	setBuildMetadataForTest(t, "v1.2.3", strings.Repeat("b", 40), "go1.26.6")
 	path := filepath.Join(t.TempDir(), "aws-vpc-cni-metadata.json")
 
 	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
@@ -99,7 +90,7 @@ func TestWriteMetadataCreatesAndReplacesFile(t *testing.T) {
 }
 
 func TestWriteMetadataPreservesDestinationOnRenameFailure(t *testing.T) {
-	setBuildMetadataForTest(t, "v1.2.3", "commit", "date", "go")
+	setBuildMetadataForTest(t, "v1.2.3", "commit", "go")
 	dir := t.TempDir()
 	path := filepath.Join(dir, "aws-vpc-cni-metadata.json")
 	if err := os.Mkdir(path, 0o755); err != nil {
@@ -126,7 +117,7 @@ func TestWriteMetadataPreservesDestinationOnRenameFailure(t *testing.T) {
 }
 
 func TestWriteMetadataRequiresExistingParent(t *testing.T) {
-	setBuildMetadataForTest(t, "v1.2.3", "commit", "date", "go")
+	setBuildMetadataForTest(t, "v1.2.3", "commit", "go")
 	path := filepath.Join(t.TempDir(), "missing", "aws-vpc-cni-metadata.json")
 
 	if err := writeMetadata(path); err == nil {
@@ -176,22 +167,19 @@ func (writer channelWriter) Write(data []byte) (int, error) {
 	return len(data), nil
 }
 
-func setBuildMetadataForTest(t *testing.T, version, commit, buildDate, goVersion string) {
+func setBuildMetadataForTest(t *testing.T, version, commit, goVersion string) {
 	t.Helper()
 
 	originalVersion := Version
 	originalCommit := GitCommit
-	originalBuildDate := BuildDate
 	originalGoVersion := GoVersion
 	t.Cleanup(func() {
 		Version = originalVersion
 		GitCommit = originalCommit
-		BuildDate = originalBuildDate
 		GoVersion = originalGoVersion
 	})
 
 	Version = version
 	GitCommit = commit
-	BuildDate = buildDate
 	GoVersion = goVersion
 }

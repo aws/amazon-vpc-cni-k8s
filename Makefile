@@ -23,8 +23,6 @@
 # VERSION is the source revision that executables and images are built from.
 VERSION ?= $(shell git describe --tags --always --dirty || echo "unknown")
 GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
-SOURCE_DATE_EPOCH ?= $(shell git log -1 --format=%ct 2>/dev/null || date -u +%s)
-BUILD_DATE ?= $(shell date -u -d "@$(SOURCE_DATE_EPOCH)" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "unknown")
 
 # if the branch is master, use the version as master-<commit-hash>
 ifeq ($(shell git rev-parse --abbrev-ref HEAD),master)
@@ -33,8 +31,6 @@ endif
 
 VERSION := $(VERSION)
 GIT_COMMIT := $(GIT_COMMIT)
-SOURCE_DATE_EPOCH := $(SOURCE_DATE_EPOCH)
-BUILD_DATE := $(BUILD_DATE)
 
 GOLANG_VERSION ?= $(shell cat .go-version)
 # GOLANG_IMAGE is the building golang container image used.
@@ -101,7 +97,6 @@ endif
 VERSION_PKG = github.com/aws/amazon-vpc-cni-k8s/pkg/version
 LDFLAGS = -X $(VERSION_PKG).Version=$(VERSION) \
 		  -X $(VERSION_PKG).GitCommit=$(GIT_COMMIT) \
-		  -X $(VERSION_PKG).BuildDate=$(BUILD_DATE) \
 		  -X pkg/awsutils/awssession.version=$(VERSION)
 # ALLPKGS is the set of packages provided in source.
 ALLPKGS = $(shell go list $(VENDOR_OVERRIDE_FLAG) ./... | grep -v cmd/packet-verifier)
@@ -121,7 +116,6 @@ DOCKER_BUILD_FLAGS_CNI = --build-arg golang_image="$(GOLANG_IMAGE)" \
 					  --build-arg base_image="$(BASE_IMAGE_CNI)"	\
 					  --build-arg version="$(VERSION)" \
 					  --build-arg git_commit="$(GIT_COMMIT)" \
-					  --build-arg build_date="$(BUILD_DATE)" \
 					  --network=host \
 	  		          $(DOCKER_ARGS)
 # DOCKER_BUILD_FLAGS_CNI_INIT is the set of flags passed during CNI init
@@ -149,8 +143,6 @@ validate-release-metadata: ## Validate metadata inputs used by release builds.
 	@case "$(VERSION)" in *dirty*) echo "VERSION must not describe a dirty tree"; exit 1;; esac
 	@printf '%s\n' "$(GIT_COMMIT)" | grep -Eq '^[0-9a-f]{40}$$' || { echo "GIT_COMMIT must be a full commit hash"; exit 1; }
 	@test "$(GIT_COMMIT)" = "$$(git rev-parse HEAD)" || { echo "GIT_COMMIT must match the checked-out commit"; exit 1; }
-	@test -n "$(BUILD_DATE)" && test "$(BUILD_DATE)" != "unknown" || { echo "BUILD_DATE must be set"; exit 1; }
-	@test "$$(date -u -d "$(BUILD_DATE)" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" = "$(BUILD_DATE)" || { echo "BUILD_DATE must be UTC RFC3339"; exit 1; }
 	@test -z "$$(git status --porcelain)" || { echo "release metadata must be generated from a clean tree"; exit 1; }
 
 # Build both CNI and metrics helper container images.

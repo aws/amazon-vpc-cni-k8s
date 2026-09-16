@@ -26,7 +26,6 @@ import (
 const (
 	metadataSchemaVersion = 1
 	metadataComponent     = "aws-vpc-cni"
-	maxMetadataSize       = 8 * 1024
 )
 
 type metadata struct {
@@ -34,7 +33,6 @@ type metadata struct {
 	Component     string `json:"component"`
 	Version       string `json:"version"`
 	GitCommit     string `json:"gitCommit"`
-	BuildDate     string `json:"buildDate"`
 	GoVersion     string `json:"goVersion"`
 	Platform      string `json:"platform"`
 }
@@ -96,7 +94,6 @@ func marshalMetadata() ([]byte, error) {
 		Component:     metadataComponent,
 		Version:       valueOrUnknown(Version),
 		GitCommit:     valueOrUnknown(GitCommit),
-		BuildDate:     valueOrUnknown(BuildDate),
 		GoVersion:     valueOrUnknown(GoVersion),
 		Platform:      runtime.GOOS + "/" + runtime.GOARCH,
 	}
@@ -106,9 +103,6 @@ func marshalMetadata() ([]byte, error) {
 		return nil, fmt.Errorf("marshal metadata: %w", err)
 	}
 	data = append(data, '\n')
-	if len(data) > maxMetadataSize {
-		return nil, fmt.Errorf("metadata exceeds %d bytes", maxMetadataSize)
-	}
 	return data, nil
 }
 

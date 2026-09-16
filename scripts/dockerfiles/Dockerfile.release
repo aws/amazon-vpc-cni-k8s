@@ -6,14 +6,13 @@ WORKDIR /go/src/github.com/aws/amazon-vpc-cni-k8s
 ARG TARGETARCH
 ARG version
 ARG git_commit
-ARG build_date
 # Configure build with Go modules
 ENV GO111MODULE=on
 ENV GOPROXY=direct
 
 COPY . ./
-RUN make VERSION="$version" GIT_COMMIT="$git_commit" BUILD_DATE="$build_date" build-aws-vpc-cni && \
-    make VERSION="$version" GIT_COMMIT="$git_commit" BUILD_DATE="$build_date" build-linux
+RUN make VERSION="$version" GIT_COMMIT="$git_commit" build-aws-vpc-cni && \
+    make VERSION="$version" GIT_COMMIT="$git_commit" build-linux
 
 # Build from EKS minimal base + iptables by default
 FROM $base_image
