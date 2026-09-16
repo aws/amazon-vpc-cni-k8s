@@ -91,6 +91,11 @@ jobs:
           go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo
           curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
           sudo mv /tmp/eksctl /usr/local/bin/
+          # The SNAT/kube-proxy specs exec on-node commands via `kubectl node-shell`; install the
+          # plugin (pinned to a release tag) so kubectl discovers it on PATH.
+          curl --silent --location --fail -o /tmp/kubectl-node_shell https://raw.githubusercontent.com/kvaps/kubectl-node-shell/v1.11.0/kubectl-node_shell
+          chmod +x /tmp/kubectl-node_shell
+          sudo mv /tmp/kubectl-node_shell /usr/local/bin/kubectl-node_shell
       - name: Set up AWS credentials
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # refs/tags/v6.2.3
         with:
