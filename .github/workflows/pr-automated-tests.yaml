@@ -29,6 +29,8 @@ jobs:
         run: |
           make check-format
           make vet
+      - name: Validate release metadata
+        run: make validate-release-metadata
       - name: Build
         run: make build-linux
       - name: Build tests
@@ -56,8 +58,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # refs/tags/v7.0.1
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # refs/tags/v4.3.0
-      - name: Build CNI image
-        run: make docker
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # refs/tags/v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Build and validate CNI image metadata
+        run: make validate-metadata-image
   docker-build:
     name: Build Docker images
     needs: docker-build-arch

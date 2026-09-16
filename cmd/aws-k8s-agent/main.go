@@ -33,7 +33,8 @@ import (
 )
 
 const (
-	appName = "aws-node"
+	appName          = "aws-node"
+	metadataFilePath = "/host/var/log/aws-routed-eni/aws-vpc-cni-metadata.json"
 	// metricsPort is the port for prometheus metrics
 	metricsPort = 61678
 
@@ -104,6 +105,7 @@ func _main() int {
 
 	log.Infof("Starting L-IPAMD %s  ...", version.Version)
 	version.RegisterMetric()
+	version.PublishMetadataAsync(metadataFilePath, os.Stderr)
 
 	enabledPodEni := ipamd.EnablePodENI()
 	enabledCustomNetwork := ipamd.UseCustomNetworkCfg()
