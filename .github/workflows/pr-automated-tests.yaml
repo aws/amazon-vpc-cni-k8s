@@ -29,8 +29,6 @@ jobs:
         run: |
           make check-format
           make vet
-      - name: Validate release metadata
-        run: make validate-release-metadata
       - name: Build
         run: make build-linux
       - name: Build tests

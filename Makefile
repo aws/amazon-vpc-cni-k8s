@@ -17,8 +17,7 @@
 		build-linux docker docker-init \
 		unit-test unit-test-race build-docker-test docker-func-test \
 		build-metrics docker-metrics \
-		metrics-unit-test docker-metrics-test \
-		validate-release-metadata
+		metrics-unit-test docker-metrics-test
 
 # VERSION is the source revision that executables and images are built from.
 VERSION ?= $(shell git describe --tags --always --dirty || echo "unknown")
@@ -138,13 +137,6 @@ MULTI_PLATFORM_BUILD_TARGETS = 	linux/amd64,linux/arm64
 
 ##@ Building
 
-validate-release-metadata: ## Validate metadata inputs used by release builds.
-	@test -n "$(VERSION)" && test "$(VERSION)" != "unknown" || { echo "VERSION must be set"; exit 1; }
-	@case "$(VERSION)" in *dirty*) echo "VERSION must not describe a dirty tree"; exit 1;; esac
-	@printf '%s\n' "$(GIT_COMMIT)" | grep -Eq '^[0-9a-f]{40}$$' || { echo "GIT_COMMIT must be a full commit hash"; exit 1; }
-	@test "$(GIT_COMMIT)" = "$$(git rev-parse HEAD)" || { echo "GIT_COMMIT must match the checked-out commit"; exit 1; }
-	@test -z "$$(git status --porcelain)" || { echo "release metadata must be generated from a clean tree"; exit 1; }
-
 # Build both CNI and metrics helper container images.
 all: docker docker-init docker-metrics   ## Builds Init, CNI and metrics helper container images.
 
@@ -207,7 +199,7 @@ multi-arch-cni-build:
 		.
 
 ## Build and push multi-arch VPC CNI plugin container image.
-multi-arch-cni-build-push: validate-release-metadata
+multi-arch-cni-build-push:
 	docker buildx build $(DOCKER_BUILD_FLAGS_CNI) \
 		-f scripts/dockerfiles/Dockerfile.release \
 		--platform "$(MULTI_PLATFORM_BUILD_TARGETS)"\

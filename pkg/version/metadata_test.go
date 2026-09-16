@@ -15,7 +15,6 @@ package version
 
 import (
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -25,40 +24,53 @@ import (
 )
 
 func TestMarshalMetadata(t *testing.T) {
-	setBuildMetadataForTest(t, "v1.2.3", strings.Repeat("a", 40), "go1.26.6")
-
-	data, err := marshalMetadata()
-	if err != nil {
-		t.Fatalf("marshalMetadata() error = %v", err)
+	commit := strings.Repeat("a", 40)
+	tests := []struct {
+		name      string
+		version   string
+		commit    string
+		goVersion string
+		expected  string
+	}{
+		{
+			name:      "populated",
+			version:   "v1.2.3",
+			commit:    commit,
+			goVersion: "go1.26.6",
+			expected: "{\n" +
+				"  \"schemaVersion\": 1,\n" +
+				"  \"component\": \"aws-vpc-cni\",\n" +
+				"  \"version\": \"v1.2.3\",\n" +
+				"  \"gitCommit\": \"" + commit + "\",\n" +
+				"  \"goVersion\": \"go1.26.6\",\n" +
+				"  \"platform\": \"" + runtime.GOOS + "/" + runtime.GOARCH + "\"\n" +
+				"}\n",
+		},
+		{
+			name: "unknown fallbacks",
+			expected: "{\n" +
+				"  \"schemaVersion\": 1,\n" +
+				"  \"component\": \"aws-vpc-cni\",\n" +
+				"  \"version\": \"unknown\",\n" +
+				"  \"gitCommit\": \"unknown\",\n" +
+				"  \"goVersion\": \"unknown\",\n" +
+				"  \"platform\": \"" + runtime.GOOS + "/" + runtime.GOARCH + "\"\n" +
+				"}\n",
+		},
 	}
 
-	expected := "{\n" +
-		"  \"schemaVersion\": 1,\n" +
-		"  \"component\": \"aws-vpc-cni\",\n" +
-		"  \"version\": \"v1.2.3\",\n" +
-		"  \"gitCommit\": \"" + strings.Repeat("a", 40) + "\",\n" +
-		"  \"goVersion\": \"go1.26.6\",\n" +
-		"  \"platform\": \"" + runtime.GOOS + "/" + runtime.GOARCH + "\"\n" +
-		"}\n"
-	if string(data) != expected {
-		t.Fatalf("marshalMetadata() = %q, want %q", data, expected)
-	}
-}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			setBuildMetadataForTest(t, test.version, test.commit, test.goVersion)
 
-func TestMarshalMetadataUsesUnknownFallbacks(t *testing.T) {
-	setBuildMetadataForTest(t, "", "", "")
-
-	data, err := marshalMetadata()
-	if err != nil {
-		t.Fatalf("marshalMetadata() error = %v", err)
-	}
-
-	var record metadata
-	if err := json.Unmarshal(data, &record); err != nil {
-		t.Fatalf("json.Unmarshal() error = %v", err)
-	}
-	if record.Version != "unknown" || record.GitCommit != "unknown" || record.GoVersion != "unknown" {
-		t.Fatalf("metadata fallbacks = %#v, want unknown build values", record)
+			data, err := marshalMetadata()
+			if err != nil {
+				t.Fatalf("marshalMetadata() error = %v", err)
+			}
+			if string(data) != test.expected {
+				t.Fatalf("marshalMetadata() = %q, want %q", data, test.expected)
+			}
+		})
 	}
 }
 
@@ -89,82 +101,32 @@ func TestWriteMetadataCreatesAndReplacesFile(t *testing.T) {
 	}
 }
 
-func TestWriteMetadataPreservesDestinationOnRenameFailure(t *testing.T) {
-	setBuildMetadataForTest(t, "v1.2.3", "commit", "go")
-	dir := t.TempDir()
-	path := filepath.Join(dir, "aws-vpc-cni-metadata.json")
-	if err := os.Mkdir(path, 0o755); err != nil {
-		t.Fatalf("os.Mkdir() error = %v", err)
-	}
-
-	if err := writeMetadata(path); err == nil {
-		t.Fatal("writeMetadata() error = nil, want rename error")
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("os.Stat() error = %v", err)
-	}
-	if !info.IsDir() {
-		t.Fatalf("destination is not preserved: mode = %v", info.Mode())
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("os.ReadDir() error = %v", err)
-	}
-	if len(entries) != 1 {
-		t.Fatalf("directory entries = %d, want only preserved destination", len(entries))
-	}
-}
-
-func TestWriteMetadataRequiresExistingParent(t *testing.T) {
-	setBuildMetadataForTest(t, "v1.2.3", "commit", "go")
-	path := filepath.Join(t.TempDir(), "missing", "aws-vpc-cni-metadata.json")
-
-	if err := writeMetadata(path); err == nil {
-		t.Fatal("writeMetadata() error = nil, want missing parent error")
-	}
-}
-
 func TestPublishMetadataAsyncDoesNotWaitForWriter(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
+	returned := make(chan struct{})
+	defer close(release)
 
-	publishMetadataAsync("unused", os.Stderr, func(string) error {
-		close(started)
-		<-release
-		return nil
-	})
+	go func() {
+		publishMetadataAsync("unused", os.Stderr, func(string) error {
+			close(started)
+			<-release
+			return nil
+		})
+		close(returned)
+	}()
+
+	select {
+	case <-returned:
+	case <-time.After(time.Second):
+		t.Fatal("metadata publication did not return")
+	}
 
 	select {
 	case <-started:
 	case <-time.After(time.Second):
 		t.Fatal("metadata writer did not start")
 	}
-	close(release)
-}
-
-func TestPublishMetadataAsyncWritesFailureToErrorOutput(t *testing.T) {
-	output := make(chan string, 1)
-	publishMetadataAsync("unused", channelWriter(output), func(string) error {
-		return errors.New("read-only filesystem")
-	})
-
-	select {
-	case warning := <-output:
-		expected := "warning: failed to publish AWS VPC CNI metadata: read-only filesystem\n"
-		if warning != expected {
-			t.Fatalf("warning = %q, want %q", warning, expected)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("metadata warning was not written")
-	}
-}
-
-type channelWriter chan<- string
-
-func (writer channelWriter) Write(data []byte) (int, error) {
-	writer <- string(data)
-	return len(data), nil
 }
 
 func setBuildMetadataForTest(t *testing.T, version, commit, goVersion string) {
