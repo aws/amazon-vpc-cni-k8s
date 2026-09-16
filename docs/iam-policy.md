@@ -78,6 +78,36 @@ The above policy is also available under: `arn:aws:iam::aws:policy/AmazonEKS_CNI
 }
 ```
 
+## SageMaker HyperPod nodes
+
+On SageMaker HyperPod nodes (identified by the Kubernetes node `providerID`, e.g. `aws:///<az>/sagemaker/cluster/hyperpod-<clusterID>-<instanceID>`), the VPC CNI does **not** call `ec2:AttachNetworkInterface`, which is not authorized on these nodes. Instead it delegates the ENI attach to the SageMaker control plane via `sagemaker:AttachClusterNodeNetworkInterface`, and resolves the node's account ID via `sts:GetCallerIdentity` to build the cluster ARN.
+
+For HyperPod deployments, attach the following policy to the node role **in addition to** the generic policy above:
+
+```
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "sagemaker:AttachClusterNodeNetworkInterface"
+            ],
+            "Resource": "arn:aws:sagemaker:*:*:cluster/*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "sts:GetCallerIdentity"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+```
+
+You may scope `sagemaker:AttachClusterNodeNetworkInterface` down to a specific cluster ARN (`arn:aws:sagemaker:<region>:<accountID>:cluster/<clusterID>`). `sts:GetCallerIdentity` takes no resource and cannot be scoped.
+
 ## Scope-down IAM policy per EKS cluster
 
 Instead of the generic IAM policy, we can scope down IAM policy needed by Amazon VPC CNI plugin per EKS cluster.
