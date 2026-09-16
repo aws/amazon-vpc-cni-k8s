@@ -140,6 +140,8 @@ spec:
           ports:
             - containerPort: {{ .Values.nodeAgent.metricsBindAddr}}
               name: agentmetrics
+            - containerPort: {{ .Values.nodeAgent.healthProbeBindAddr }}
+              name: health
           env:
             - name: MY_NODE_NAME
               valueFrom:
@@ -163,6 +165,10 @@ spec:
           {{- end }}
           securityContext:
             {{- toYaml .Values.nodeAgent.securityContext | nindent 12 }}
+          livenessProbe:
+            {{- toYaml .Values.nodeAgent.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.nodeAgent.readinessProbe | nindent 12 }}
           volumeMounts:
           - mountPath: /host/opt/cni/bin
             name: cni-bin-dir
