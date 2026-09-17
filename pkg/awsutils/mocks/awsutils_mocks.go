@@ -242,6 +242,21 @@ func (mr *MockAPIsMockRecorder) GetENISubnetID(arg0, arg1 interface{}) *gomock.C
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetENISubnetID", reflect.TypeOf((*MockAPIs)(nil).GetENISubnetID), arg0, arg1)
 }
 
+// IsENIAttachedToInstance mocks base method.
+func (m *MockAPIs) IsENIAttachedToInstance(arg0 context.Context, arg1 string) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsENIAttachedToInstance", arg0, arg1)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// IsENIAttachedToInstance indicates an expected call of IsENIAttachedToInstance.
+func (mr *MockAPIsMockRecorder) IsENIAttachedToInstance(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsENIAttachedToInstance", reflect.TypeOf((*MockAPIs)(nil).IsENIAttachedToInstance), arg0, arg1)
+}
+
 // GetIPv4PrefixesFromEC2 mocks base method.
 func (m *MockAPIs) GetIPv4PrefixesFromEC2(arg0 context.Context, arg1 string) ([]types.Ipv4PrefixSpecification, error) {
 	m.ctrl.T.Helper()
