@@ -1054,7 +1054,8 @@ func setupENINetwork(eniIP string, eniMac string, networkCard int, eniSubnetCIDR
 		}
 	}
 
-	// Remove the route that default out to ENI-x out of main route table
+	// NOPREFIXROUTE prevents a new kernel-generated route, but keep this cleanup
+	// to converge stale routes left by earlier versions or external configuration.
 	var defaultRoute netlink.Route
 	if isV6 {
 		defaultRoute = netlink.Route{
