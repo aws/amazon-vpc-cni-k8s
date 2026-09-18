@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"runtime"
 	"syscall"
 	"testing"
@@ -91,7 +92,12 @@ func TestSetupTrunkENINetwork(t *testing.T) {
 	testSetupENINetwork(t, true)
 }
 
+// Needs CAP_SYS_ADMIN for network namespaces; re-executes itself under sudo when unprivileged.
 func TestSetupENINetworkNoPrefixRoute(t *testing.T) {
+	if os.Geteuid() != 0 {
+		rerunAsRoot(t)
+		return
+	}
 	for _, tc := range []struct {
 		name, ip, subnet string
 		family           int
@@ -152,6 +158,27 @@ func TestSetupENINetworkNoPrefixRoute(t *testing.T) {
 			})
 		}
 	}
+}
+
+const eniKernelTestChildEnv = "ENI_KERNEL_TEST_CHILD"
+
+func rerunAsRoot(t *testing.T) {
+	t.Helper()
+	if os.Getenv(eniKernelTestChildEnv) != "" {
+		t.Fatal("still unprivileged after sudo re-exec")
+	}
+	if err := exec.Command("sudo", "-n", "true").Run(); err != nil {
+		t.Skipf("needs CAP_SYS_ADMIN and passwordless sudo is unavailable: %v", err)
+	}
+	args := []string{"-n", "env", eniKernelTestChildEnv + "=1",
+		"AWS_VPC_K8S_CNI_LOG_FILE=" + os.Getenv("AWS_VPC_K8S_CNI_LOG_FILE"),
+		os.Args[0], "-test.run=^" + t.Name() + "$"}
+	if testing.Verbose() {
+		args = append(args, "-test.v")
+	}
+	cmd := exec.Command("sudo", args...)
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	require.NoError(t, cmd.Run(), "kernel test failed under sudo")
 }
 
 func withENITestNetworkNamespace(t *testing.T, run func()) {
