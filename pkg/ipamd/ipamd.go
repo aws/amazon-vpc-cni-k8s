@@ -46,6 +46,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/cniutils"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
@@ -619,6 +620,10 @@ func (c *IPAMContext) nodeInit(ctx context.Context) error {
 			}
 			c.maxPods = int(maxPods)
 		}
+		// On HyperPod nodes the ENI attach is delegated to SageMaker; error out so startup retries.
+		if err := c.awsClient.InitHyperPodFromProviderID(ctx, node.Spec.ProviderID); err != nil {
+			return err
+		}
 	} else {
 		maxPods, err := c.getMaxPodsFromFile()
 		if err != nil {
@@ -774,9 +779,10 @@ func (c *IPAMContext) StartNodeIPPoolManager(ctx context.Context) {
 				time.Sleep(ipPoolMonitorInterval)
 			}
 		}
-		// Outside of Security Groups for Pods, no additional ENIs are attached in IPv6 mode.
-		// The prefix used for the primary ENI is more than enough for all pods.
-		return
+		for {
+			time.Sleep(wait.Jitter(nodeIPPoolReconcileInterval, 0.5))
+			c.tryIPv6DatastoreSelfHeal(ctx)
+		}
 	}
 
 	log.Infof("IP pool manager - max pods: %d, warm IP target: %d, warm prefix target: %d, warm ENI target: %d, minimum IP target: %d",
@@ -1213,6 +1219,30 @@ func (c *IPAMContext) assignIPv6Prefix(ctx context.Context, eniID string, networ
 	return nil
 }
 
+// tryIPv6DatastoreSelfHeal reallocates the /80 prefix on managed ENIs when
+// bootstrap AssignIpv6Addresses failed, so recovery does not require aws-node restart.
+func (c *IPAMContext) tryIPv6DatastoreSelfHeal(ctx context.Context) {
+	for _, ds := range c.dataStoreAccess.DataStores {
+		if ds.GetIPStats(ipV6AddrFamily).TotalIPs > 0 {
+			continue
+		}
+		networkCard := ds.GetNetworkCard()
+		for eniID, eni := range ds.GetENIInfos().ENIs {
+			if eni.IsTrunk || eni.IsExcludedForPodIPs {
+				continue
+			}
+			if c.useCustomNetworking && eni.IsPrimary {
+				continue
+			}
+			if err := c.assignIPv6Prefix(ctx, eniID, networkCard); err != nil {
+				log.Warnf("IPv6 self-heal alloc failed for ENI %s on network card %d: %v", eniID, networkCard, err)
+				continue
+			}
+			log.Infof("IPv6 self-heal alloc succeeded for ENI %s on network card %d", eniID, networkCard)
+		}
+	}
+}
+
 // PRECONDITION: isDatastorePoolTooLow returned true
 func (c *IPAMContext) tryAssignPrefixes(ctx context.Context, networkCard int) (increasedPool bool, err error) {
 	toAllocate := c.getPrefixesNeeded(networkCard)
@@ -1292,10 +1322,17 @@ func (c *IPAMContext) setupENI(ctx context.Context, eni string, eniMetadata awsu
 		c.primaryIP[eni] = eniMetadata.PrimaryIPv4Address()
 	}
 
-	// Check if this ENI (primary or secondary) is in an excluded subnet and mark it for exclusion
+	// Check if this ENI (primary or secondary) is in an excluded subnet and mark it for exclusion.
+	// Fail open on error: aborting here would leave the ENI in the datastore with allocatable IPs
+	// but never wired up via SetupENINetwork, black-holing any pod that gets one of those IPs.
 	if c.useSubnetDiscovery {
 		if _, err := c.excludedENIBasedOnSubnetTags(ctx, eni, eniMetadata); err != nil {
-			return fmt.Errorf("checking to excluded configured subnet, error: %w", err)
+			msg := fmt.Sprintf("subnet-exclusion check failed for ENI %s (subnet %s), treating as not excluded: %v", eni, eniMetadata.SubnetID, err)
+			if eventRecorder := eventrecorder.Get(); eventRecorder != nil {
+				eventRecorder.SendPodEvent(corev1.EventTypeWarning, "SubnetExclusionCheckFailed", "SetupENI", msg)
+			} else {
+				log.Warnf("setupENI: %s", msg)
+			}
 		}
 	}
 
@@ -2855,6 +2892,10 @@ func (c *IPAMContext) SetAPIServerConnectivity(connected bool) {
 				oldMaxPods := c.maxPods
 				c.maxPods = int(maxPods)
 				log.Infof("Updated maxPods from %d to %d based on node capacity", oldMaxPods, c.maxPods)
+			}
+			// Re-run HyperPod detection, which is skipped when IPAMD starts without API server connectivity.
+			if err := c.awsClient.InitHyperPodFromProviderID(ctx, node.Spec.ProviderID); err != nil {
+				log.Errorf("Failed to init HyperPod delegation after API server became available: %v", err)
 			}
 		}
 	} else {
