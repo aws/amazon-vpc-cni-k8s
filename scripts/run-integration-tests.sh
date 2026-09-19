@@ -2,8 +2,6 @@
 
 set -Euo pipefail
 
-trap 'on_error $? $LINENO' ERR
-
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 INTEGRATION_TEST_DIR="$SCRIPT_DIR"/../test/integration
 
@@ -12,6 +10,7 @@ source "$SCRIPT_DIR"/lib/aws.sh
 source "$SCRIPT_DIR"/lib/cluster.sh
 source "$SCRIPT_DIR"/lib/integration.sh
 source "$SCRIPT_DIR"/lib/k8s.sh
+source "$SCRIPT_DIR"/lib/cleanup.sh
 source "$SCRIPT_DIR"/lib/performance_tests.sh
 
 # Variables used in /lib/aws.sh
@@ -45,34 +44,26 @@ __cluster_deprovisioned=0
 
 on_error() {
     echo "Error with exit code $1 occurred on line $2"
-    emit_cloudwatch_metric "error_occurred" "1"
+    emit_cloudwatch_metric "error_occurred" "1" || true
 
-    #Emit test specific error metric 
+    # Emit test-specific error metrics without preventing cleanup.
     if [[ $RUN_KOPS_TEST == true ]]; then
-        emit_cloudwatch_metric "kops_test_status" "0"
+        emit_cloudwatch_metric "kops_test_status" "0" || true
     fi
     if [[ $RUN_BOTTLEROCKET_TEST == true ]]; then
-        emit_cloudwatch_metric "bottlerocket_test_status" "0"
+        emit_cloudwatch_metric "bottlerocket_test_status" "0" || true
     fi
     if [[ $RUN_PERFORMANCE_TESTS == true ]]; then
-        emit_cloudwatch_metric "performance_test_status" "0"
+        emit_cloudwatch_metric "performance_test_status" "0" || true
     fi
-    # Make sure we destroy any cluster that was created if we hit run into an
-    # error when attempting to run tests against the 
-    if [[ $RUNNING_PERFORMANCE == false ]]; then
-        if [[ $__cluster_created -eq 1 && $__cluster_deprovisioned -eq 0 && "$DEPROVISION" == true ]]; then
-            # prevent double-deprovisioning with ctrl-c during deprovisioning...
-            __cluster_deprovisioned=1
-            echo "Cluster was provisioned already. Deprovisioning it..."
-            if [[ $RUN_KOPS_TEST == true ]]; then
-                down-kops-cluster
-            else
-                down-test-cluster
-            fi
-        fi
-        exit 1
-    fi
+
+    exit "$1"
 }
+
+trap 'on_error $? $LINENO' ERR
+trap cleanup_on_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # test specific config, results location
 : "${TEST_ID:=$RANDOM}"
@@ -291,16 +282,12 @@ fi
 if [[ "$DEPROVISION" == true ]]; then
     START=$SECONDS
 
-    if [[ "$RUN_KOPS_TEST" == true ]]; then
-        down-kops-cluster
-    elif [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
-        eksctl delete cluster $CLUSTER_NAME --disable-nodegroup-eviction
+    deprovision_cluster
+
+    if [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
         emit_cloudwatch_metric "bottlerocket_test_status" "1"
     elif [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
-        eksctl delete cluster $CLUSTER_NAME
         emit_cloudwatch_metric "performance_test_status" "1"
-    else
-        down-test-cluster
     fi
 
     DOWN_DURATION=$((SECONDS - START))
