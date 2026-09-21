@@ -19,11 +19,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
 	"github.com/aws/amazon-vpc-cni-k8s/test/agent/pkg/input"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/agent"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
+	"github.com/aws/amazon-vpc-cni-k8s/test/integration/common"
 
 	"github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1beta1"
 	vpcControllerFW "github.com/aws/amazon-vpc-resource-controller-k8s/test/framework/manifest"
@@ -176,7 +178,13 @@ var _ = Describe("Security Group for Pods Test", func() {
 			branchPodLabelVal = []string{serverPodLabelVal}
 		})
 
-		It("should have 0% success rate", func() {
+		It("applies the closed-port expectation for the active enforcing mode", func() {
+			testConfig := common.CurrentSGPPTestConfig(f)
+			if testConfig.EnforcingMode == sgpp.EnforcingModeStandard {
+				Skip("same-node traffic in standard mode does not traverse the branch ENI; " +
+					"this mixed-topology test has no deterministic aggregate success rate")
+			}
+
 			t := agent.TrafficTest{
 				Framework:                      f,
 				TrafficServerDeploymentBuilder: serverDeploymentBuilder,
@@ -204,9 +212,6 @@ var _ = Describe("Security Group for Pods Test", func() {
 			initialDelay = 10
 			periodSecond = 10
 			failureCount = 3
-			// If liveliness probe will fail then the container would have
-			// restarted
-			containerRestartCount = 0
 			// Value for the Environment variable DISABLE_TCP_EARLY_DEMUX
 			disableTCPEarlyDemux string
 		)
@@ -259,9 +264,15 @@ var _ = Describe("Security Group for Pods Test", func() {
 			pod, err = f.K8sResourceManagers.PodManager().GetPod(pod.Namespace, pod.Name)
 			Expect(err).ToNot(HaveOccurred())
 
-			By(fmt.Sprintf("verifying the container restarted %d times", containerRestartCount))
-			Expect(int(pod.Status.ContainerStatuses[0].RestartCount)).
-				To(Equal(containerRestartCount))
+			testConfig := common.CurrentSGPPTestConfig(f)
+			restartCount := int(pod.Status.ContainerStatuses[0].RestartCount)
+			if expectTCPEarlyDemuxRestart(testConfig.EnforcingMode, disableTCPEarlyDemux) {
+				By("verifying the container restarted after the liveness probe failed")
+				Expect(restartCount).To(BeNumerically(">", 0))
+			} else {
+				By("verifying the liveness probe succeeded without restarting the container")
+				Expect(restartCount).To(Equal(0))
+			}
 		})
 
 		JustAfterEach(func() {
@@ -272,15 +283,13 @@ var _ = Describe("Security Group for Pods Test", func() {
 
 		Context("when disabling DISABLE_TCP_EARLY_DEMUX", func() {
 			BeforeEach(func() {
-				containerRestartCount = 1
 				disableTCPEarlyDemux = "false"
 			})
-			It("TCP liveness probe will fail", func() {})
+			It("uses the mode-specific TCP liveness probe behavior", func() {})
 		})
 
 		Context("when enabling DISABLE_TCP_EARLY_DEMUX", func() {
 			BeforeEach(func() {
-				containerRestartCount = 0
 				disableTCPEarlyDemux = "true"
 			})
 			It("TCP liveness probe will succeed", func() {})
@@ -333,6 +342,7 @@ var _ = Describe("Security Group for Pods Test", func() {
 })
 
 func GetPodNetworkingValidationInput(podList v1.PodList) input.PodNetworkingValidationInput {
+	testConfig := common.CurrentSGPPTestConfig(f)
 	var ipFamily string
 	if isIPv4Cluster {
 		ipFamily = "IPv4"
@@ -341,7 +351,7 @@ func GetPodNetworkingValidationInput(podList v1.PodList) input.PodNetworkingVali
 	}
 	ip := input.PodNetworkingValidationInput{
 		IPFamily:    ipFamily,
-		VethPrefix:  "vlan",
+		VethPrefix:  testConfig.HostVethPrefix,
 		PodList:     []input.Pod{},
 		ValidateMTU: true,
 		MTU:         9001,
@@ -367,8 +377,10 @@ func GetPodNetworkingValidationInput(podList v1.PodList) input.PodNetworkingVali
 }
 
 func ValidateHostNetworking(testType TestType, podValidationInputString string) {
+	testConfig := common.CurrentSGPPTestConfig(f)
 	testerArgs := []string{fmt.Sprintf("-pod-networking-validation-input=%s",
-		podValidationInputString)}
+		podValidationInputString),
+		fmt.Sprintf("-pod-sg-enforcing-mode=%s", testConfig.EnforcingMode)}
 
 	if NetworkingSetupSucceeds == testType {
 		testerArgs = append(testerArgs, "-test-setup=true", "-test-ppsg=true")
@@ -403,6 +415,10 @@ func ValidateHostNetworking(testType TestType, podValidationInputString string) 
 	err = f.K8sResourceManagers.PodManager().
 		DeleteAndWaitTillPodDeleted(testPod)
 	Expect(err).ToNot(HaveOccurred())
+}
+
+func expectTCPEarlyDemuxRestart(enforcingMode sgpp.EnforcingMode, disableTCPEarlyDemux string) bool {
+	return enforcingMode == sgpp.EnforcingModeStrict && disableTCPEarlyDemux == "false"
 }
 
 func ValidatePodsHaveBranchENI(podList v1.PodList) error {

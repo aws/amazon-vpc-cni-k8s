@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
 	"github.com/aws/amazon-vpc-cni-k8s/test/agent/cmd/networking/tester"
 	"github.com/aws/amazon-vpc-cni-k8s/test/agent/pkg/input"
 )
@@ -33,11 +34,14 @@ func main() {
 	var shouldTestCleanup bool
 	// per pod security group
 	var ppsg bool
+	var podSGEnforcingMode string
 
 	flag.StringVar(&podNetworkingValidationInputString, "pod-networking-validation-input", "", "json string containing the array of pods whose networking needs to be validated")
 	flag.BoolVar(&shouldTestCleanup, "test-cleanup", false, "bool flag when set to true tests that networking is teared down after pod has been deleted")
 	flag.BoolVar(&shouldTestSetup, "test-setup", false, "bool flag when set to true tests the networking is setup correctly after pod is running")
 	flag.BoolVar(&ppsg, "test-ppsg", false, "bool flag when set to true tests the networking setup for pods using security groups")
+	flag.StringVar(&podSGEnforcingMode, "pod-sg-enforcing-mode", string(sgpp.DefaultEnforcingMode),
+		"security groups for pods enforcing mode")
 
 	flag.Parse()
 
@@ -54,13 +58,15 @@ func main() {
 
 	if ppsg && shouldTestSetup {
 		log.Print("testing networking is setup for pods using security groups")
-		err := tester.TestNetworkingSetupForPodsUsingSecurityGroup(podNetworkingValidationInput)
+		err := tester.TestNetworkingSetupForPodsUsingSecurityGroup(
+			podNetworkingValidationInput, sgpp.EnforcingMode(podSGEnforcingMode))
 		if err != nil {
 			log.Fatalf("found 1 or more pod setup validation failure: %v", err)
 		}
 	} else if ppsg && shouldTestCleanup {
 		log.Print("testing networking is teared down for pods using security groups")
-		err := tester.TestNetworkTearedDownForPodsUsingSecurityGroup(podNetworkingValidationInput)
+		err := tester.TestNetworkTearedDownForPodsUsingSecurityGroup(
+			podNetworkingValidationInput, sgpp.EnforcingMode(podSGEnforcingMode))
 		if err != nil {
 			log.Fatalf("found 1 or more pod setup validation failure: %v", err)
 		}

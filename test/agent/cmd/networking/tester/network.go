@@ -22,9 +22,17 @@ import (
 	"strings"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
 	"github.com/aws/amazon-vpc-cni-k8s/test/agent/pkg/input"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
+)
+
+const (
+	// Keep these values aligned with networkutils.ToContainerRulePriority and
+	// networkutils.FromPodRulePriority in the CNI datapath.
+	standardToContainerRulePriority = 512
+	standardFromPodRulePriority     = 1536
 )
 
 // TestNetworkingSetupForRegularPod tests networking set by the CNI Plugin for a list of Pod is as
@@ -187,7 +195,18 @@ func TestNetworkingSetupForRegularPod(podNetworkingValidationInput input.PodNetw
 }
 
 // TestNetworkingSetupForPods using security groups
-func TestNetworkingSetupForPodsUsingSecurityGroup(podNetworkingValidationInput input.PodNetworkingValidationInput) []error {
+func TestNetworkingSetupForPodsUsingSecurityGroup(
+	podNetworkingValidationInput input.PodNetworkingValidationInput,
+	enforcingMode sgpp.EnforcingMode,
+) []error {
+	switch enforcingMode {
+	case sgpp.EnforcingModeStandard:
+		return testNetworkingSetupForPodsUsingSecurityGroupStandard(podNetworkingValidationInput)
+	case sgpp.EnforcingModeStrict:
+	default:
+		return []error{fmt.Errorf("unsupported pod security group enforcing mode %q", enforcingMode)}
+	}
+
 	var validationErrors []error
 	var podIP net.IP
 	interfaceToVlanTableMap := make(map[string]int)
@@ -314,6 +333,163 @@ func TestNetworkingSetupForPodsUsingSecurityGroup(podNetworkingValidationInput i
 	return validationErrors
 }
 
+func testNetworkingSetupForPodsUsingSecurityGroupStandard(
+	podNetworkingValidationInput input.PodNetworkingValidationInput,
+) []error {
+	ipFamily := ipFamilyForValidation(podNetworkingValidationInput.IPFamily)
+	nl := netlinkwrapper.NewNetLink()
+	ruleList, err := nl.RuleList(ipFamily)
+	if err != nil {
+		return []error{fmt.Errorf("failed to list ip rules: %v", err)}
+	}
+	linkList, err := nl.LinkList()
+	if err != nil {
+		return []error{fmt.Errorf("failed to list links: %v", err)}
+	}
+	linksByIndex := make(map[int]netlink.Link, len(linkList))
+	for _, link := range linkList {
+		linksByIndex[link.Attrs().Index] = link
+	}
+
+	var validationErrors []error
+	for _, pod := range podNetworkingValidationInput.PodList {
+		podIP := podIPForValidation(pod, podNetworkingValidationInput.IPFamily)
+		log.Printf("testing standard-mode networking for Pod name: %s Namespace: %s, IP: %s",
+			pod.PodName, pod.PodNamespace, podIP)
+		if podIP == nil {
+			validationErrors = append(validationErrors, fmt.Errorf(
+				"failed to parse IP for pod %s/%s", pod.PodNamespace, pod.PodName))
+			continue
+		}
+
+		hostVethName := getHostVethPairName(pod, podNetworkingValidationInput.VethPrefix)
+		hostVeth, linkErrors := validateStandardHostVeth(nl, podNetworkingValidationInput, pod, hostVethName)
+		validationErrors = append(validationErrors, linkErrors...)
+		if hostVeth == nil {
+			continue
+		}
+
+		// Standard mode routes to-pod traffic through the main table and from-pod traffic through the branch table according to rule priority.
+		branchTable, ruleErrors := validateStandardPodRules(ruleList, podIP)
+		validationErrors = append(validationErrors, ruleErrors...)
+		validationErrors = append(validationErrors,
+			validateStandardMainRoute(ipFamily, podIP, hostVeth, hostVethName)...)
+		if branchTable == 0 {
+			continue
+		}
+		validationErrors = append(validationErrors,
+			validateStandardBranchTable(ipFamily, branchTable, linksByIndex)...)
+	}
+
+	return validationErrors
+}
+
+func validateStandardHostVeth(
+	nl netlinkwrapper.NetLink,
+	validationInput input.PodNetworkingValidationInput,
+	pod input.Pod,
+	hostVethName string,
+) (netlink.Link, []error) {
+	link, err := nl.LinkByName(hostVethName)
+	if err != nil {
+		return nil, []error{fmt.Errorf("failed to find netlink %s: %v", hostVethName, err)}
+	}
+
+	var validationErrors []error
+	if validationInput.ValidateMTU && link.Attrs().MTU != validationInput.MTU {
+		validationErrors = append(validationErrors, fmt.Errorf(
+			"MTU value %v for pod: %s on veth pair: %s failed to match the expected value: %v",
+			link.Attrs().MTU, pod.PodName, hostVethName, validationInput.MTU))
+	}
+	if !strings.Contains(link.Attrs().Flags.String(), "up") {
+		validationErrors = append(validationErrors,
+			fmt.Errorf("veth pair on host side is not up %s", link.Attrs().Flags.String()))
+	}
+	return link, validationErrors
+}
+
+func validateStandardPodRules(ruleList []netlink.Rule, podIP net.IP) (int, []error) {
+	toMainRules, fromBranchRules := standardPodRouteRules(ruleList, podIP)
+	var validationErrors []error
+	if len(toMainRules) != 1 {
+		validationErrors = append(validationErrors, fmt.Errorf(
+			"expected one standard-mode rule to pod %s in main table, found: %+v",
+			podIP, toMainRules))
+	}
+	if len(fromBranchRules) != 1 {
+		validationErrors = append(validationErrors, fmt.Errorf(
+			"expected one standard-mode rule from pod %s to branch table, found: %+v",
+			podIP, fromBranchRules))
+		return 0, validationErrors
+	}
+	return fromBranchRules[0].Table, validationErrors
+}
+
+func validateStandardMainRoute(
+	ipFamily int,
+	podIP net.IP,
+	hostVeth netlink.Link,
+	hostVethName string,
+) []error {
+	routes, err := netlink.RouteListFiltered(ipFamily,
+		&netlink.Route{Dst: podIPNet(podIP)}, netlink.RT_FILTER_DST)
+	if err != nil {
+		return []error{fmt.Errorf("failed to find route with destination %s: %v", podIP, err)}
+	}
+
+	mainRouteCount := 0
+	for _, route := range routes {
+		if route.Table == unix.RT_TABLE_MAIN && route.LinkIndex == hostVeth.Attrs().Index {
+			mainRouteCount++
+		}
+	}
+	if mainRouteCount != 1 {
+		return []error{fmt.Errorf(
+			"expected one main-table route to pod %s through veth %s, found: %+v",
+			podIP, hostVethName, routes)}
+	}
+	return nil
+}
+
+func validateStandardBranchTable(
+	ipFamily int,
+	branchTable int,
+	linksByIndex map[int]netlink.Link,
+) []error {
+	routes, err := netlink.RouteListFiltered(ipFamily,
+		&netlink.Route{Table: branchTable}, netlink.RT_FILTER_TABLE)
+	if err != nil {
+		return []error{fmt.Errorf("failed to list routes for branch table %d: %v", branchTable, err)}
+	}
+	if len(routes) != 2 {
+		return []error{fmt.Errorf(
+			"expected two routes in standard-mode branch table %d, found: %+v",
+			branchTable, routes)}
+	}
+
+	branchLink, ok := linksByIndex[routes[0].LinkIndex]
+	if !ok || !strings.HasPrefix(branchLink.Attrs().Name, "vlan.eth") {
+		return []error{fmt.Errorf(
+			"branch table %d does not route through a vlan branch interface: %+v",
+			branchTable, routes)}
+	}
+
+	var validationErrors []error
+	if !strings.Contains(branchLink.Attrs().Flags.String(), "up") {
+		validationErrors = append(validationErrors, fmt.Errorf(
+			"branch eni %s is not up %s",
+			branchLink.Attrs().Name, branchLink.Attrs().Flags.String()))
+	}
+	for _, route := range routes {
+		if route.LinkIndex != branchLink.Attrs().Index {
+			validationErrors = append(validationErrors, fmt.Errorf(
+				"branch table %d contains route through unexpected link: %+v",
+				branchTable, route))
+		}
+	}
+	return validationErrors
+}
+
 // TestNetworkTearedDownForRegularPods test pod networking is correctly teared down by the CNI Plugin
 // The test assumes that the IP assigned to the older Pod is not assigned to a new Pod while this test
 // is being executed
@@ -401,7 +577,18 @@ func TestNetworkTearedDownForRegularPods(podNetworkingValidationInput input.PodN
 }
 
 // TestNetworkingForPods using security groups is teared down correctly
-func TestNetworkTearedDownForPodsUsingSecurityGroup(podNetworkingValidationInput input.PodNetworkingValidationInput) []error {
+func TestNetworkTearedDownForPodsUsingSecurityGroup(
+	podNetworkingValidationInput input.PodNetworkingValidationInput,
+	enforcingMode sgpp.EnforcingMode,
+) []error {
+	switch enforcingMode {
+	case sgpp.EnforcingModeStandard:
+		return testNetworkTearedDownForPodsUsingSecurityGroupStandard(podNetworkingValidationInput)
+	case sgpp.EnforcingModeStrict:
+	default:
+		return []error{fmt.Errorf("unsupported pod security group enforcing mode %q", enforcingMode)}
+	}
+
 	var validationErrors []error
 	var podIP net.IP
 	interfaceToVlanTableMap := make(map[string]int)
@@ -481,6 +668,66 @@ func TestNetworkTearedDownForPodsUsingSecurityGroup(podNetworkingValidationInput
 	}
 
 	return validationErrors
+}
+
+func testNetworkTearedDownForPodsUsingSecurityGroupStandard(
+	podNetworkingValidationInput input.PodNetworkingValidationInput,
+) []error {
+	validationErrors := TestNetworkTearedDownForRegularPods(podNetworkingValidationInput)
+
+	nl := netlinkwrapper.NewNetLink()
+	linkList, err := nl.LinkList()
+	if err != nil {
+		return append(validationErrors, fmt.Errorf("failed to list links: %v", err))
+	}
+	for _, link := range linkList {
+		if strings.HasPrefix(link.Attrs().Name, "vlan.eth") {
+			validationErrors = append(validationErrors,
+				fmt.Errorf("found leaked branch ENI %s", link.Attrs().Name))
+		}
+	}
+	return validationErrors
+}
+
+func standardPodRouteRules(ruleList []netlink.Rule, podIP net.IP) (
+	toMainRules []netlink.Rule,
+	fromBranchRules []netlink.Rule,
+) {
+	for _, rule := range ruleList {
+		if rule.Dst != nil && rule.Dst.IP.Equal(podIP) &&
+			rule.Table == unix.RT_TABLE_MAIN &&
+			rule.Priority == standardToContainerRulePriority {
+			toMainRules = append(toMainRules, rule)
+		}
+		if rule.Src != nil && rule.Src.IP.Equal(podIP) &&
+			rule.Table != unix.RT_TABLE_MAIN &&
+			rule.Priority == standardFromPodRulePriority {
+			fromBranchRules = append(fromBranchRules, rule)
+		}
+	}
+	return toMainRules, fromBranchRules
+}
+
+func podIPNet(podIP net.IP) *net.IPNet {
+	maskSize := 32
+	if podIP.To4() == nil {
+		maskSize = 128
+	}
+	return &net.IPNet{IP: podIP, Mask: net.CIDRMask(maskSize, maskSize)}
+}
+
+func ipFamilyForValidation(ipFamily string) int {
+	if ipFamily == "IPv6" {
+		return netlink.FAMILY_V6
+	}
+	return netlink.FAMILY_V4
+}
+
+func podIPForValidation(pod input.Pod, ipFamily string) net.IP {
+	if ipFamily == "IPv6" {
+		return net.ParseIP(pod.PodIPv6Address)
+	}
+	return net.ParseIP(pod.PodIPv4Address)
 }
 
 func isRuleToOrFromIP(rule netlink.Rule, ip net.IP) bool {
