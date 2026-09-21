@@ -90,6 +90,8 @@ The following table lists the configurable parameters for this chart and their d
 | `nodeAgent.enableIpv6`  | Enable IPv6 support for Node Agent                      | `false`                             |
 | `nodeAgent.resources`   | Node Agent resources, will defualt to .Values.resources if not set | `{}`                     |
 | `nodeAgent.logLevel`    | Node Agent logging verbosity level.                     | `debug`                             |
+| `nodeAgent.livenessProbe`         | Liveness probe settings for Node Agent          | (see `values.yaml`)                 |
+| `nodeAgent.readinessProbe`        | Readiness probe settings for Node Agent         | (see `values.yaml`)                 |
 | `extraVolumes`          | Array to add extra volumes                              | `[]`                                |
 | `extraVolumeMounts`     | Array to add extra mount                                | `[]`                                |
 | `nodeSelector`          | Node labels for pod assignment                          | `{}`                                |
