@@ -81,21 +81,41 @@ WORKLOAD_CLEANUP_STATUS=pending
 KUBECTL=(kubectl --kubeconfig "$KUBECONFIG")
 namespace="${SCALE_TEST_NAMESPACE_PREFIX}-1"
 
-print_diagnostics_on_failure() {
+publish_workload_result_on_exit() {
   local status=$?
+  local publication_failed=0
   trap - EXIT
+
   if ((status != 0)); then
     WORKLOAD_STATUS=failed
-    cni_write_workload_state
+  fi
+  if [[ -n ${churn_started+x} ]]; then
+    WORKLOAD_DURATION_SECONDS=$((SECONDS - churn_started))
+  fi
+
+  if ! cni_write_workload_state; then
+    printf 'Failed to persist CNI scale workload state\n' >&2
+    publication_failed=1
+  fi
+  if ! cni_write_workload_report; then
+    printf 'Failed to publish CNI scale workload report to %s\n' \
+      "$WORKLOAD_REPORT_PATH" >&2
+    publication_failed=1
+  fi
+
+  if ((status != 0)); then
     printf 'CNI scale workload failed; collecting pod diagnostics\n' >&2
     "${KUBECTL[@]}" get pods \
       --all-namespaces \
       --selector group=cni-scale \
       --output wide || true
   fi
+  if ((status == 0 && publication_failed != 0)); then
+    status=1
+  fi
   exit "$status"
 }
-trap print_diagnostics_on_failure EXIT
+trap publish_workload_result_on_exit EXIT
 cni_write_workload_state
 
 verify_ready_and_unique_ips() {
@@ -268,7 +288,5 @@ done
 
 WORKLOAD_DURATION_SECONDS=$((SECONDS - churn_started))
 WORKLOAD_STATUS=pass
-cni_write_workload_state
-trap - EXIT
 printf 'CNI scale workload completed %s churn rounds successfully\n' \
   "$SCALE_TEST_CHURN_ROUNDS"
