@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 
-# Creates a paced, scheduler-distributed CNI scale workload on an existing
-# cluster. The caller owns cluster creation, CNI installation, metric capture,
-# workload cleanup, and cluster deletion.
+# Runs one CNI scale profile against an existing cluster. The workload module
+# lives in this repository; Hydra may supply a component-owned ClusterLoader2
+# profile and monitor set through CL2_PROFILE_PATH and CL2_MONITORS_PATH.
 
 set -euo pipefail
 
 CL2_BIN=${CL2_BIN:-clusterloader2}
+CL2_EXPECTED_SHA256=${CL2_EXPECTED_SHA256:-}
+CL2_UPSTREAM_REVISION=${CL2_UPSTREAM_REVISION:-unknown}
+CL2_DRY_RUN=${CL2_DRY_RUN:-false}
 SCALE_TEST_NAMESPACE_PREFIX=${SCALE_TEST_NAMESPACE_PREFIX:-cni-scale}
 SCALE_TEST_PODS=${SCALE_TEST_PODS:-2000}
 SCALE_TEST_POD_THROUGHPUT=${SCALE_TEST_POD_THROUGHPUT:-20}
@@ -14,15 +17,14 @@ SCALE_TEST_TIMEOUT_SECONDS=${SCALE_TEST_TIMEOUT_SECONDS:-1800}
 SCALE_TEST_CHURN_ROUNDS=${SCALE_TEST_CHURN_ROUNDS:-12}
 SCALE_TEST_CHURN_PODS=${SCALE_TEST_CHURN_PODS:-200}
 SCALE_TEST_CHURN_INTERVAL_SECONDS=${SCALE_TEST_CHURN_INTERVAL_SECONDS:-300}
+SCALE_TEST_BASELINE_SETTLE=${SCALE_TEST_BASELINE_SETTLE:-60s}
+SCALE_TEST_SCRAPE_SETTLE=${SCALE_TEST_SCRAPE_SETTLE:-60s}
+SCALE_TEST_RECOVERY_DELAY=${SCALE_TEST_RECOVERY_DELAY:-5m}
+SCALE_TEST_WORKLOAD_TIMEOUT=${SCALE_TEST_WORKLOAD_TIMEOUT:-95m}
+SCALE_TEST_CLEANUP_TIMEOUT=${SCALE_TEST_CLEANUP_TIMEOUT:-30m}
 TEST_IMAGE_REGISTRY=${TEST_IMAGE_REGISTRY:-617930562442.dkr.ecr.us-west-2.amazonaws.com}
 SCALE_TEST_POD_IMAGE=${SCALE_TEST_POD_IMAGE:-${TEST_IMAGE_REGISTRY}/networking-e2e-test-images/busybox:latest}
 WORKLOAD_PROFILE_ID=${WORKLOAD_PROFILE_ID:-cni-scale-churn-2000-v1}
-
-if [[ -n ${KUBE_CONFIG_PATH:-} && -z ${KUBECONFIG:-} ]]; then
-  export KUBECONFIG=$KUBE_CONFIG_PATH
-fi
-KUBECONFIG=${KUBECONFIG:-"${HOME:?HOME must be set}/.kube/config"}
-export KUBECONFIG
 
 validate_positive_integer() {
   local name=$1
@@ -50,7 +52,11 @@ if [[ $WORKLOAD_PROFILE_ID != cni-scale-churn-2000-v1 ]]; then
   printf 'Unsupported CNI scale workload profile %q\n' "$WORKLOAD_PROFILE_ID" >&2
   exit 2
 fi
-for command in "$CL2_BIN" kubectl sha256sum sort wc head sed; do
+if [[ $CL2_DRY_RUN != true && $CL2_DRY_RUN != false ]]; then
+  printf 'CL2_DRY_RUN must be true or false; got %q\n' "$CL2_DRY_RUN" >&2
+  exit 2
+fi
+for command in "$CL2_BIN" grep realpath sha256sum tee; do
   command -v "$command" >/dev/null 2>&1 || {
     printf '%s is required\n' "$command" >&2
     exit 127
@@ -58,274 +64,150 @@ for command in "$CL2_BIN" kubectl sha256sum sort wc head sed; do
 done
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+CL2_PROFILE_PATH=${CL2_PROFILE_PATH:-"${script_dir}/scale/cl2-config.yaml"}
+if [[ ! -f $CL2_PROFILE_PATH ]]; then
+  printf 'ClusterLoader2 profile does not exist: %s\n' "$CL2_PROFILE_PATH" >&2
+  exit 2
+fi
+CL2_PROFILE_PATH=$(realpath "$CL2_PROFILE_PATH")
+
+if [[ -n ${CL2_MONITORS_PATH:-} ]]; then
+  if [[ ! -d $CL2_MONITORS_PATH ]]; then
+    printf 'ClusterLoader2 monitor directory does not exist: %s\n' \
+      "$CL2_MONITORS_PATH" >&2
+    exit 2
+  fi
+  CL2_MONITORS_PATH=$(realpath "$CL2_MONITORS_PATH")
+fi
+
 clusterloader_path=$(command -v "$CL2_BIN")
 clusterloader_sha256=$(sha256sum "$clusterloader_path")
 clusterloader_sha256=${clusterloader_sha256%% *}
-safe_cluster_name=${CLUSTER_NAME:-local}
-safe_cluster_name=${safe_cluster_name//[^a-zA-Z0-9_.-]/-}
-report_dir=${SCALE_TEST_REPORT_DIR:-"log/clusterloader2-${safe_cluster_name}"}
-mkdir -p "$report_dir"
-state_dir=${SCENARIO_STATE_DIR:-$report_dir}
-state_file="${state_dir}/cni-scale-workload.state"
-mkdir -p "$state_dir"
-
-WORKLOAD_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-WORKLOAD_REQUESTED_PODS=$SCALE_TEST_PODS
-WORKLOAD_READY_PODS=0
-WORKLOAD_CREATED_PODS=0
-WORKLOAD_DELETED_PODS=0
-WORKLOAD_POD_THROUGHPUT=$SCALE_TEST_POD_THROUGHPUT
-WORKLOAD_CHURN_PODS_PER_ROUND=$SCALE_TEST_CHURN_PODS
-WORKLOAD_CHURN_INTERVAL_SECONDS=$SCALE_TEST_CHURN_INTERVAL_SECONDS
-WORKLOAD_DURATION_SECONDS=0
-WORKLOAD_ROUNDS_REQUESTED=$SCALE_TEST_CHURN_ROUNDS
-WORKLOAD_ROUNDS_COMPLETED=0
-WORKLOAD_CONNECTIVITY_STATUS=unknown
-WORKLOAD_UNIQUE_IP_STATUS=unknown
-WORKLOAD_STATUS=running
-
-persist_state() {
-  local temporary="${state_file}.tmp.$$"
-  {
-    printf 'WORKLOAD_PROFILE_ID=%q\n' "$WORKLOAD_PROFILE_ID"
-    printf 'TEST_SCENARIO_ID=%q\n' "${TEST_SCENARIO_ID:-}"
-    printf 'WORKLOAD_REPORT_PATH=%q\n' "${WORKLOAD_REPORT_PATH:-${report_dir}/workload-report.json}"
-    printf 'WORKLOAD_STARTED_AT=%q\n' "$WORKLOAD_STARTED_AT"
-    printf 'WORKLOAD_REQUESTED_PODS=%q\n' "$WORKLOAD_REQUESTED_PODS"
-    printf 'WORKLOAD_READY_PODS=%q\n' "$WORKLOAD_READY_PODS"
-    printf 'WORKLOAD_CREATED_PODS=%q\n' "$WORKLOAD_CREATED_PODS"
-    printf 'WORKLOAD_DELETED_PODS=%q\n' "$WORKLOAD_DELETED_PODS"
-    printf 'WORKLOAD_POD_THROUGHPUT=%q\n' "$WORKLOAD_POD_THROUGHPUT"
-    printf 'WORKLOAD_CHURN_PODS_PER_ROUND=%q\n' "$WORKLOAD_CHURN_PODS_PER_ROUND"
-    printf 'WORKLOAD_CHURN_INTERVAL_SECONDS=%q\n' "$WORKLOAD_CHURN_INTERVAL_SECONDS"
-    printf 'WORKLOAD_DURATION_SECONDS=%q\n' "$WORKLOAD_DURATION_SECONDS"
-    printf 'WORKLOAD_ROUNDS_REQUESTED=%q\n' "$WORKLOAD_ROUNDS_REQUESTED"
-    printf 'WORKLOAD_ROUNDS_COMPLETED=%q\n' "$WORKLOAD_ROUNDS_COMPLETED"
-    printf 'WORKLOAD_CONNECTIVITY_STATUS=%q\n' "$WORKLOAD_CONNECTIVITY_STATUS"
-    printf 'WORKLOAD_UNIQUE_IP_STATUS=%q\n' "$WORKLOAD_UNIQUE_IP_STATUS"
-    printf 'WORKLOAD_STATUS=%q\n' "$WORKLOAD_STATUS"
-    printf 'SCALE_TEST_NAMESPACE_PREFIX=%q\n' "$SCALE_TEST_NAMESPACE_PREFIX"
-  } >"$temporary"
-  mv -f -- "$temporary" "$state_file"
-}
-
-KUBECTL=(kubectl --kubeconfig "$KUBECONFIG")
-namespace="${SCALE_TEST_NAMESPACE_PREFIX}-1"
-
-print_diagnostics_on_failure() {
-  local status=$?
-  trap - EXIT
-  if ((status != 0)); then
-    WORKLOAD_STATUS=failed
-    persist_state
-    printf 'ClusterLoader2 scale workload failed; collecting pod diagnostics\n' >&2
-    "${KUBECTL[@]}" get pods \
-      --all-namespaces \
-      --selector group=cni-scale \
-      --output wide || true
-  fi
-  exit "$status"
-}
-trap print_diagnostics_on_failure EXIT
-persist_state
-
-cat >"${report_dir}/metadata.txt" <<EOF
-clusterloader2_path=${clusterloader_path}
-clusterloader2_sha256=${clusterloader_sha256}
-pod_count=${SCALE_TEST_PODS}
-pod_throughput=${SCALE_TEST_POD_THROUGHPUT}
-namespace=${SCALE_TEST_NAMESPACE_PREFIX}-1
-EOF
-
-export NAMESPACE_PREFIX=$SCALE_TEST_NAMESPACE_PREFIX
-export OPERATION_TIMEOUT="${SCALE_TEST_TIMEOUT_SECONDS}s"
-export POD_COUNT=$SCALE_TEST_PODS
-export POD_IMAGE=$SCALE_TEST_POD_IMAGE
-export POD_THROUGHPUT=$SCALE_TEST_POD_THROUGHPUT
-
-printf 'Creating %s CNI scale pods at %s pods/s with ClusterLoader2 %s\n' \
-  "$SCALE_TEST_PODS" "$SCALE_TEST_POD_THROUGHPUT" "$clusterloader_sha256"
-
-"$CL2_BIN" \
-  -v=2 \
-  --testconfig="${script_dir}/scale/cl2-config.yaml" \
-  --provider=eks \
-  --enable-exec-service=false \
-  --report-dir="$report_dir" \
-  --kubeconfig="$KUBECONFIG" \
-  2>&1 | tee "${report_dir}/clusterloader2.log"
-
-verify_ready_and_unique_ips() {
-  "${KUBECTL[@]}" wait pod \
-    --namespace "$namespace" \
-    --selector group=cni-scale \
-    --for=condition=Ready \
-    --timeout="${SCALE_TEST_TIMEOUT_SECONDS}s"
-
-  local pod_count
-  local unique_ip_count
-  pod_count=$("${KUBECTL[@]}" get pods \
-    --namespace "$namespace" \
-    --selector group=cni-scale \
-    --output jsonpath='{range .items[*]}{.status.podIP}{"\n"}{end}' |
-    sed '/^$/d' |
-    wc -l)
-  unique_ip_count=$("${KUBECTL[@]}" get pods \
-    --namespace "$namespace" \
-    --selector group=cni-scale \
-    --output jsonpath='{range .items[*]}{.status.podIP}{"\n"}{end}' |
-    sed '/^$/d' |
-    sort -u |
-    wc -l)
-  if ((pod_count != SCALE_TEST_PODS || unique_ip_count != SCALE_TEST_PODS)); then
-    printf 'CNI scale pod/IP count mismatch: pods=%s uniqueIPs=%s expected=%s\n' \
-      "$pod_count" "$unique_ip_count" "$SCALE_TEST_PODS" >&2
-    return 1
-  fi
-  WORKLOAD_READY_PODS=$pod_count
-  WORKLOAD_UNIQUE_IP_STATUS=pass
-}
-
-verify_cross_node_connectivity() {
-  local source_pod=
-  local source_node=
-  local target_ip=
-  local pod
-  local node
-  local ip
-  while IFS=$'\t' read -r pod node ip; do
-    [[ -n $pod && -n $node && -n $ip ]] || continue
-    if [[ -z $source_pod ]]; then
-      source_pod=$pod
-      source_node=$node
-      continue
-    fi
-    if [[ $node != "$source_node" ]]; then
-      target_ip=$ip
-      break
-    fi
-  done < <("${KUBECTL[@]}" get pods \
-    --namespace "$namespace" \
-    --selector group=cni-scale \
-    --output jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.nodeName}{"\t"}{.status.podIP}{"\n"}{end}')
-
-  if [[ -z $source_pod || -z $target_ip ]]; then
-    printf 'Could not find ready CNI scale pods on two different nodes\n' >&2
-    return 1
-  fi
-  "${KUBECTL[@]}" exec \
-    --namespace "$namespace" \
-    "$source_pod" \
-    -- ping -c 1 -W 3 "$target_ip" >/dev/null
-  WORKLOAD_CONNECTIVITY_STATUS=pass
-}
-
-create_replacement_batch() {
-  local round=$1
-  local first=$2
-  local last=$3
-  {
-    printf 'apiVersion: v1\nkind: List\nitems:\n'
-    local sequence
-    for ((sequence = first; sequence <= last; sequence++)); do
-      cat <<EOF
-- apiVersion: v1
-  kind: Pod
-  metadata:
-    name: cni-scale-r${round}-${sequence}
-    namespace: ${namespace}
-    labels:
-      group: cni-scale
-      cni-scale-round: "${round}"
-  spec:
-    automountServiceAccountToken: false
-    nodeSelector:
-      kubernetes.io/os: linux
-    terminationGracePeriodSeconds: 0
-    topologySpreadConstraints:
-    - labelSelector:
-        matchLabels:
-          group: cni-scale
-      maxSkew: 1
-      topologyKey: kubernetes.io/hostname
-      whenUnsatisfiable: ScheduleAnyway
-    containers:
-    - name: workload
-      image: ${SCALE_TEST_POD_IMAGE}
-      imagePullPolicy: IfNotPresent
-      command: ["sleep", "604800"]
-      resources:
-        requests:
-          cpu: 5m
-          memory: 8Mi
-EOF
-    done
-  } | "${KUBECTL[@]}" create --filename -
-}
-
-replace_scale_pods() {
-  local round=$1
-  local victims=()
-  local victim
-  while IFS= read -r victim; do
-    [[ -n $victim ]] && victims+=("$victim")
-  done < <("${KUBECTL[@]}" get pods \
-    --namespace "$namespace" \
-    --selector group=cni-scale \
-    --sort-by=.metadata.name \
-    --output name |
-    head -n "$SCALE_TEST_CHURN_PODS")
-  if ((${#victims[@]} != SCALE_TEST_CHURN_PODS)); then
-    printf 'Found %s churn victims, want %s\n' \
-      "${#victims[@]}" "$SCALE_TEST_CHURN_PODS" >&2
-    return 1
-  fi
-  "${KUBECTL[@]}" delete \
-    --namespace "$namespace" \
-    --wait=true \
-    --timeout="${SCALE_TEST_TIMEOUT_SECONDS}s" \
-    "${victims[@]}"
-  WORKLOAD_DELETED_PODS=$((WORKLOAD_DELETED_PODS + SCALE_TEST_CHURN_PODS))
-
-  local first=1
-  while ((first <= SCALE_TEST_CHURN_PODS)); do
-    local last=$((first + SCALE_TEST_POD_THROUGHPUT - 1))
-    if ((last > SCALE_TEST_CHURN_PODS)); then
-      last=$SCALE_TEST_CHURN_PODS
-    fi
-    create_replacement_batch "$round" "$first" "$last"
-    WORKLOAD_CREATED_PODS=$((WORKLOAD_CREATED_PODS + last - first + 1))
-    first=$((last + 1))
-    if ((first <= SCALE_TEST_CHURN_PODS)); then
-      sleep 1
-    fi
-  done
-}
-
-WORKLOAD_CREATED_PODS=$SCALE_TEST_PODS
-verify_ready_and_unique_ips
-verify_cross_node_connectivity
-printf 'CNI scale workload reached %s RunningAndReady pods\n' "$SCALE_TEST_PODS"
-
-churn_started=$SECONDS
-for ((round = 1; round <= SCALE_TEST_CHURN_ROUNDS; round++)); do
-  printf 'CNI scale churn round %s/%s: replacing %s pods\n' \
-    "$round" "$SCALE_TEST_CHURN_ROUNDS" "$SCALE_TEST_CHURN_PODS"
-  replace_scale_pods "$round"
-  verify_ready_and_unique_ips
-  verify_cross_node_connectivity
-  WORKLOAD_ROUNDS_COMPLETED=$round
-  persist_state
-
-  next_round=$((churn_started + round * SCALE_TEST_CHURN_INTERVAL_SECONDS))
-  remaining=$((next_round - SECONDS))
-  if ((remaining > 0)); then
-    sleep "$remaining"
+if [[ -n $CL2_EXPECTED_SHA256 && $clusterloader_sha256 != "$CL2_EXPECTED_SHA256" ]]; then
+  printf 'ClusterLoader2 SHA-256 mismatch: got %s, want %s\n' \
+    "$clusterloader_sha256" "$CL2_EXPECTED_SHA256" >&2
+  exit 2
+fi
+cl2_help=$("$CL2_BIN" --help 2>&1 || true)
+for required_flag in \
+  --dry-run \
+  --enable-prometheus-server \
+  --prometheus-additional-monitors-path \
+  --tear-down-prometheus-server; do
+  if ! grep -q -- "$required_flag" <<<"$cl2_help"; then
+    printf '%s does not expose required flag %s\n' "$CL2_BIN" "$required_flag" >&2
+    exit 2
   fi
 done
 
-WORKLOAD_DURATION_SECONDS=$((SECONDS - churn_started))
-WORKLOAD_STATUS=pass
-persist_state
-printf 'CNI scale workload completed %s churn rounds successfully\n' \
-  "$SCALE_TEST_CHURN_ROUNDS"
+if [[ -n ${KUBE_CONFIG_PATH:-} && -z ${KUBECONFIG:-} ]]; then
+  export KUBECONFIG=$KUBE_CONFIG_PATH
+fi
+if [[ $CL2_DRY_RUN == false ]]; then
+  KUBECONFIG=${KUBECONFIG:-"${HOME:?HOME must be set}/.kube/config"}
+else
+  KUBECONFIG=${KUBECONFIG:-"${script_dir}/scale/kubeconfig.dry-run.yaml"}
+fi
+export KUBECONFIG
+
+profile_dir=$(dirname -- "$CL2_PROFILE_PATH")
+export CL2_CNI_LOAD_MODULE_PATH
+CL2_CNI_LOAD_MODULE_PATH=$(realpath --relative-to="$profile_dir" \
+  "${script_dir}/scale/cni-load-module.yaml")
+export CL2_CNI_WORKLOAD_SCRIPT
+CL2_CNI_WORKLOAD_SCRIPT=$(realpath "${script_dir}/run-cni-scale-workload.sh")
+export CL2_CNI_CLEANUP_SCRIPT
+CL2_CNI_CLEANUP_SCRIPT=$(realpath "${script_dir}/run-cni-scale-cleanup.sh")
+export CL2_CNI_POD_TEMPLATE_PATH
+CL2_CNI_POD_TEMPLATE_PATH=$(realpath --relative-to="$profile_dir" \
+  "${script_dir}/scale/pod.yaml")
+
+export CL2_CNI_NAMESPACE_PREFIX=$SCALE_TEST_NAMESPACE_PREFIX
+export CL2_CNI_OPERATION_TIMEOUT="${SCALE_TEST_TIMEOUT_SECONDS}s"
+export CL2_CNI_POD_COUNT=$SCALE_TEST_PODS
+export CL2_CNI_POD_IMAGE=$SCALE_TEST_POD_IMAGE
+export CL2_CNI_POD_THROUGHPUT=$SCALE_TEST_POD_THROUGHPUT
+export CL2_CNI_WORKLOAD_TIMEOUT=$SCALE_TEST_WORKLOAD_TIMEOUT
+export CL2_CNI_CLEANUP_TIMEOUT=$SCALE_TEST_CLEANUP_TIMEOUT
+export CL2_EXPECTED_LINUX_NODES=${CL2_EXPECTED_LINUX_NODES:-${EXPECTED_LINUX_NODES:-1}}
+export CL2_CNI_BASELINE_SETTLE=$SCALE_TEST_BASELINE_SETTLE
+export CL2_CNI_SCRAPE_SETTLE=$SCALE_TEST_SCRAPE_SETTLE
+export CL2_CNI_RECOVERY_DELAY=$SCALE_TEST_RECOVERY_DELAY
+export CL2_CNI_EXPECTED_SETUP_OPERATIONS=$((SCALE_TEST_PODS + SCALE_TEST_CHURN_ROUNDS * SCALE_TEST_CHURN_PODS))
+export CL2_CNI_EXPECTED_CHURN_DELETES=$((SCALE_TEST_CHURN_ROUNDS * SCALE_TEST_CHURN_PODS))
+export CL2_CNI_EXPECTED_TOTAL_DELETES=$CL2_CNI_EXPECTED_SETUP_OPERATIONS
+
+# Avoid requiring a cluster-specific persistent volume for an ephemeral test.
+export CL2_PROMETHEUS_PVC_ENABLED=false
+export PROMETHEUS_STORAGE_CLASS_PROVISIONER=ebs.csi.aws.com
+export PROMETHEUS_STORAGE_CLASS_VOLUME_TYPE=gp3
+export CL2_PROMETHEUS_KUBELET_MEMORY_SCALE_FACTOR=${CL2_PROMETHEUS_KUBELET_MEMORY_SCALE_FACTOR:-4}
+
+safe_cluster_name=${CLUSTER_NAME:-local}
+safe_cluster_name=${safe_cluster_name//[^a-zA-Z0-9_.-]/-}
+artifact_root=${ARTIFACT_DIR:-log}
+report_dir=${SCALE_TEST_REPORT_DIR:-"${artifact_root}/clusterloader2-${safe_cluster_name}"}
+mkdir -p "$report_dir"
+
+cat >"${report_dir}/metadata.txt" <<EOF
+scenario_id=${TEST_SCENARIO_ID:-manual}
+workload_profile_id=${WORKLOAD_PROFILE_ID}
+workload_revision=${WORKLOAD_GIT_REVISION:-unknown}
+clusterloader2_path=${clusterloader_path}
+clusterloader2_sha256=${clusterloader_sha256}
+clusterloader2_upstream_revision=${CL2_UPSTREAM_REVISION}
+profile_path=${CL2_PROFILE_PATH}
+monitors_path=${CL2_MONITORS_PATH:-none}
+pod_count=${SCALE_TEST_PODS}
+pod_throughput=${SCALE_TEST_POD_THROUGHPUT}
+churn_rounds=${SCALE_TEST_CHURN_ROUNDS}
+churn_pods=${SCALE_TEST_CHURN_PODS}
+churn_interval_seconds=${SCALE_TEST_CHURN_INTERVAL_SECONDS}
+EOF
+
+cl2_args=(
+  -v=2
+  "--testconfig=${CL2_PROFILE_PATH}"
+  --provider=eks
+  "--nodes=${CL2_EXPECTED_LINUX_NODES}"
+  --enable-exec-service=false
+  "--report-dir=${report_dir}"
+  "--kubeconfig=${KUBECONFIG}"
+)
+if [[ -n ${CL2_MONITORS_PATH:-} ]]; then
+  cl2_args+=(
+    --enable-prometheus-server=true
+    --tear-down-prometheus-server=true
+    --prometheus-scrape-kube-proxy=false
+    --prometheus-scrape-kubelets=true
+    "--prometheus-additional-monitors-path=${CL2_MONITORS_PATH}"
+  )
+fi
+if [[ $CL2_DRY_RUN == true ]]; then
+  cl2_args+=(
+    --dry-run=true
+    --skip-cluster-verification=true
+  )
+fi
+
+printf 'Running CNI scale profile %s with ClusterLoader2 %s\n' \
+  "$CL2_PROFILE_PATH" "$clusterloader_sha256"
+if [[ $CL2_DRY_RUN == true ]]; then
+  set +e
+  "$CL2_BIN" "${cl2_args[@]}" 2>&1 | tee "${report_dir}/clusterloader2.log"
+  clusterloader_status=${PIPESTATUS[0]}
+  set -e
+  generated_configs=("${report_dir}"/generatedConfig_*.yaml)
+  if [[ ! -s ${generated_configs[0]} ]]; then
+    printf 'ClusterLoader2 dry run produced no generated config (status %s)\n' \
+      "$clusterloader_status" >&2
+    exit 1
+  fi
+  printf 'ClusterLoader2 compiled the CNI scale profile: %s\n' \
+    "${generated_configs[0]}"
+  exit 0
+fi
+
+"$CL2_BIN" "${cl2_args[@]}" 2>&1 | tee "${report_dir}/clusterloader2.log"
+
+printf 'CNI scale profile passed; reports: %s\n' "$report_dir"

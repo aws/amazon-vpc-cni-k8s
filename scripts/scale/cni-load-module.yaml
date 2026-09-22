@@ -1,0 +1,38 @@
+{{$POD_COUNT := DefaultParam .CL2_CNI_POD_COUNT 2000}}
+{{$POD_IMAGE := DefaultParam .CL2_CNI_POD_IMAGE "registry.k8s.io/e2e-test-images/busybox:1.36.1-1"}}
+{{$OPERATION_TIMEOUT := DefaultParam .CL2_CNI_OPERATION_TIMEOUT "1800s"}}
+{{$POD_TEMPLATE := DefaultParam .CL2_CNI_POD_TEMPLATE_PATH "pod.yaml"}}
+{{$WORKLOAD_SCRIPT := DefaultParam .CL2_CNI_WORKLOAD_SCRIPT "/bin/false"}}
+{{$WORKLOAD_TIMEOUT := DefaultParam .CL2_CNI_WORKLOAD_TIMEOUT "95m"}}
+
+steps:
+- name: Create CNI scale pods
+  phases:
+  - namespaceRange:
+      min: 1
+      max: 1
+    replicasPerNamespace: {{$POD_COUNT}}
+    tuningSet: UniformQPS
+    objectBundle:
+    - basename: cni-scale-pod
+      objectTemplatePath: {{$POD_TEMPLATE}}
+      templateFillMap:
+        Image: {{$POD_IMAGE}}
+- name: Wait for every CNI scale pod to be RunningAndReady
+  measurements:
+  - Identifier: WaitForCNIScalePods
+    Method: WaitForRunningPods
+    Params:
+      action: gather
+      desiredPodCount: {{$POD_COUNT}}
+      labelSelector: group = cni-scale
+      timeout: {{$OPERATION_TIMEOUT}}
+- name: Run functional checks and sustained pod churn
+  measurements:
+  - Identifier: RunCNIScaleWorkload
+    Method: Exec
+    Params:
+      timeout: {{$WORKLOAD_TIMEOUT}}
+      command:
+      - /bin/bash
+      - {{$WORKLOAD_SCRIPT}}
