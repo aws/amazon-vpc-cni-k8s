@@ -113,14 +113,19 @@ func setup(t *testing.T) *testMocks {
 	eniconfigscheme.AddToScheme(k8sSchema)
 	rcscheme.AddToScheme(k8sSchema)
 
-	return &testMocks{
+	m := &testMocks{
 		ctrl:      ctrl,
 		awsutils:  mock_awsutils.NewMockAPIs(ctrl),
 		k8sClient: testclient.NewClientBuilder().WithScheme(k8sSchema).Build(),
 		network:   mock_networkutils.NewMockNetworkAPIs(ctrl),
 		eniconfig: mock_eniconfig.NewMockENIConfig(ctrl),
 	}
+	return m
 }
+
+// testNodeProviderID is a normal (non-HyperPod) EKS providerID used by nodeInit tests to
+// assert the node's providerID is passed through to InitHyperPodFromProviderID.
+const testNodeProviderID = "aws:///us-west-2a/i-0abc123def4567890"
 
 func TestNodeInit(t *testing.T) {
 	m := setup(t)
@@ -209,7 +214,7 @@ func TestNodeInit(t *testing.T) {
 	fakeNode := v1.Node{
 		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
 		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
-		Spec:       v1.NodeSpec{},
+		Spec:       v1.NodeSpec{ProviderID: testNodeProviderID},
 		Status: v1.NodeStatus{
 			Capacity: v1.ResourceList{
 				v1.ResourcePods: maxPods,
@@ -217,6 +222,7 @@ func TestNodeInit(t *testing.T) {
 		},
 	}
 	m.k8sClient.Create(ctx, &fakeNode)
+	m.awsutils.EXPECT().InitHyperPodFromProviderID(context.Background(), testNodeProviderID).Return(nil).Times(1)
 
 	// Add IPs
 	m.awsutils.EXPECT().AllocIPAddresses(gomock.Any(), gomock.Any(), gomock.Any())
@@ -312,7 +318,7 @@ func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 	fakeNode := v1.Node{
 		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
 		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
-		Spec:       v1.NodeSpec{},
+		Spec:       v1.NodeSpec{ProviderID: testNodeProviderID},
 		Status: v1.NodeStatus{
 			Capacity: v1.ResourceList{
 				v1.ResourcePods: maxPods,
@@ -320,6 +326,7 @@ func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 		},
 	}
 	m.k8sClient.Create(ctx, &fakeNode)
+	m.awsutils.EXPECT().InitHyperPodFromProviderID(context.Background(), testNodeProviderID).Return(nil).Times(1)
 
 	os.Setenv("MY_NODE_NAME", myNodeName)
 	err := mockContext.nodeInit(context.Background())
@@ -405,10 +412,11 @@ func TestNodeInitwithPDenabledIPv6Mode(t *testing.T) {
 	fakeNode := v1.Node{
 		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
 		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
-		Spec:       v1.NodeSpec{},
+		Spec:       v1.NodeSpec{ProviderID: testNodeProviderID},
 		Status:     v1.NodeStatus{},
 	}
 	m.k8sClient.Create(ctx, &fakeNode)
+	m.awsutils.EXPECT().InitHyperPodFromProviderID(context.Background(), testNodeProviderID).Return(nil).Times(1)
 	os.Setenv("MY_NODE_NAME", myNodeName)
 
 	err := mockContext.nodeInit(context.Background())
@@ -3121,7 +3129,7 @@ func TestNodeInitPrimarySubnetExclusionWithExistingPodIPs(t *testing.T) {
 	fakeNode := v1.Node{
 		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
 		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
-		Spec:       v1.NodeSpec{},
+		Spec:       v1.NodeSpec{ProviderID: testNodeProviderID},
 		Status: v1.NodeStatus{
 			Capacity: v1.ResourceList{
 				v1.ResourcePods: maxPods,
@@ -3129,6 +3137,7 @@ func TestNodeInitPrimarySubnetExclusionWithExistingPodIPs(t *testing.T) {
 		},
 	}
 	m.k8sClient.Create(ctx, &fakeNode)
+	m.awsutils.EXPECT().InitHyperPodFromProviderID(context.Background(), testNodeProviderID).Return(nil).Times(1)
 
 	// Expect cleanup calls for excluded primary ENI (with existing pod IPs)
 	// The cleanup function will try to unassign any unassigned IPs/prefixes
@@ -3263,7 +3272,7 @@ func TestNodeInitPrimarySubnetExclusionWithoutExistingPodIPs(t *testing.T) {
 	fakeNode := v1.Node{
 		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
 		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
-		Spec:       v1.NodeSpec{},
+		Spec:       v1.NodeSpec{ProviderID: testNodeProviderID},
 		Status: v1.NodeStatus{
 			Capacity: v1.ResourceList{
 				v1.ResourcePods: maxPods,
@@ -3271,6 +3280,7 @@ func TestNodeInitPrimarySubnetExclusionWithoutExistingPodIPs(t *testing.T) {
 		},
 	}
 	m.k8sClient.Create(ctx, &fakeNode)
+	m.awsutils.EXPECT().InitHyperPodFromProviderID(context.Background(), testNodeProviderID).Return(nil).Times(1)
 
 	// Expect cleanup calls for excluded primary ENI
 	// The cleanup function will try to unassign any unassigned IPs/prefixes
@@ -3786,10 +3796,11 @@ func TestNodeInit_IPv6_PrimaryENIExcluded(t *testing.T) {
 	fakeNode := v1.Node{
 		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
 		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
-		Spec:       v1.NodeSpec{},
+		Spec:       v1.NodeSpec{ProviderID: testNodeProviderID},
 		Status:     v1.NodeStatus{},
 	}
 	m.k8sClient.Create(ctx, &fakeNode)
+	m.awsutils.EXPECT().InitHyperPodFromProviderID(context.TODO(), testNodeProviderID).Return(nil).Times(1)
 	os.Setenv("MY_NODE_NAME", myNodeName)
 
 	err := mockContext.nodeInit(context.TODO())
@@ -4385,4 +4396,118 @@ func TestIPAMContext_InInsufficientCidrCoolingPeriod(t *testing.T) {
 			assert.Equal(t, tt.want, c.inInsufficientCidrCoolingPeriod())
 		})
 	}
+}
+
+func newIPv6TestContext(m *testMocks) *IPAMContext {
+	ds := testDatastorewithPrefix()
+	_ = ds.GetDataStore(defaultNetworkCard).AddENI(primaryENIid, primaryDevice, true, false, false, networkutils.CalculateRouteTableId(primaryDevice, 0), "")
+	return &IPAMContext{
+		awsClient:       m.awsutils,
+		networkClient:   m.network,
+		dataStoreAccess: ds,
+		enableIPv6:      true,
+		enableIPv4:      false,
+	}
+}
+
+func TestTryIPv6DatastoreSelfHeal_HappyPath(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	c := newIPv6TestContext(m)
+	m.awsutils.EXPECT().GetIPv6PrefixesFromEC2(gomock.Any(), primaryENIid).Return([]ec2types.Ipv6PrefixSpecification{}, nil)
+	prefix := "2001:db8::/80"
+	m.awsutils.EXPECT().AllocIPv6Prefixes(gomock.Any(), primaryENIid).Return([]*string{&prefix}, nil)
+
+	c.tryIPv6DatastoreSelfHeal(context.Background())
+}
+
+func TestTryIPv6DatastoreSelfHeal_NoENIInDatastore(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	c := &IPAMContext{
+		awsClient:       m.awsutils,
+		networkClient:   m.network,
+		dataStoreAccess: testDatastorewithPrefix(),
+		enableIPv6:      true,
+		enableIPv4:      false,
+	}
+
+	c.tryIPv6DatastoreSelfHeal(context.Background())
+}
+
+func TestTryIPv6DatastoreSelfHeal_AllocError(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	c := newIPv6TestContext(m)
+	m.awsutils.EXPECT().GetIPv6PrefixesFromEC2(gomock.Any(), primaryENIid).Return([]ec2types.Ipv6PrefixSpecification{}, nil)
+	m.awsutils.EXPECT().AllocIPv6Prefixes(gomock.Any(), primaryENIid).Return(nil, assert.AnError)
+
+	c.tryIPv6DatastoreSelfHeal(context.Background())
+}
+
+func TestTryIPv6DatastoreSelfHeal_SkipsWhenPrefixAttached(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	c := newIPv6TestContext(m)
+	ds := c.dataStoreAccess.GetDataStore(defaultNetworkCard)
+	_, ipnet, _ := net.ParseCIDR("2001:db8::/80")
+	_ = ds.AddIPv6CidrToStore(primaryENIid, *ipnet, true)
+
+	c.tryIPv6DatastoreSelfHeal(context.Background())
+}
+
+func TestTryIPv6DatastoreSelfHeal_SkipsTrunkENI(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	c := newIPv6TestContext(m)
+	ds := c.dataStoreAccess.GetDataStore(defaultNetworkCard)
+	// A trunk ENI in the datastore must never be touched by self-heal.
+	// No EC2 mock expectations are set for secENIid, so a call against it fails the test.
+	assert.NoError(t, ds.AddENI(secENIid, secDevice, false, true, false, networkutils.CalculateRouteTableId(secDevice, 0), ""))
+
+	m.awsutils.EXPECT().GetIPv6PrefixesFromEC2(gomock.Any(), primaryENIid).Return([]ec2types.Ipv6PrefixSpecification{}, nil)
+	prefix := "2001:db8::/80"
+	m.awsutils.EXPECT().AllocIPv6Prefixes(gomock.Any(), primaryENIid).Return([]*string{&prefix}, nil)
+
+	c.tryIPv6DatastoreSelfHeal(context.Background())
+}
+
+func TestTryIPv6DatastoreSelfHeal_CustomNetworkingSkipsPrimary(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	c := newIPv6TestContext(m)
+	c.useCustomNetworking = true
+	ds := c.dataStoreAccess.GetDataStore(defaultNetworkCard)
+	// With custom networking, eth0 (primary) is not used for pod IPs, so self-heal
+	// must target the secondary ENI instead. No mock expectations on primaryENIid.
+	assert.NoError(t, ds.AddENI(secENIid, secDevice, false, false, false, networkutils.CalculateRouteTableId(secDevice, 0), ""))
+
+	m.awsutils.EXPECT().GetIPv6PrefixesFromEC2(gomock.Any(), secENIid).Return([]ec2types.Ipv6PrefixSpecification{}, nil)
+	prefix := "2001:db8::/80"
+	m.awsutils.EXPECT().AllocIPv6Prefixes(gomock.Any(), secENIid).Return([]*string{&prefix}, nil)
+
+	c.tryIPv6DatastoreSelfHeal(context.Background())
+}
+
+func TestTryIPv6DatastoreSelfHeal_SkipsExcludedENI(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	c := newIPv6TestContext(m)
+	ds := c.dataStoreAccess.GetDataStore(defaultNetworkCard)
+	// An ENI excluded from pod IPs must never be touched.
+	assert.NoError(t, ds.AddENI(secENIid, secDevice, false, false, false, networkutils.CalculateRouteTableId(secDevice, 0), ""))
+	assert.NoError(t, ds.SetENIExcludedForPodIPs(secENIid, true))
+
+	m.awsutils.EXPECT().GetIPv6PrefixesFromEC2(gomock.Any(), primaryENIid).Return([]ec2types.Ipv6PrefixSpecification{}, nil)
+	prefix := "2001:db8::/80"
+	m.awsutils.EXPECT().AllocIPv6Prefixes(gomock.Any(), primaryENIid).Return([]*string{&prefix}, nil)
+
+	c.tryIPv6DatastoreSelfHeal(context.Background())
 }

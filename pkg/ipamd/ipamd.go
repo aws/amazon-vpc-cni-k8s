@@ -620,6 +620,10 @@ func (c *IPAMContext) nodeInit(ctx context.Context) error {
 			}
 			c.maxPods = int(maxPods)
 		}
+		// On HyperPod nodes the ENI attach is delegated to SageMaker; error out so startup retries.
+		if err := c.awsClient.InitHyperPodFromProviderID(ctx, node.Spec.ProviderID); err != nil {
+			return err
+		}
 	} else {
 		maxPods, err := c.getMaxPodsFromFile()
 		if err != nil {
@@ -775,9 +779,10 @@ func (c *IPAMContext) StartNodeIPPoolManager(ctx context.Context) {
 				time.Sleep(ipPoolMonitorInterval)
 			}
 		}
-		// Outside of Security Groups for Pods, no additional ENIs are attached in IPv6 mode.
-		// The prefix used for the primary ENI is more than enough for all pods.
-		return
+		for {
+			time.Sleep(wait.Jitter(nodeIPPoolReconcileInterval, 0.5))
+			c.tryIPv6DatastoreSelfHeal(ctx)
+		}
 	}
 
 	log.Infof("IP pool manager - max pods: %d, warm IP target: %d, warm prefix target: %d, warm ENI target: %d, minimum IP target: %d",
@@ -1212,6 +1217,30 @@ func (c *IPAMContext) assignIPv6Prefix(ctx context.Context, eniID string, networ
 	}
 	c.addENIv6prefixesToDataStore(ec2v6Prefixes, eniID, networkCard)
 	return nil
+}
+
+// tryIPv6DatastoreSelfHeal reallocates the /80 prefix on managed ENIs when
+// bootstrap AssignIpv6Addresses failed, so recovery does not require aws-node restart.
+func (c *IPAMContext) tryIPv6DatastoreSelfHeal(ctx context.Context) {
+	for _, ds := range c.dataStoreAccess.DataStores {
+		if ds.GetIPStats(ipV6AddrFamily).TotalIPs > 0 {
+			continue
+		}
+		networkCard := ds.GetNetworkCard()
+		for eniID, eni := range ds.GetENIInfos().ENIs {
+			if eni.IsTrunk || eni.IsExcludedForPodIPs {
+				continue
+			}
+			if c.useCustomNetworking && eni.IsPrimary {
+				continue
+			}
+			if err := c.assignIPv6Prefix(ctx, eniID, networkCard); err != nil {
+				log.Warnf("IPv6 self-heal alloc failed for ENI %s on network card %d: %v", eniID, networkCard, err)
+				continue
+			}
+			log.Infof("IPv6 self-heal alloc succeeded for ENI %s on network card %d", eniID, networkCard)
+		}
+	}
 }
 
 // PRECONDITION: isDatastorePoolTooLow returned true
@@ -2863,6 +2892,10 @@ func (c *IPAMContext) SetAPIServerConnectivity(connected bool) {
 				oldMaxPods := c.maxPods
 				c.maxPods = int(maxPods)
 				log.Infof("Updated maxPods from %d to %d based on node capacity", oldMaxPods, c.maxPods)
+			}
+			// Re-run HyperPod detection, which is skipped when IPAMD starts without API server connectivity.
+			if err := c.awsClient.InitHyperPodFromProviderID(ctx, node.Spec.ProviderID); err != nil {
+				log.Errorf("Failed to init HyperPod delegation after API server became available: %v", err)
 			}
 		}
 	} else {
