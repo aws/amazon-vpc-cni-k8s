@@ -236,7 +236,6 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 				if err == datastore.ErrNoAvailableIPInDataStore && ipsRequired == defaultIpPerPodRequired && networkCard != len(s.ipamContext.dataStoreAccess.DataStores)-1 {
 					continue
 				}
-
 				errors = multiErr.Append(errors, err)
 				break
 			}
