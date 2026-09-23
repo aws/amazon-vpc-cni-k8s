@@ -41,6 +41,9 @@ cni_write_workload_state() {
     printf 'WORKLOAD_UNIQUE_IP_STATUS=%q\n' "${WORKLOAD_UNIQUE_IP_STATUS:-unknown}"
     printf 'WORKLOAD_STATUS=%q\n' "${WORKLOAD_STATUS:-unknown}"
     printf 'WORKLOAD_CLEANUP_STATUS=%q\n' "${WORKLOAD_CLEANUP_STATUS:-pending}"
+    printf 'WORKLOAD_EXPECTED_NODES=%q\n' "${WORKLOAD_EXPECTED_NODES:-0}"
+    printf 'WORKLOAD_COVERED_NODES=%q\n' "${WORKLOAD_COVERED_NODES:-0}"
+    printf 'WORKLOAD_NODE_COVERAGE_STATUS=%q\n' "${WORKLOAD_NODE_COVERAGE_STATUS:-unknown}"
     printf 'SCALE_TEST_NAMESPACE_PREFIX=%q\n' "${SCALE_TEST_NAMESPACE_PREFIX:-cni-scale}"
   } >"$temporary"
   mv -f -- "$temporary" "$CNI_WORKLOAD_STATE_FILE"
@@ -75,8 +78,11 @@ cni_write_workload_report() {
   "roundsCompleted": ${WORKLOAD_ROUNDS_COMPLETED:-0},
   "functionalChecks": {
     "connectivity": "$(cni_json_escape "${WORKLOAD_CONNECTIVITY_STATUS:-unknown}")",
-    "uniquePodIPs": "$(cni_json_escape "${WORKLOAD_UNIQUE_IP_STATUS:-unknown}")"
+    "uniquePodIPs": "$(cni_json_escape "${WORKLOAD_UNIQUE_IP_STATUS:-unknown}")",
+    "nodeCoverage": "$(cni_json_escape "${WORKLOAD_NODE_COVERAGE_STATUS:-unknown}")"
   },
+  "expectedNodes": ${WORKLOAD_EXPECTED_NODES:-0},
+  "coveredNodes": ${WORKLOAD_COVERED_NODES:-0},
   "workloadStatus": "$(cni_json_escape "${WORKLOAD_STATUS:-unknown}")",
   "cleanupStatus": "$(cni_json_escape "${WORKLOAD_CLEANUP_STATUS:-unknown}")"
 }

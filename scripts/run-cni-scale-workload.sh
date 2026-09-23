@@ -6,14 +6,14 @@
 
 set -euo pipefail
 
-SCALE_TEST_NAMESPACE_PREFIX=${SCALE_TEST_NAMESPACE_PREFIX:-cni-scale}
-SCALE_TEST_PODS=${SCALE_TEST_PODS:-2000}
-SCALE_TEST_POD_THROUGHPUT=${SCALE_TEST_POD_THROUGHPUT:-20}
+SCALE_TEST_NAMESPACE_PREFIX=${SCALE_TEST_NAMESPACE_PREFIX:-${CL2_CNI_NAMESPACE_PREFIX:-cni-scale}}
+SCALE_TEST_PODS=${SCALE_TEST_PODS:-${CL2_CNI_POD_COUNT:-2000}}
+SCALE_TEST_POD_THROUGHPUT=${SCALE_TEST_POD_THROUGHPUT:-${CL2_CNI_POD_THROUGHPUT:-20}}
 SCALE_TEST_TIMEOUT_SECONDS=${SCALE_TEST_TIMEOUT_SECONDS:-1800}
 SCALE_TEST_CHURN_ROUNDS=${SCALE_TEST_CHURN_ROUNDS:-12}
 SCALE_TEST_CHURN_PODS=${SCALE_TEST_CHURN_PODS:-200}
 SCALE_TEST_CHURN_INTERVAL_SECONDS=${SCALE_TEST_CHURN_INTERVAL_SECONDS:-300}
-SCALE_TEST_POD_IMAGE=${SCALE_TEST_POD_IMAGE:-public.ecr.aws/docker/library/busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662}
+SCALE_TEST_POD_IMAGE=${SCALE_TEST_POD_IMAGE:-${CL2_CNI_POD_IMAGE:-public.ecr.aws/docker/library/busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662}}
 WORKLOAD_PROFILE_ID=${WORKLOAD_PROFILE_ID:-cni-scale-churn-2000-v1}
 
 if [[ -n ${KUBE_CONFIG_PATH:-} && -z ${KUBECONFIG:-} ]]; then
@@ -40,6 +40,8 @@ for name in \
   SCALE_TEST_CHURN_INTERVAL_SECONDS; do
   validate_positive_integer "$name" "${!name}"
 done
+: "${CL2_EXPECTED_LINUX_NODES:?CL2_EXPECTED_LINUX_NODES must identify the scale cluster size}"
+validate_positive_integer CL2_EXPECTED_LINUX_NODES "$CL2_EXPECTED_LINUX_NODES"
 if ((SCALE_TEST_CHURN_PODS > SCALE_TEST_PODS)); then
   printf 'SCALE_TEST_CHURN_PODS must not exceed SCALE_TEST_PODS\n' >&2
   exit 2
@@ -48,7 +50,7 @@ if [[ $WORKLOAD_PROFILE_ID != cni-scale-churn-2000-v1 ]]; then
   printf 'Unsupported CNI scale workload profile %q\n' "$WORKLOAD_PROFILE_ID" >&2
   exit 2
 fi
-for command in kubectl sort wc head sed; do
+for command in comm kubectl sort wc head sed; do
   command -v "$command" >/dev/null 2>&1 || {
     printf '%s is required\n' "$command" >&2
     exit 127
@@ -77,6 +79,9 @@ WORKLOAD_CONNECTIVITY_STATUS=unknown
 WORKLOAD_UNIQUE_IP_STATUS=unknown
 WORKLOAD_STATUS=running
 WORKLOAD_CLEANUP_STATUS=pending
+WORKLOAD_EXPECTED_NODES=$CL2_EXPECTED_LINUX_NODES
+WORKLOAD_COVERED_NODES=0
+WORKLOAD_NODE_COVERAGE_STATUS=unknown
 
 KUBECTL=(kubectl --kubeconfig "$KUBECONFIG")
 namespace="${SCALE_TEST_NAMESPACE_PREFIX}-1"
@@ -145,8 +150,38 @@ verify_ready_and_unique_ips() {
       "$pod_count" "$unique_ip_count" "$SCALE_TEST_PODS" >&2
     return 1
   fi
+
+  local expected_nodes=()
+  local workload_nodes=()
+  mapfile -t expected_nodes < <("${KUBECTL[@]}" get nodes \
+    --selector kubernetes.io/os=linux \
+    --output jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' |
+    sed '/^$/d' |
+    sort -u)
+  mapfile -t workload_nodes < <("${KUBECTL[@]}" get pods \
+    --namespace "$namespace" \
+    --selector group=cni-scale \
+    --output jsonpath='{range .items[*]}{.spec.nodeName}{"\n"}{end}' |
+    sed '/^$/d' |
+    sort -u)
+  if ((${#expected_nodes[@]} != CL2_EXPECTED_LINUX_NODES)); then
+    printf 'CNI scale cluster has %s Linux nodes, want %s\n' \
+      "${#expected_nodes[@]}" "$CL2_EXPECTED_LINUX_NODES" >&2
+    return 1
+  fi
+  local node_diff
+  node_diff=$(comm -3 \
+    <(printf '%s\n' "${expected_nodes[@]}") \
+    <(printf '%s\n' "${workload_nodes[@]}"))
+  if [[ -n $node_diff ]]; then
+    printf 'CNI scale workload did not cover the exact Linux node set:\n%s\n' \
+      "$node_diff" >&2
+    return 1
+  fi
   WORKLOAD_READY_PODS=$pod_count
   WORKLOAD_UNIQUE_IP_STATUS=pass
+  WORKLOAD_COVERED_NODES=${#workload_nodes[@]}
+  WORKLOAD_NODE_COVERAGE_STATUS=pass
 }
 
 verify_cross_node_connectivity() {
@@ -211,7 +246,7 @@ create_replacement_batch() {
           group: cni-scale
       maxSkew: 1
       topologyKey: kubernetes.io/hostname
-      whenUnsatisfiable: ScheduleAnyway
+      whenUnsatisfiable: DoNotSchedule
     containers:
     - name: workload
       image: ${SCALE_TEST_POD_IMAGE}
@@ -271,6 +306,7 @@ printf 'CNI scale workload reached %s RunningAndReady pods\n' "$SCALE_TEST_PODS"
 
 churn_started=$SECONDS
 for ((round = 1; round <= SCALE_TEST_CHURN_ROUNDS; round++)); do
+  round_started=$SECONDS
   printf 'CNI scale churn round %s/%s: replacing %s pods\n' \
     "$round" "$SCALE_TEST_CHURN_ROUNDS" "$SCALE_TEST_CHURN_PODS"
   replace_scale_pods "$round"
@@ -279,9 +315,14 @@ for ((round = 1; round <= SCALE_TEST_CHURN_ROUNDS; round++)); do
   WORKLOAD_ROUNDS_COMPLETED=$round
   cni_write_workload_state
 
-  next_round=$((churn_started + round * SCALE_TEST_CHURN_INTERVAL_SECONDS))
-  remaining=$((next_round - SECONDS))
-  if ((remaining > 0)); then
+  round_elapsed=$((SECONDS - round_started))
+  if ((round_elapsed > SCALE_TEST_CHURN_INTERVAL_SECONDS)); then
+    printf 'CNI scale churn round %s took %ss, exceeding the %ss cadence budget\n' \
+      "$round" "$round_elapsed" "$SCALE_TEST_CHURN_INTERVAL_SECONDS" >&2
+    exit 1
+  fi
+  remaining=$((SCALE_TEST_CHURN_INTERVAL_SECONDS - round_elapsed))
+  if ((round < SCALE_TEST_CHURN_ROUNDS && remaining > 0)); then
     sleep "$remaining"
   fi
 done

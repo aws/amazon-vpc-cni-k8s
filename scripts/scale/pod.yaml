@@ -15,7 +15,7 @@ spec:
         group: cni-scale
     maxSkew: 1
     topologyKey: kubernetes.io/hostname
-    whenUnsatisfiable: ScheduleAnyway
+    whenUnsatisfiable: DoNotSchedule
   containers:
   - name: workload
     image: {{.Image}}

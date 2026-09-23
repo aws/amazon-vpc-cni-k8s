@@ -89,7 +89,11 @@ WORKLOAD_CLEANUP_STATUS=pass
 validation_failed=0
 expected_churn_operations=$((WORKLOAD_ROUNDS_REQUESTED * WORKLOAD_CHURN_PODS_PER_ROUND))
 expected_total_operations=$((WORKLOAD_REQUESTED_PODS + expected_churn_operations))
-minimum_duration=$((WORKLOAD_ROUNDS_REQUESTED * WORKLOAD_CHURN_INTERVAL_SECONDS))
+minimum_duration=0
+if ((WORKLOAD_ROUNDS_REQUESTED > 1)); then
+  # N round starts contain N-1 cadence intervals; the final round has no trailing sleep.
+  minimum_duration=$(((WORKLOAD_ROUNDS_REQUESTED - 1) * WORKLOAD_CHURN_INTERVAL_SECONDS))
+fi
 
 require_equal() {
   local name=$1
