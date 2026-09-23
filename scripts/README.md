@@ -35,48 +35,6 @@ RUN_CNI_INTEGRATION_TESTS=false RUN_PERFORMANCE_TESTS=true PERFORMANCE_TEST_S3_B
 
 Note that some tests create clusters with ARM and AMDx86 node groups, so test cases must be able to pass on both. Specifically, images that test cases pull must be able to run on both architectures.
 
-### Scale workload
-
-The CNI scale workload is split into component-owned, manually reusable parts:
-
-- `scale/cni-load-module.yaml` creates the initial pod cardinality through
-  ClusterLoader2.
-- `run-cni-scale-workload.sh` verifies pod readiness, unique IP assignment,
-  cross-node connectivity, and sustained pod churn.
-- `run-cni-scale-cleanup.sh` removes the workload and validates the versioned
-  completion report.
-- `scale/cl2-config.yaml` is a workload-only profile for manually running those
-  parts against a developer cluster.
-
-Hydra owns the production ClusterLoader2 profile, Prometheus monitors,
-thresholds, native reports, and final verdict. The OSS repository does not
-install a cluster or add-on and does not contain metric assertion policy.
-
-To run the workload-only profile against a disposable developer cluster:
-
-```bash
-repo_root=$(pwd)
-export KUBECONFIG=/path/to/kubeconfig
-export CL2_EXPECTED_LINUX_NODES=50
-export CL2_CNI_WORKLOAD_SCRIPT="${repo_root}/scripts/run-cni-scale-workload.sh"
-export CL2_CNI_CLEANUP_SCRIPT="${repo_root}/scripts/run-cni-scale-cleanup.sh"
-
-clusterloader2 \
-  --testconfig="${repo_root}/scripts/scale/cl2-config.yaml" \
-  --provider=eks \
-  --nodes=50 \
-  --enable-exec-service=false \
-  --report-dir="${repo_root}/log/clusterloader2" \
-  --kubeconfig="${KUBECONFIG}"
-```
-
-Set `CL2_CNI_POD_COUNT`, `CL2_CNI_POD_THROUGHPUT`, or
-`CL2_CNI_POD_IMAGE` to change both the CL2-created pods and the workload
-checks. The `SCALE_TEST_CHURN_*` variables independently reduce churn duration
-for developer iteration. Add `--dry-run=true --skip-cluster-verification=true`
-only when explicitly compiling this developer profile; the sealed Hydra scale
-coordinate does not accept an ambient dry-run switch.
-
 #### Manually running performance tests
 The following steps cover how to manually run the performance tests:
 
