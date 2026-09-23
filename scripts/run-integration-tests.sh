@@ -40,7 +40,6 @@ fi
 
 __cluster_created=0
 __cluster_deprovisioned=0
-__cluster_cleanup_attempted=0
 
 on_error() {
     echo "Error with exit code $1 occurred on line $2"
@@ -60,7 +59,10 @@ on_error() {
     exit "$1"
 }
 
-install_cleanup_traps
+trap 'on_error $? $LINENO' ERR
+trap cleanup_on_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # test specific config, results location
 : "${TEST_ID:=$RANDOM}"
@@ -174,11 +176,13 @@ mkdir -p "$TEST_CONFIG_DIR"
 START=$SECONDS
 if [[ "$PROVISION" == true ]]; then
     START=$SECONDS
-    provision_cluster
-else
-    # A caller-provided cluster follows the same deprovisioning contract.
-    __cluster_created=1
+    if [[ "$RUN_KOPS_TEST" == true ]]; then
+        up-kops-cluster
+    else
+        up-test-cluster
+    fi
 fi
+__cluster_created=1
 
 UP_CLUSTER_DURATION=$((SECONDS - START))
 echo "TIMELINE: Upping test cluster took $UP_CLUSTER_DURATION seconds."
@@ -277,6 +281,9 @@ fi
 if [[ "$DEPROVISION" == true ]]; then
     START=$SECONDS
 
+    # Normal teardown owns deletion from this point; do not retry it from EXIT.
+    trap - EXIT
+    trap '' INT TERM
     deprovision_cluster
 
     if [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then

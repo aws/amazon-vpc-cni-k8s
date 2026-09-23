@@ -45,13 +45,5 @@ jobs:
           RUN_KOPS_TEST: true
           K8S_VERSION: 1.36.2
           KOPS_VERSION: v1.36.0
-          KOPS_CLEANUP_STATE_FILE: ${{ runner.temp }}/kops-cleanup-state
         run: |
           ./scripts/run-integration-tests.sh
-      - name: Clean up kOps cluster
-        if: always()
-        timeout-minutes: 30
-        env:
-          KOPS_CLEANUP_STATE_FILE: ${{ runner.temp }}/kops-cleanup-state
-        run: |
-          ./scripts/cleanup-kops-cluster.sh "$KOPS_CLEANUP_STATE_FILE"
