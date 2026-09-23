@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.23.2
+
+* Self-heal the IPv6 datastore and harden EC2 client retry behavior ([#3873](https://github.com/aws/amazon-vpc-cni-k8s/pull/3873), @emilyhuaa)
+* Reject invalid VLAN IDs in routed-eni, validating before veth creation ([#3854](https://github.com/aws/amazon-vpc-cni-k8s/pull/3854), @zac-nixon)
+* Fail open when the `DescribeSubnets` call for ENI subnet discovery fails ([#3843](https://github.com/aws/amazon-vpc-cni-k8s/pull/3843), @cdirubbio)
+* Use the `sagemaker:AttachClusterNodeNetworkInterface` API for HyperPod nodes ([#3874](https://github.com/aws/amazon-vpc-cni-k8s/pull/3874), @AshwinS27)
+* Bump to Go 1.26.6 ([#3865](https://github.com/aws/amazon-vpc-cni-k8s/pull/3865), @zac-nixon)
+* Fix flaky SNAT test ([#3869](https://github.com/aws/amazon-vpc-cni-k8s/pull/3869), @zac-nixon)
+* Bump the curl image version used in tests ([#3881](https://github.com/aws/amazon-vpc-cni-k8s/pull/3881), @cdirubbio)
+* Update the Nginx test image to 1.31.5-alpine-slim ([#3883](https://github.com/aws/amazon-vpc-cni-k8s/pull/3883), @cdirubbio)
+* Update perf-cluster AMI family to AmazonLinux2023 ([#3884](https://github.com/aws/amazon-vpc-cni-k8s/pull/3884), @cdirubbio)
+* Bump the `aws-dependencies` group with 11 updates (aws-sdk-go-v2 services, smithy-go) ([#3850](https://github.com/aws/amazon-vpc-cni-k8s/pull/3850))
+* Bump the `k8s-dependencies` group with 4 updates ([#3866](https://github.com/aws/amazon-vpc-cni-k8s/pull/3866))
+* Bump the `other-deps` group with 2 updates (`docker/setup-qemu-action`, `docker/setup-buildx-action`) ([#3870](https://github.com/aws/amazon-vpc-cni-k8s/pull/3870))
+* Bump `google.golang.org/grpc` from 1.83.1 to 1.83.2 ([#3867](https://github.com/aws/amazon-vpc-cni-k8s/pull/3867))
+* Bump `github.com/containernetworking/plugins` from 1.9.0 to 1.9.1 ([#3851](https://github.com/aws/amazon-vpc-cni-k8s/pull/3851))
+* Bump `google.golang.org/protobuf` to 1.36.12 ([#3853](https://github.com/aws/amazon-vpc-cni-k8s/pull/3853))
+* Bump `helm.sh/helm/v4` from 4.2.2 to 4.3.0 ([#3852](https://github.com/aws/amazon-vpc-cni-k8s/pull/3852))
+* Bump `aws-actions/configure-aws-credentials` from 6.2.3 to 6.2.4 ([#3860](https://github.com/aws/amazon-vpc-cni-k8s/pull/3860))
+
 ## v1.23.1
 
 * Serve node IP and instance ID to the Network Policy Agent via gRPC — the agent now sources `NodeIPv4`, `NodeIPv6`, and `InstanceID` from ipamd instead of querying IMDS ([#3827](https://github.com/aws/amazon-vpc-cni-k8s/pull/3827), @viveksb007)
