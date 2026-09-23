@@ -1,5 +1,20 @@
 #!/usr/bin/env bash
 
+provision_cluster() {
+    if [[ "$RUN_KOPS_TEST" == true ]]; then
+        up-kops-cluster
+    else
+        up-test-cluster
+    fi
+}
+
+install_cleanup_traps() {
+    trap 'on_error $? $LINENO' ERR
+    trap cleanup_on_exit EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+}
+
 # Deprovision the active test cluster and mark it complete only after deletion
 # succeeds. Keeping this in one place lets the normal and EXIT paths share the
 # same behavior.
@@ -18,6 +33,11 @@ deprovision_cluster() {
 
     if [[ $deprovision_status -eq 0 ]]; then
         __cluster_deprovisioned=1
+    else
+        # Suppress an incidental ERR->EXIT retry only after an unsuccessful
+        # deletion attempt completes. A signal that interrupts deletion exits
+        # before this marker, allowing EXIT cleanup to retry.
+        __cluster_cleanup_attempted=1
     fi
 
     return "$deprovision_status"
@@ -30,12 +50,16 @@ cleanup_on_exit() {
     local original_status=$?
     local cleanup_status=0
 
-    trap - EXIT ERR INT TERM
+    trap - EXIT ERR
+    trap '' INT TERM
     set +e
 
     # These lifecycle flags are initialized by run-integration-tests.sh.
     # shellcheck disable=SC2154
-    if [[ "$RUNNING_PERFORMANCE" == false && $__cluster_created -eq 1 && $__cluster_deprovisioned -eq 0 && "$DEPROVISION" == true ]]; then
+    if [[ $__cluster_created -eq 1 &&
+          $__cluster_deprovisioned -eq 0 &&
+          ${__cluster_cleanup_attempted:-0} -eq 0 &&
+          "$DEPROVISION" == true ]]; then
         echo "Cluster was provisioned already. Deprovisioning it..."
         deprovision_cluster
         cleanup_status=$?

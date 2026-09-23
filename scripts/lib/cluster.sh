@@ -18,10 +18,13 @@ function load_deveks_cluster_details() {
 }
 
 function down-test-cluster() {
+    local delete_status=0
+
     echo -n "Deleting cluster  (this may take ~10 mins) ... "
-    if ! eksctl delete cluster "$CLUSTER_NAME" >>"$CLUSTER_MANAGE_LOG_PATH" 2>&1; then
+    eksctl delete cluster "$CLUSTER_NAME" >>"$CLUSTER_MANAGE_LOG_PATH" 2>&1 || delete_status=$?
+    if [[ $delete_status -ne 0 ]]; then
         echo "failed. Check $CLUSTER_MANAGE_LOG_PATH."
-        return 1
+        return "$delete_status"
     fi
     echo "ok."
 }
@@ -53,6 +56,7 @@ function up-test-cluster() {
     sed -i'.bak' "s,CLUSTER_NAME_PLACEHOLDER,$CLUSTER_NAME," $CLUSTER_CONFIG
     grep -r -q $CLUSTER_NAME $CLUSTER_CONFIG
     echo -n "Creating cluster $CLUSTER_NAME (this may take ~20 mins. details: tail -f $CLUSTER_MANAGE_LOG_PATH)... "
+    __cluster_created=1
     eksctl create cluster -f $CLUSTER_CONFIG --kubeconfig $KUBECONFIG_PATH >>$CLUSTER_MANAGE_LOG_PATH 1>&2 ||
         (echo "failed. Check $CLUSTER_MANAGE_LOG_PATH." && exit 1)
     echo "ok."
@@ -94,6 +98,15 @@ function up-kops-cluster {
     # Ubuntu 22.04 (glibc 2.35): kops installs containerd 2.1.x, which links against
     # glibc 2.35 and cannot exec on 20.04's glibc 2.31. The prior 20.04 pin (#2103) is
     # obsolete since #3354 fixed the host-veth MAC/ARP regression on newer kernels.
+    if [[ -n ${KOPS_CLEANUP_STATE_FILE:-} ]]; then
+        (
+            umask 077
+            printf '%s\n%s\n' "$CLUSTER_NAME" "$KOPS_STATE_STORE" > "${KOPS_CLEANUP_STATE_FILE}.tmp"
+        )
+        mv "${KOPS_CLEANUP_STATE_FILE}.tmp" "$KOPS_CLEANUP_STATE_FILE"
+    fi
+
+    __cluster_created=1
     $KOPS_BIN create cluster \
     --cloud aws \
     --zones ${AWS_DEFAULT_REGION}a,${AWS_DEFAULT_REGION}b \
@@ -107,8 +120,6 @@ function up-kops-cluster {
     --kubernetes-version ${K8S_VERSION} \
     --image ${HOST_IMAGE_SSM_PARAMETER} \
     ${CLUSTER_NAME}
-
-    __cluster_created=1
 
     $KOPS_BIN update cluster --name ${CLUSTER_NAME} --yes
     sleep 100
@@ -133,7 +144,64 @@ function up-kops-cluster {
     kubectl apply -f https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/${MANIFEST_CNI_VERSION}/config/master/cni-metrics-helper.yaml
 }
 
+function kops-cluster-is-absent {
+    local get_output
+
+    if get_output=$("$KOPS_BIN" get cluster "$CLUSTER_NAME" 2>&1); then
+        return 1
+    fi
+
+    # kOps v1.36 reports either form when the state-store entry is gone.
+    [[ "$get_output" == *"cluster not found \"$CLUSTER_NAME\""* ||
+       "$get_output" == *"no clusters found"* ]]
+}
+
+function clear-kops-cleanup-state {
+    if [[ -n ${KOPS_CLEANUP_STATE_FILE:-} ]]; then
+        rm -f "$KOPS_CLEANUP_STATE_FILE"
+    fi
+}
+
 function down-kops-cluster {
-    KOPS_BIN=~/kops_bin/kops
-    "$KOPS_BIN" delete cluster --name "$CLUSTER_NAME" --yes
+    local delete_delay=${KOPS_DELETE_DELAY_SECONDS:-240}
+    local delete_attempts=${KOPS_DELETE_ATTEMPTS:-2}
+    local retry_delay=${KOPS_DELETE_RETRY_DELAY_SECONDS:-10}
+    local attempt
+    local delete_status=0
+
+    if [[ ! $delete_delay =~ ^[0-9]+$ ||
+          ! $delete_attempts =~ ^[1-9][0-9]*$ ||
+          ! $retry_delay =~ ^[0-9]+$ ]]; then
+        echo "Invalid kOps deletion retry configuration" >&2
+        return 2
+    fi
+
+    KOPS_BIN=${KOPS_BIN:-~/kops_bin/kops}
+
+    if kops-cluster-is-absent; then
+        clear-kops-cleanup-state
+        return "$?"
+    fi
+
+    if [[ ${__kops_delete_delay_complete:-0} -eq 0 && $delete_delay -gt 0 ]]; then
+        echo "Waiting for $delete_delay seconds to avoid ENI leakage during cluster deletion..."
+        sleep "$delete_delay"
+        __kops_delete_delay_complete=1
+    fi
+
+    for ((attempt = 1; attempt <= delete_attempts; attempt++)); do
+        delete_status=0
+        "$KOPS_BIN" delete cluster --name "$CLUSTER_NAME" --yes || delete_status=$?
+        if [[ $delete_status -eq 0 ]] || kops-cluster-is-absent; then
+            clear-kops-cleanup-state
+            return "$?"
+        fi
+
+        if [[ $attempt -lt $delete_attempts ]]; then
+            echo "kOps deletion attempt $attempt failed; retrying in $retry_delay seconds..."
+            sleep "$retry_delay"
+        fi
+    done
+
+    return "$delete_status"
 }

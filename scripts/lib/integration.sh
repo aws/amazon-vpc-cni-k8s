@@ -69,11 +69,6 @@ function run_kops_conformance() {
   echo "=== Test Run Complete ==="
   echo "TIMELINE: KOPS tests took $KOPS_TEST_DURATION seconds"
 
-  # Workaround to avoid ENI leakage during cluster deletion
-  # See: https://github.com/aws/amazon-vpc-cni-k8s/issues/1223
-  echo "Waiting for 240 seconds to avoid ENI leakage..."
-  sleep 240
-
   # Exit with the test exit code
   return 0
 }

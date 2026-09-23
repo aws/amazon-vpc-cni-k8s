@@ -28,7 +28,6 @@ ARCH=$(go env GOARCH)
 : "${RUN_KOPS_TEST:=false}"
 : "${RUN_BOTTLEROCKET_TEST:=false}"
 : "${RUN_PERFORMANCE_TESTS:=false}"
-: "${RUNNING_PERFORMANCE:=false}"
 : "${KOPS_VERSION=v1.34.0-beta.1}"
 
 if [[ -z $EKS_CLUSTER_VERSION || -z $K8S_VERSION ]]; then
@@ -41,6 +40,7 @@ fi
 
 __cluster_created=0
 __cluster_deprovisioned=0
+__cluster_cleanup_attempted=0
 
 on_error() {
     echo "Error with exit code $1 occurred on line $2"
@@ -60,10 +60,7 @@ on_error() {
     exit "$1"
 }
 
-trap 'on_error $? $LINENO' ERR
-trap cleanup_on_exit EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
+install_cleanup_traps
 
 # test specific config, results location
 : "${TEST_ID:=$RANDOM}"
@@ -177,13 +174,11 @@ mkdir -p "$TEST_CONFIG_DIR"
 START=$SECONDS
 if [[ "$PROVISION" == true ]]; then
     START=$SECONDS
-    if [[ "$RUN_KOPS_TEST" == true ]]; then
-        up-kops-cluster
-    else
-        up-test-cluster
-    fi
+    provision_cluster
+else
+    # A caller-provided cluster follows the same deprovisioning contract.
+    __cluster_created=1
 fi
-__cluster_created=1
 
 UP_CLUSTER_DURATION=$((SECONDS - START))
 echo "TIMELINE: Upping test cluster took $UP_CLUSTER_DURATION seconds."
