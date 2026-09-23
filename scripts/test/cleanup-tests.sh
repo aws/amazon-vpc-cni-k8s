@@ -10,18 +10,15 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CALLS_FILE=$(mktemp)
 trap 'rm -f "$CALLS_FILE"' EXIT
 
+TRIGGER_STATUS=0
+SIGNAL_DURING_DELETE=false
+
 fail() {
     echo "FAIL: $1" >&2
     exit 1
 }
 
-run_case() {
-    local cluster_type=$1
-    local trigger=$2
-    local trigger_status=$3
-    local delete_status=$4
-    local signal_during_delete=$5
-    local expected_status=$6
+verify_cleanup_case() {
     local actual_status
     local call_count
 
@@ -39,7 +36,7 @@ run_case() {
         __cluster_created=1
         __cluster_deprovisioned=0
 
-        if [[ "$cluster_type" == kops ]]; then
+        if [[ "$CLUSTER_TYPE" == kops ]]; then
             RUN_KOPS_TEST=true
         else
             RUN_PERFORMANCE_TESTS=true
@@ -48,13 +45,13 @@ run_case() {
         fi
 
         record_delete() {
-            echo "$cluster_type-delete" >> "$CALLS_FILE"
-            if [[ "$signal_during_delete" == true ]]; then
-                signal_during_delete=false
+            echo "$CLUSTER_TYPE-delete" >> "$CALLS_FILE"
+            if [[ "$SIGNAL_DURING_DELETE" == true ]]; then
+                SIGNAL_DURING_DELETE=false
                 kill -TERM "$BASHPID"
                 kill -INT "$BASHPID"
             fi
-            return "$delete_status"
+            return "$DELETE_STATUS"
         }
         eksctl() {
             record_delete
@@ -71,15 +68,15 @@ run_case() {
         trap 'exit 130' INT
         trap 'exit 143' TERM
 
-        case "$trigger" in
+        case "$TRIGGER" in
             exit)
-                exit "$trigger_status"
+                exit "$TRIGGER_STATUS"
                 ;;
             error)
-                bash -c 'exit "$1"' _ "$trigger_status"
+                bash -c 'exit "$1"' _ "$TRIGGER_STATUS"
                 ;;
             INT | TERM)
-                kill "-$trigger" "$BASHPID"
+                kill "-$TRIGGER" "$BASHPID"
                 ;;
             deprovision)
                 trap - EXIT
@@ -94,22 +91,43 @@ run_case() {
     actual_status=$?
     set -e
 
-    call_count=$(grep -Fxc "$cluster_type-delete" "$CALLS_FILE" || true)
-    [[ $actual_status -eq $expected_status ]] ||
-        fail "$cluster_type $trigger: expected status $expected_status, got $actual_status"
+    call_count=$(grep -Fxc "$CLUSTER_TYPE-delete" "$CALLS_FILE" || true)
+    [[ $actual_status -eq $EXPECTED_STATUS ]] ||
+        fail "$TEST_NAME: expected status $EXPECTED_STATUS, got $actual_status"
     [[ $call_count -eq 1 ]] ||
-        fail "$cluster_type $trigger: expected one delete call, got $call_count"
+        fail "$TEST_NAME: expected one delete call, got $call_count"
 }
 
-run_case performance exit 7 0 false 7
-run_case performance error 29 0 false 29
-run_case performance INT 0 0 false 130
-run_case performance TERM 0 0 false 143
-run_case performance exit 7 0 true 7
-run_case performance exit 0 23 false 23
-run_case performance exit 7 23 false 7
-run_case performance deprovision 0 23 false 23
-run_case performance deprovision 0 0 true 0
-run_case kops exit 7 0 false 7
+TEST_NAME="performance failure survives cleanup signals and deletion failure" \
+    CLUSTER_TYPE=performance TRIGGER=exit TRIGGER_STATUS=7 \
+    DELETE_STATUS=23 SIGNAL_DURING_DELETE=true EXPECTED_STATUS=7 verify_cleanup_case
+
+TEST_NAME="ERR cleanup" \
+    CLUSTER_TYPE=performance TRIGGER=error TRIGGER_STATUS=29 \
+    DELETE_STATUS=0 EXPECTED_STATUS=29 verify_cleanup_case
+
+TEST_NAME="INT cleanup" \
+    CLUSTER_TYPE=performance TRIGGER=INT \
+    DELETE_STATUS=0 EXPECTED_STATUS=130 verify_cleanup_case
+
+TEST_NAME="TERM cleanup" \
+    CLUSTER_TYPE=performance TRIGGER=TERM \
+    DELETE_STATUS=0 EXPECTED_STATUS=143 verify_cleanup_case
+
+TEST_NAME="cleanup failure after success" \
+    CLUSTER_TYPE=performance TRIGGER=exit \
+    DELETE_STATUS=23 EXPECTED_STATUS=23 verify_cleanup_case
+
+TEST_NAME="normal teardown failure" \
+    CLUSTER_TYPE=performance TRIGGER=deprovision \
+    DELETE_STATUS=23 EXPECTED_STATUS=23 verify_cleanup_case
+
+TEST_NAME="signal during normal teardown" \
+    CLUSTER_TYPE=performance TRIGGER=deprovision \
+    DELETE_STATUS=0 SIGNAL_DURING_DELETE=true EXPECTED_STATUS=0 verify_cleanup_case
+
+TEST_NAME="kOps failure cleanup" \
+    CLUSTER_TYPE=kops TRIGGER=exit TRIGGER_STATUS=7 \
+    DELETE_STATUS=0 EXPECTED_STATUS=7 verify_cleanup_case
 
 echo "PASS: cleanup control flow"
