@@ -51,7 +51,7 @@ function run_kops_conformance() {
   # If any test failed, return failure
   if [[ "$TEST_RESULT" == "fail" ]]; then
     echo "One or more test suites failed!"
-    exit 1
+    return 1
   fi
 
   echo "All test suites passed successfully!"
@@ -68,11 +68,6 @@ function run_kops_conformance() {
   KOPS_TEST_DURATION=$((SECONDS - START))
   echo "=== Test Run Complete ==="
   echo "TIMELINE: KOPS tests took $KOPS_TEST_DURATION seconds"
-
-  # Workaround to avoid ENI leakage during cluster deletion
-  # See: https://github.com/aws/amazon-vpc-cni-k8s/issues/1223
-  echo "Waiting for 240 seconds to avoid ENI leakage..."
-  sleep 240
 
   # Exit with the test exit code
   return 0
