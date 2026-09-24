@@ -10,7 +10,6 @@ source "$SCRIPT_DIR"/lib/aws.sh
 source "$SCRIPT_DIR"/lib/cluster.sh
 source "$SCRIPT_DIR"/lib/integration.sh
 source "$SCRIPT_DIR"/lib/k8s.sh
-source "$SCRIPT_DIR"/lib/cleanup.sh
 source "$SCRIPT_DIR"/lib/performance_tests.sh
 
 # Variables used in /lib/aws.sh
@@ -39,10 +38,12 @@ if [[ -z $EKS_CLUSTER_VERSION || -z $K8S_VERSION ]]; then
 fi
 
 __cluster_created=0
-__cluster_deprovisioned=0
+__cluster_cleanup_attempted=0
 
 on_error() {
-    echo "Error with exit code $1 occurred on line $2"
+    local error_status=$1
+
+    echo "Error with exit code $error_status occurred on line $2"
     emit_cloudwatch_metric "error_occurred" "1" || true
 
     # Emit test-specific error metrics without preventing cleanup.
@@ -56,13 +57,17 @@ on_error() {
         emit_cloudwatch_metric "performance_test_status" "0" || true
     fi
 
-    exit "$1"
+    # A subshell failure is raised again in the parent; only the parent deletes.
+    if [[ $BASHPID -eq $$ && $__cluster_created -eq 1 && $__cluster_cleanup_attempted -eq 0 && "$DEPROVISION" == true ]]; then
+        echo "Cluster was provisioned already. Deprovisioning it..."
+        deprovision_cluster || true
+    fi
+
+    exit "$error_status"
 }
 
+# Cleanup is limited to ordinary command failures.
 trap 'on_error $? $LINENO' ERR
-trap cleanup_on_exit EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
 
 # test specific config, results location
 : "${TEST_ID:=$RANDOM}"
@@ -181,8 +186,10 @@ if [[ "$PROVISION" == true ]]; then
     else
         up-test-cluster
     fi
+else
+    # Treat a reused cluster as active for error cleanup.
+    __cluster_created=1
 fi
-__cluster_created=1
 
 UP_CLUSTER_DURATION=$((SECONDS - START))
 echo "TIMELINE: Upping test cluster took $UP_CLUSTER_DURATION seconds."
@@ -281,9 +288,6 @@ fi
 if [[ "$DEPROVISION" == true ]]; then
     START=$SECONDS
 
-    # Normal teardown owns deletion from this point; do not retry it from EXIT.
-    trap - EXIT
-    trap '' INT TERM
     deprovision_cluster
 
     if [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then

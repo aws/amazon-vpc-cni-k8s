@@ -55,6 +55,7 @@ function up-test-cluster() {
     echo -n "Creating cluster $CLUSTER_NAME (this may take ~20 mins. details: tail -f $CLUSTER_MANAGE_LOG_PATH)... "
     eksctl create cluster -f $CLUSTER_CONFIG --kubeconfig $KUBECONFIG_PATH >>$CLUSTER_MANAGE_LOG_PATH 1>&2 ||
         (echo "failed. Check $CLUSTER_MANAGE_LOG_PATH." && exit 1)
+    __cluster_created=1
     echo "ok."
     export KUBECONFIG=$KUBECONFIG_PATH
     
@@ -142,4 +143,23 @@ function down-kops-cluster {
     sleep 240
 
     "$KOPS_BIN" delete cluster --name "$CLUSTER_NAME" --yes
+}
+
+function deprovision_cluster() {
+    local deprovision_status=0
+
+    # Prevent the ERR handler from retrying a failed deletion.
+    __cluster_cleanup_attempted=1
+
+    if [[ "$RUN_KOPS_TEST" == true ]]; then
+        down-kops-cluster || deprovision_status=$?
+    elif [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
+        eksctl delete cluster "$CLUSTER_NAME" --disable-nodegroup-eviction || deprovision_status=$?
+    elif [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
+        eksctl delete cluster "$CLUSTER_NAME" || deprovision_status=$?
+    else
+        down-test-cluster || deprovision_status=$?
+    fi
+
+    return "$deprovision_status"
 }
