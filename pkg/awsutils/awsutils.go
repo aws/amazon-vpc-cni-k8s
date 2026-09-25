@@ -225,6 +225,9 @@ type APIs interface {
 	// Enable SageMaker attach delegation for HyperPod nodes (by providerID)
 	InitHyperPodFromProviderID(context.Context, string) error
 
+	// IsHyperPod returns true if ENI attach is delegated to SageMaker HyperPod
+	IsHyperPod() bool
+
 	// GetInstanceID returns the instance ID
 	GetInstanceID() string
 
@@ -534,6 +537,11 @@ func (cache *EC2InstanceMetadataCache) InitHyperPodFromProviderID(ctx context.Co
 	log.Infof("HyperPod node detected (cluster %s, node %s); delegating ENI attach to sagemaker:AttachClusterNodeNetworkInterface",
 		clusterID, cache.instanceID)
 	return nil
+}
+
+// IsHyperPod returns true if ENI attach is delegated to SageMaker HyperPod
+func (cache *EC2InstanceMetadataCache) IsHyperPod() bool {
+	return cache.sagemakerMeta.isHyperPod
 }
 
 // InitWithEC2metadata initializes the EC2InstanceMetadataCache with the data retrieved from EC2 metadata service
@@ -1088,7 +1096,7 @@ func (cache *EC2InstanceMetadataCache) AllocENI(ctx context.Context, sg []*strin
 func (cache *EC2InstanceMetadataCache) attachENI(ctx context.Context, eniID string, networkCard int) (string, error) {
 	// HyperPod nodes delegate the attach to the SageMaker control plane.
 	if cache.sagemakerMeta.isHyperPod {
-		return cache.attachENIHyperPod(ctx, eniID)
+		return cache.attachENIHyperPod(ctx, eniID, networkCard)
 	}
 
 	// attach to instance
@@ -1119,7 +1127,11 @@ func (cache *EC2InstanceMetadataCache) attachENI(ctx context.Context, eniID stri
 
 // attachENIHyperPod delegates the ENI attach to the SageMaker control plane for
 // HyperPod nodes via sagemaker:AttachClusterNodeNetworkInterface.
-func (cache *EC2InstanceMetadataCache) attachENIHyperPod(ctx context.Context, eniID string) (string, error) {
+func (cache *EC2InstanceMetadataCache) attachENIHyperPod(ctx context.Context, eniID string, networkCard int) (string, error) {
+	// AttachClusterNodeNetworkInterface has no network card parameter and always attaches to network card 0
+	if networkCard != 0 {
+		return "", fmt.Errorf("attachENIHyperPod: network card %d is not supported, SageMaker only attaches to network card 0", networkCard)
+	}
 	// The cluster ARN is resolved once in InitHyperPodFromProviderID
 	input := &sagemaker.AttachClusterNodeNetworkInterfaceInput{
 		ClusterName:        aws.String(cache.sagemakerMeta.hyperPodClusterName),

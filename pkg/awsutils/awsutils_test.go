@@ -710,6 +710,22 @@ func TestAllocENIHyperPod(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestAttachENIHyperPodNonDefaultNetworkCard verifies that an attach to a network card other than 0 is
+// rejected without calling SageMaker, since AttachClusterNodeNetworkInterface always attaches to network card 0.
+func TestAttachENIHyperPodNonDefaultNetworkCard(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockSM := mock_sagemakerwrapper.NewMockSageMaker(ctrl)
+
+	cache := &EC2InstanceMetadataCache{
+		instanceID:    "i-1234567890",
+		sagemakerMeta: sagemakerMetadata{isHyperPod: true, sagemakerSVC: mockSM},
+	}
+
+	_, err := cache.attachENI(context.Background(), eniID, 1)
+	assert.Error(t, err)
+}
+
 func TestAllocENINoFreeDevice(t *testing.T) {
 	ctrl, mockEC2 := setup(t)
 	defer ctrl.Finish()
