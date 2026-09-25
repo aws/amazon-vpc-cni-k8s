@@ -3,7 +3,6 @@ function check_for_timeout() {
         FAILURE_COUNT=$((FAILURE_COUNT + 1))
         HAS_FAILED=true
         if [[ $FAILURE_COUNT -gt 1 ]]; then
-            RUNNING_PERFORMANCE=false
             echo "Failed twice, deprovisioning cluster"
             on_error 1 $LINENO
         fi
@@ -79,7 +78,6 @@ function find_performance_duration_average() {
 # 5. memory (in Mebibytes) after scaling up to REPLICAS pods - collected 3 times and set in SCALE_UP_MEM_ARRAY
 # 6. memory (in Mebibytes) after scaling down to 0 pods - collected 3 times and set in SCALE_DOWN_MEM_ARRAY
 function run_performance_test() {
-    RUNNING_PERFORMANCE=true
     REPLICAS=$1
     echo "Running performance tests against cluster with $REPLICAS replicas"
     $KUBECTL_PATH apply -f ./testdata/deploy-${REPLICAS}-pods.yaml
@@ -142,7 +140,6 @@ function run_performance_test() {
     upload_results_to_s3_bucket "${REPLICAS}-pods"
 
     echo "TIMELINE: ${REPLICAS} Pod performance test took $DEPLOY_DURATION seconds."
-    RUNNING_PERFORMANCE=false
     if [[ ${#PERFORMANCE_TEST_S3_BUCKET_NAME} -gt 0 ]]; then
         check_for_slow_performance "${REPLICAS}-pods"
     fi
