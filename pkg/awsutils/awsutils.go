@@ -825,8 +825,13 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 		return ENIMetadata{}, err
 	}
 	if eniMAC == primaryMAC && deviceNum != 0 {
-		// Can this even happen? To be backwards compatible, we will always use 0 here and log an error.
-		log.Errorf("Device number of primary ENI is %d! Forcing it to be 0 as expected", deviceNum)
+		// On HyperPod the ENI at device 0 is owned by the service and not visible in IMDS, so the primary ENI is at device 1
+		if cache.sagemakerMeta.isHyperPod {
+			log.Debugf("Device number of primary ENI is %d on HyperPod node, using 0", deviceNum)
+		} else {
+			// Can this even happen? To be backwards compatible, we will always use 0 here and log an error.
+			log.Errorf("Device number of primary ENI is %d! Forcing it to be 0 as expected", deviceNum)
+		}
 		deviceNum = 0
 	}
 

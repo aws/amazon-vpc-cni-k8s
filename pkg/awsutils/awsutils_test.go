@@ -305,6 +305,21 @@ func TestGetAttachedENIs(t *testing.T) {
 	}
 }
 
+// TestGetAttachedENIsHyperPodPrimaryDevice verifies that on HyperPod, where the service-owned ENI at device 0 is not
+// visible in IMDS and the primary ENI is at device 1, the primary ENI is still treated as device 0.
+func TestGetAttachedENIsHyperPodPrimaryDevice(t *testing.T) {
+	mockMetadata := testMetadata(map[string]interface{}{
+		metadataMACPath + primaryMAC + metadataDeviceNum: "1",
+	})
+
+	cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, sagemakerMeta: sagemakerMetadata{isHyperPod: true}}
+	ens, err := cache.GetAttachedENIs()
+	if assert.NoError(t, err) {
+		assert.Equal(t, 1, len(ens))
+		assert.Equal(t, 0, ens[0].DeviceNumber)
+	}
+}
+
 func TestGetAttachedENIsWithEfaOnly(t *testing.T) {
 	mockMetadata := testMetadata(map[string]interface{}{
 		metadataMACPath:                                primaryMAC + " " + eni2MAC,
