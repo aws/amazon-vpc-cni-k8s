@@ -2,8 +2,6 @@
 
 set -Euo pipefail
 
-trap 'on_error $? $LINENO' ERR
-
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 INTEGRATION_TEST_DIR="$SCRIPT_DIR"/../test/integration
 
@@ -29,7 +27,6 @@ ARCH=$(go env GOARCH)
 : "${RUN_KOPS_TEST:=false}"
 : "${RUN_BOTTLEROCKET_TEST:=false}"
 : "${RUN_PERFORMANCE_TESTS:=false}"
-: "${RUNNING_PERFORMANCE:=false}"
 : "${KOPS_VERSION=v1.34.0-beta.1}"
 
 if [[ -z $EKS_CLUSTER_VERSION || -z $K8S_VERSION ]]; then
@@ -41,38 +38,36 @@ if [[ -z $EKS_CLUSTER_VERSION || -z $K8S_VERSION ]]; then
 fi
 
 __cluster_created=0
-__cluster_deprovisioned=0
+__cluster_cleanup_attempted=0
 
 on_error() {
-    echo "Error with exit code $1 occurred on line $2"
-    emit_cloudwatch_metric "error_occurred" "1"
+    local error_status=$1
 
-    #Emit test specific error metric 
+    echo "Error with exit code $error_status occurred on line $2"
+    emit_cloudwatch_metric "error_occurred" "1" || true
+
+    # Emit test-specific error metrics without preventing cleanup.
     if [[ $RUN_KOPS_TEST == true ]]; then
-        emit_cloudwatch_metric "kops_test_status" "0"
+        emit_cloudwatch_metric "kops_test_status" "0" || true
     fi
     if [[ $RUN_BOTTLEROCKET_TEST == true ]]; then
-        emit_cloudwatch_metric "bottlerocket_test_status" "0"
+        emit_cloudwatch_metric "bottlerocket_test_status" "0" || true
     fi
     if [[ $RUN_PERFORMANCE_TESTS == true ]]; then
-        emit_cloudwatch_metric "performance_test_status" "0"
+        emit_cloudwatch_metric "performance_test_status" "0" || true
     fi
-    # Make sure we destroy any cluster that was created if we hit run into an
-    # error when attempting to run tests against the 
-    if [[ $RUNNING_PERFORMANCE == false ]]; then
-        if [[ $__cluster_created -eq 1 && $__cluster_deprovisioned -eq 0 && "$DEPROVISION" == true ]]; then
-            # prevent double-deprovisioning with ctrl-c during deprovisioning...
-            __cluster_deprovisioned=1
-            echo "Cluster was provisioned already. Deprovisioning it..."
-            if [[ $RUN_KOPS_TEST == true ]]; then
-                down-kops-cluster
-            else
-                down-test-cluster
-            fi
-        fi
-        exit 1
+
+    # A subshell failure is raised again in the parent; only the parent deletes.
+    if [[ $BASHPID -eq $$ && $__cluster_created -eq 1 && $__cluster_cleanup_attempted -eq 0 && "$DEPROVISION" == true ]]; then
+        echo "Cluster was provisioned already. Deprovisioning it..."
+        deprovision_cluster || true
     fi
+
+    exit "$error_status"
 }
+
+# Cleanup is limited to ordinary command failures.
+trap 'on_error $? $LINENO' ERR
 
 # test specific config, results location
 : "${TEST_ID:=$RANDOM}"
@@ -191,8 +186,10 @@ if [[ "$PROVISION" == true ]]; then
     else
         up-test-cluster
     fi
+else
+    # Treat a reused cluster as active for error cleanup.
+    __cluster_created=1
 fi
-__cluster_created=1
 
 UP_CLUSTER_DURATION=$((SECONDS - START))
 echo "TIMELINE: Upping test cluster took $UP_CLUSTER_DURATION seconds."
@@ -291,16 +288,12 @@ fi
 if [[ "$DEPROVISION" == true ]]; then
     START=$SECONDS
 
-    if [[ "$RUN_KOPS_TEST" == true ]]; then
-        down-kops-cluster
-    elif [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
-        eksctl delete cluster $CLUSTER_NAME --disable-nodegroup-eviction
+    deprovision_cluster
+
+    if [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
         emit_cloudwatch_metric "bottlerocket_test_status" "1"
     elif [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
-        eksctl delete cluster $CLUSTER_NAME
         emit_cloudwatch_metric "performance_test_status" "1"
-    else
-        down-test-cluster
     fi
 
     DOWN_DURATION=$((SECONDS - START))

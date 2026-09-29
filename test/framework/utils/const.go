@@ -24,9 +24,9 @@ const (
 	MultusContainerName  = "kube-multus"
 
 	// See https://gallery.ecr.aws/eks/aws-vpc-cni-test-helper
-	TestAgentImage = "networking-e2e-test-images/aws-vpc-cni-test-helper:20231212"
+	TestAgentImage = "networking-e2e-test-images/aws-vpc-cni-test-helper:20260925"
 	BusyBoxImage   = "networking-e2e-test-images/busybox:1.38.0"
-	NginxImage     = "networking-e2e-test-images/nginx:1.31.5-alpine-slim"
+	NginxImage     = "networking-e2e-test-images/nginx:1.31.6"
 	NetCatImage    = "networking-e2e-test-images/netcat-openbsd:v1.0"
 	CurlImage      = "networking-e2e-test-images/curlimages/curl:8.22.0"
 

@@ -19,8 +19,10 @@ function load_deveks_cluster_details() {
 
 function down-test-cluster() {
     echo -n "Deleting cluster  (this may take ~10 mins) ... "
-    eksctl delete cluster $CLUSTER_NAME >>$CLUSTER_MANAGE_LOG_PATH 2>&1 ||
-        (echo "failed. Check $CLUSTER_MANAGE_LOG_PATH." && exit 1)
+    if ! eksctl delete cluster "$CLUSTER_NAME" >>"$CLUSTER_MANAGE_LOG_PATH" 2>&1; then
+        echo "failed. Check $CLUSTER_MANAGE_LOG_PATH."
+        return 1
+    fi
     echo "ok."
 }
 
@@ -53,6 +55,7 @@ function up-test-cluster() {
     echo -n "Creating cluster $CLUSTER_NAME (this may take ~20 mins. details: tail -f $CLUSTER_MANAGE_LOG_PATH)... "
     eksctl create cluster -f $CLUSTER_CONFIG --kubeconfig $KUBECONFIG_PATH >>$CLUSTER_MANAGE_LOG_PATH 1>&2 ||
         (echo "failed. Check $CLUSTER_MANAGE_LOG_PATH." && exit 1)
+    __cluster_created=1
     echo "ok."
     export KUBECONFIG=$KUBECONFIG_PATH
     
@@ -133,7 +136,30 @@ function up-kops-cluster {
 
 function down-kops-cluster {
     KOPS_BIN=~/kops_bin/kops
-    $KOPS_BIN delete cluster --name ${CLUSTER_NAME} --yes
-    aws s3 rm ${KOPS_STATE_STORE} --recursive
-    aws s3 rb ${KOPS_STATE_STORE} --region $AWS_DEFAULT_REGION
+
+    # Avoid ENI leakage regardless of whether the kOps test passed or failed.
+    # See https://github.com/aws/amazon-vpc-cni-k8s/issues/1223.
+    echo "Waiting for 240 seconds to avoid ENI leakage..."
+    sleep 240
+
+    "$KOPS_BIN" delete cluster --name "$CLUSTER_NAME" --yes
+}
+
+function deprovision_cluster() {
+    local deprovision_status=0
+
+    # Prevent the ERR handler from retrying a failed deletion.
+    __cluster_cleanup_attempted=1
+
+    if [[ "$RUN_KOPS_TEST" == true ]]; then
+        down-kops-cluster || deprovision_status=$?
+    elif [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
+        eksctl delete cluster "$CLUSTER_NAME" --disable-nodegroup-eviction || deprovision_status=$?
+    elif [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
+        eksctl delete cluster "$CLUSTER_NAME" || deprovision_status=$?
+    else
+        down-test-cluster || deprovision_status=$?
+    fi
+
+    return "$deprovision_status"
 }
