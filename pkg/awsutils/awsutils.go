@@ -1820,12 +1820,6 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs(ctx context.Context) (Des
 		return DescribeAllENIsResult{}, err
 	}
 
-	// Collect the verified ENIs
-	var verifiedENIs []ENIMetadata
-	for _, eniMetadata := range eniMap {
-		verifiedENIs = append(verifiedENIs, eniMetadata)
-	}
-
 	// Collect ENI response into ENI metadata and tags.
 	var trunkENI string
 	efaENIs := make(map[string]bool, 0)
@@ -1879,8 +1873,19 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs(ctx context.Context) (Des
 		if len(eniMetadata.IPv4Addresses) > 0 {
 			logOutOfSyncState(eniID, eniMetadata.IPv4Addresses, ec2res.PrivateIpAddresses)
 		}
+
+		// EC2 is authoritative because IMDS metadata can be stale.
+		eniMetadata.IPv4Addresses = ec2res.PrivateIpAddresses
+		eniMap[eniID] = eniMetadata
 		tagMap[eniMetadata.ENIID] = convertSDKTagsToTags(ec2res.TagSet)
 	}
+
+	// Collect the verified ENIs after reconciling their IPv4 addresses with EC2.
+	var verifiedENIs []ENIMetadata
+	for _, eniMetadata := range eniMap {
+		verifiedENIs = append(verifiedENIs, eniMetadata)
+	}
+
 	return DescribeAllENIsResult{
 		ENIMetadata:             verifiedENIs,
 		TagMap:                  tagMap,
