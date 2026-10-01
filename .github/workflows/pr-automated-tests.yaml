@@ -38,7 +38,7 @@ jobs:
       - name: Unit test
         run: make unit-test
       - name: Upload code coverage
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # refs/tags/v7.0.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # refs/tags/v7.1.1
         with:
             token: ${{ secrets.CODECOV_TOKEN }}
   docker-build-arch:
@@ -55,7 +55,7 @@ jobs:
       - name: Checkout latest commit in the PR
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # refs/tags/v7.0.1
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # refs/tags/v4.3.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # refs/tags/v4.4.1
       - name: Build CNI image
         run: make docker
   docker-build:
@@ -78,7 +78,7 @@ jobs:
       - name: Checkout latest commit in the PR
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # refs/tags/v7.0.1
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # refs/tags/v4.3.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # refs/tags/v4.4.1
       - name: Build CNI Init image
         run: make docker-init
   docker-build-init:
