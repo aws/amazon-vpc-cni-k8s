@@ -61,7 +61,8 @@ The above policy is also available under: `arn:aws:iam::aws:policy/AmazonEKS_CNI
                 "ec2:DescribeSubnets",
                 "ec2:DescribeTags",
                 "ec2:DescribeNetworkInterfaces",
-                "ec2:DescribeInstanceTypes"
+                "ec2:DescribeInstanceTypes",
+                "ec2:ModifyNetworkInterfaceAttribute"
             ],
             "Resource": "*"
         },
