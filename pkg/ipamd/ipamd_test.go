@@ -104,6 +104,8 @@ type testMocks struct {
 	k8sClient client.Client
 	network   *mock_networkutils.MockNetworkAPIs
 	eniconfig *mock_eniconfig.MockENIConfig
+	// isHyperPod is returned by the IsHyperPod mock
+	isHyperPod bool
 }
 
 func setup(t *testing.T) *testMocks {
@@ -120,6 +122,7 @@ func setup(t *testing.T) *testMocks {
 		network:   mock_networkutils.NewMockNetworkAPIs(ctrl),
 		eniconfig: mock_eniconfig.NewMockENIConfig(ctrl),
 	}
+	m.awsutils.EXPECT().IsHyperPod().DoAndReturn(func() bool { return m.isHyperPod }).AnyTimes()
 	return m
 }
 
@@ -1739,6 +1742,7 @@ func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
 			defer ctrl.Finish()
 
 			mockAWSUtils := mock_awsutils.NewMockAPIs(ctrl)
+			mockAWSUtils.EXPECT().IsHyperPod().Return(false).AnyTimes()
 
 			c := &IPAMContext{
 				awsClient:                mockAWSUtils,
@@ -1837,6 +1841,7 @@ func TestIPAMContext_filterUnmanagedENIs_disableManageUntaggedMode(t *testing.T)
 			defer ctrl.Finish()
 
 			mockAWSUtils := mock_awsutils.NewMockAPIs(ctrl)
+			mockAWSUtils.EXPECT().IsHyperPod().Return(false).AnyTimes()
 
 			c := &IPAMContext{
 				awsClient:                mockAWSUtils,
@@ -1905,6 +1910,7 @@ func TestFilterUnmanagedENIs_NoAccumulationAcrossCalls(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockAWSUtils := mock_awsutils.NewMockAPIs(ctrl)
+	mockAWSUtils.EXPECT().IsHyperPod().Return(false).AnyTimes()
 
 	c := &IPAMContext{
 		awsClient:                mockAWSUtils,
@@ -2876,6 +2882,7 @@ func TestFilterUnmanagedENIs_WithEFAOnlyENIs(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockAWSUtils := mock_awsutils.NewMockAPIs(ctrl)
+	mockAWSUtils.EXPECT().IsHyperPod().Return(false).AnyTimes()
 
 	eni1, eni2, eni3 := getDummyENIMetadata()
 	allENIs := []awsutils.ENIMetadata{eni1, eni2, eni3}
@@ -4510,4 +4517,87 @@ func TestTryIPv6DatastoreSelfHeal_SkipsExcludedENI(t *testing.T) {
 	m.awsutils.EXPECT().AllocIPv6Prefixes(gomock.Any(), primaryENIid).Return([]*string{&prefix}, nil)
 
 	c.tryIPv6DatastoreSelfHeal(context.Background())
+}
+
+func hyperPodTestContext(m *testMocks, maxENI int, numNetworkCards int) *IPAMContext {
+	dataStores := make([]*datastore.DataStore, numNetworkCards)
+	for i := range dataStores {
+		dataStores[i] = datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false, i)
+	}
+	return &IPAMContext{
+		awsClient:       m.awsutils,
+		dataStoreAccess: &datastore.DataStoreAccess{DataStores: dataStores},
+		maxENI:          maxENI,
+		unmanagedENI:    make([]int, numNetworkCards),
+		numNetworkCards: numNetworkCards,
+	}
+}
+
+// TestHasRoomForEniHyperPodReservedSlot verifies that the HyperPod-owned ENI at device index 0, which is not in the
+// datastore, is subtracted from the ENI limit on network card 0 (F13: ml.c5.xlarge, maxENI=4, 3 visible ENIs).
+func TestHasRoomForEniHyperPodReservedSlot(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+	m.awsutils.EXPECT().IsTrunkingCompatible().Return(false).AnyTimes()
+
+	c := hyperPodTestContext(m, 4, 1)
+	ds := c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex)
+	for i := 1; i <= 2; i++ {
+		assert.NoError(t, ds.AddENI(fmt.Sprintf("eni-%d", i), i, i == 1, false, false, networkutils.CalculateRouteTableId(i, 0), ""))
+	}
+
+	m.isHyperPod = true
+	assert.True(t, c.hasRoomForEni(DefaultNetworkCardIndex), "2 of 3 usable slots used")
+
+	assert.NoError(t, ds.AddENI("eni-3", 3, false, false, false, networkutils.CalculateRouteTableId(3, 0), ""))
+	assert.False(t, c.hasRoomForEni(DefaultNetworkCardIndex), "all 3 usable slots used")
+
+	m.isHyperPod = false
+	assert.True(t, c.hasRoomForEni(DefaultNetworkCardIndex), "no reserved slot on non-HyperPod nodes")
+}
+
+// TestHasRoomForEniHyperPodSingleSlotNetworkCard covers instance types such as p5.48xlarge with 2 ENIs on network
+// card 0, where HyperPod leaves room for only the ENI the node already has.
+func TestHasRoomForEniHyperPodSingleSlotNetworkCard(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+	m.awsutils.EXPECT().IsTrunkingCompatible().Return(false).AnyTimes()
+	m.isHyperPod = true
+
+	c := hyperPodTestContext(m, 2, 1)
+	assert.NoError(t, c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0), ""))
+	assert.False(t, c.hasRoomForEni(DefaultNetworkCardIndex))
+}
+
+// TestHasRoomForEniHyperPodNonDefaultNetworkCard verifies that HyperPod nodes never allocate ENIs on network cards
+// other than 0, since AttachClusterNodeNetworkInterface always attaches to network card 0.
+func TestHasRoomForEniHyperPodNonDefaultNetworkCard(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+	m.awsutils.EXPECT().IsTrunkingCompatible().Return(false).AnyTimes()
+
+	c := hyperPodTestContext(m, 2, 2)
+	assert.True(t, c.hasRoomForEni(1))
+
+	m.isHyperPod = true
+	assert.False(t, c.hasRoomForEni(1))
+}
+
+// TestMarkUnmanagedNetworkCardsHyperPod verifies that HyperPod nodes only manage network card 0, even with
+// ENABLE_MULTI_NIC set.
+func TestMarkUnmanagedNetworkCardsHyperPod(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+	m.awsutils.EXPECT().SetUnmanagedNetworkCards(gomock.Any()).AnyTimes()
+	m.awsutils.EXPECT().IsUnmanagedENI(gomock.Any()).Return(false).AnyTimes()
+
+	c := hyperPodTestContext(m, 2, 3)
+	c.enableMultiNICSupport = true
+	efaOnly := make([]string, 3)
+	enisByCard := [][]string{{"eni-0"}, {"eni-1"}, {"eni-2"}}
+
+	assert.Equal(t, []bool{false, false, false}, c.markUnmanagedNetworkCards(efaOnly, enisByCard))
+
+	m.isHyperPod = true
+	assert.Equal(t, []bool{false, true, true}, c.markUnmanagedNetworkCards(efaOnly, enisByCard))
 }
