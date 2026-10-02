@@ -150,9 +150,14 @@ func (t *TrafficTest) TestTraffic() (successRate float64, err error) {
 		serverIPs = append(serverIPs, podIP)
 	}
 
+	metricServerIP := metricServerPod.Status.PodIP
+	if t.IsV6Enabled {
+		metricServerIP = fmt.Sprintf("[%s]", metricServerPod.Status.PodIP)
+	}
+
 	// To the Client Job pass the list of Server IPs, so each client Pod tests connectivity to each
 	// server
-	clientJob, err = t.startTrafficClient(strings.Join(serverIPs, ","), metricServerPod.Status.PodIP)
+	clientJob, err = t.startTrafficClient(strings.Join(serverIPs, ","), metricServerIP)
 	if err != nil {
 		return 0, fmt.Errorf("failed to start client jobs: %v", err)
 	}
@@ -174,10 +179,6 @@ func (t *TrafficTest) TestTraffic() (successRate float64, err error) {
 		fmt.Fprintln(GinkgoWriter, "successfully validated the client pod list")
 	}
 
-	metricServerIP := metricServerPod.Status.PodIP
-	if t.IsV6Enabled {
-		metricServerIP = fmt.Sprintf("[%s]", metricServerPod.Status.PodIP)
-	}
 	// Get the aggregated response from the metric server for calculating the connection success rate
 	testInputs, err := t.getTestStatusFromMetricServer(metricServerIP)
 	if err != nil {
