@@ -82,6 +82,16 @@ func (w *Container) CapabilitiesForSecurityContext(add []v1.Capability, drop []v
 	return w
 }
 
+// Privileged runs the container privileged.
+func (w *Container) Privileged() *Container {
+	if w.securityContext == nil {
+		w.securityContext = &v1.SecurityContext{}
+	}
+	privileged := true
+	w.securityContext.Privileged = &privileged
+	return w
+}
+
 func (w *Container) Name(name string) *Container {
 	w.name = name
 	return w

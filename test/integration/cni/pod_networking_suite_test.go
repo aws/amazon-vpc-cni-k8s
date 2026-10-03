@@ -51,6 +51,9 @@ var _ = BeforeSuite(func() {
 	By("creating test namespace")
 	f.K8sResourceManagers.NamespaceManager().CreateNamespace(utils.DefaultTestNamespace)
 
+	By("deploying the host-exec daemonset")
+	Expect(k8sUtils.EnsureHostExecDaemonSet(f)).To(Succeed())
+
 	By(fmt.Sprintf("getting the node with the node label key %s and value %s",
 		f.Options.NgNameLabelKey, f.Options.NgNameLabelVal))
 	nodes, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
@@ -110,6 +113,12 @@ var _ = BeforeSuite(func() {
 })
 
 var _ = AfterSuite(func() {
+	// The namespace deletion below also removes it, so a failure is only logged.
+	By("deleting the host-exec daemonset")
+	if err := k8sUtils.DeleteHostExecDaemonSet(f); err != nil {
+		fmt.Fprintf(GinkgoWriter, "failed to delete host-exec daemonset: %v\n", err)
+	}
+
 	By("deleting test namespace")
 	f.K8sResourceManagers.NamespaceManager().
 		DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)

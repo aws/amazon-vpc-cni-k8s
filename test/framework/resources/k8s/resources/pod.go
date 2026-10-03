@@ -36,6 +36,7 @@ import (
 type PodManager interface {
 	PodExec(namespace string, name string, command []string) (string, string, error)
 	PodExecWithContainer(namespace string, name string, container string, command []string) (string, string, error)
+	PodExecInContainerWithContext(ctx context.Context, namespace, name, container string, command []string) (string, string, error)
 	PodLogs(namespace string, name string) (string, error)
 	GetPodsWithLabelSelector(labelKey string, labelVal string) (v1.PodList, error)
 	GetPodsWithLabelSelectorMap(labels map[string]string) (v1.PodList, error)
@@ -207,6 +208,12 @@ func (d *defaultPodManager) PodExec(namespace string, name string, command []str
 }
 
 func (d *defaultPodManager) PodExecWithContainer(namespace string, name string, container string, command []string) (string, string, error) {
+	return d.PodExecInContainerWithContext(context.Background(), namespace, name, container, command)
+}
+
+// PodExecInContainerWithContext is PodExecWithContainer with the exec stream
+// bounded by ctx, so a wedged command cannot hang the caller.
+func (d *defaultPodManager) PodExecInContainerWithContext(ctx context.Context, namespace, name, container string, command []string) (string, string, error) {
 	execOptions := &v1.PodExecOptions{
 		Container: container,
 		Stdout:    true,
@@ -227,10 +234,15 @@ func (d *defaultPodManager) PodExecWithContainer(namespace string, name string, 
 	}
 
 	var stdout, stderr bytes.Buffer
-	err = exec.Stream(remotecommand.StreamOptions{
+	err = exec.StreamWithContext(ctx, remotecommand.StreamOptions{
 		Stdout: &stdout,
 		Stderr: &stderr,
 	})
+	// On cancellation the stream returns while its copy goroutines may still be
+	// writing the buffers, so do not read them.
+	if ctx.Err() != nil {
+		return "", "", err
+	}
 	return stdout.String(), stderr.String(), err
 }
 
