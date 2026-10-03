@@ -24,7 +24,7 @@ import (
 	appsV1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // The host-exec DaemonSet keeps one long-lived privileged pod on every Linux
@@ -58,29 +58,19 @@ func EnsureHostExecDaemonSet(f *framework.Framework) error {
 	return nil
 }
 
-// DeleteHostExecDaemonSet deletes the host-exec DaemonSet and waits until it
-// is gone. A missing DaemonSet is not an error.
-func DeleteHostExecDaemonSet(f *framework.Framework) error {
-	ds := &appsV1.DaemonSet{ObjectMeta: metav1.ObjectMeta{
-		Name:      hostExecDaemonSetName,
-		Namespace: utils.DefaultTestNamespace,
-	}}
-	return f.K8sResourceManagers.DaemonSetManager().DeleteAndWaitTillDaemonSetIsDeleted(ds,
-		utils.DefaultDeploymentReadyTimeout)
-}
-
 // HostExec runs command with bash in the host namespaces of nodeName and
 // returns its stdout. A non-zero exit status is returned as an error carrying
 // the exit code and stderr. The host-exec DaemonSet must already be running;
 // see EnsureHostExecDaemonSet.
 func HostExec(ctx context.Context, f *framework.Framework, nodeName string, command string) (string, error) {
-	pods, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector(hostExecLabelKey, hostExecLabelVal)
+	pods := &v1.PodList{}
+	err := f.K8sClient.List(ctx, pods, client.InNamespace(utils.DefaultTestNamespace),
+		client.MatchingLabels{hostExecLabelKey: hostExecLabelVal})
 	if err != nil {
 		return "", fmt.Errorf("listing host-exec pods: %w", err)
 	}
 	pod, found := lo.Find(pods.Items, func(p v1.Pod) bool {
-		return p.Namespace == utils.DefaultTestNamespace && p.Spec.NodeName == nodeName &&
-			p.Status.Phase == v1.PodRunning && p.DeletionTimestamp == nil
+		return p.Spec.NodeName == nodeName && p.Status.Phase == v1.PodRunning && p.DeletionTimestamp == nil
 	})
 	if !found {
 		return "", fmt.Errorf("no running host-exec pod on node %s", nodeName)
@@ -102,15 +92,16 @@ func newHostExecDaemonSet(testImageRegistry string) *appsV1.DaemonSet {
 	container := manifest.NewBusyBoxContainerBuilder(testImageRegistry).
 		Name(hostExecContainerName).
 		Command([]string{"sleep", "infinity"}).
-		Privileged().
 		Build()
-	return manifest.NewDefaultDaemonsetBuilder().
+	container.SecurityContext = &v1.SecurityContext{Privileged: new(true)}
+	ds := manifest.NewDefaultDaemonsetBuilder().
 		Name(hostExecDaemonSetName).
 		Labels(map[string]string{hostExecLabelKey: hostExecLabelVal}).
 		Container(container).
 		HostNetwork(true).
-		HostPID(true).
-		Tolerations([]v1.Toleration{{Operator: v1.TolerationOpExists}}).
 		TerminationGracePeriod(0).
 		Build()
+	ds.Spec.Template.Spec.HostPID = true
+	ds.Spec.Template.Spec.Tolerations = []v1.Toleration{{Operator: v1.TolerationOpExists}}
+	return ds
 }

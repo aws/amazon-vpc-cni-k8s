@@ -113,12 +113,6 @@ var _ = BeforeSuite(func() {
 })
 
 var _ = AfterSuite(func() {
-	// The namespace deletion below also removes it, so a failure is only logged.
-	By("deleting the host-exec daemonset")
-	if err := k8sUtils.DeleteHostExecDaemonSet(f); err != nil {
-		fmt.Fprintf(GinkgoWriter, "failed to delete host-exec daemonset: %v\n", err)
-	}
-
 	By("deleting test namespace")
 	f.K8sResourceManagers.NamespaceManager().
 		DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
