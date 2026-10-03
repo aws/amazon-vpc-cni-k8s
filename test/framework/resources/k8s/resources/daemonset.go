@@ -131,7 +131,7 @@ func (d *defaultDaemonSetManager) DeleteAndWaitTillDaemonSetIsDeleted(daemonSet 
 	}
 	observed := &v1.DaemonSet{}
 
-	return wait.PollUntilContextTimeout(ctx, utils.PollIntervalShort, timeout, true, func(ctx context.Context) (bool, error) {
+	return wait.PollImmediateUntil(utils.PollIntervalShort, func() (bool, error) {
 		if err := d.k8sClient.Get(ctx, utils.NamespacedName(daemonSet), observed); err != nil {
 			if k8sErrors.IsNotFound(err) {
 				return true, nil
@@ -139,5 +139,5 @@ func (d *defaultDaemonSetManager) DeleteAndWaitTillDaemonSetIsDeleted(daemonSet 
 			return false, err
 		}
 		return false, nil
-	})
+	}, ctx.Done())
 }
