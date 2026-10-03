@@ -29,6 +29,8 @@ type DaemonsetBuilder struct {
 	nodeSelector           map[string]string
 	terminationGracePeriod int
 	hostNetwork            bool
+	hostPID                bool
+	tolerations            []corev1.Toleration
 	volume                 []corev1.Volume
 	volumeMount            []corev1.VolumeMount
 }
@@ -84,6 +86,16 @@ func (d *DaemonsetBuilder) HostNetwork(hostNetwork bool) *DaemonsetBuilder {
 	return d
 }
 
+func (d *DaemonsetBuilder) HostPID(hostPID bool) *DaemonsetBuilder {
+	d.hostPID = hostPID
+	return d
+}
+
+func (d *DaemonsetBuilder) Tolerations(tolerations []corev1.Toleration) *DaemonsetBuilder {
+	d.tolerations = tolerations
+	return d
+}
+
 func (d *DaemonsetBuilder) MountVolume(volume []corev1.Volume, volumeMount []corev1.VolumeMount) *DaemonsetBuilder {
 	d.volume = volume
 	d.volumeMount = volumeMount
@@ -107,6 +119,8 @@ func (d *DaemonsetBuilder) Build() *v1.DaemonSet {
 				},
 				Spec: corev1.PodSpec{
 					HostNetwork:                   d.hostNetwork,
+					HostPID:                       d.hostPID,
+					Tolerations:                   d.tolerations,
 					NodeSelector:                  d.nodeSelector,
 					Containers:                    []corev1.Container{d.container},
 					TerminationGracePeriodSeconds: aws.Int64(int64(d.terminationGracePeriod)),
