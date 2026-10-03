@@ -49,6 +49,9 @@ var _ = BeforeSuite(func() {
 	By("creating test namespace")
 	f.K8sResourceManagers.NamespaceManager().CreateNamespace(utils.DefaultTestNamespace)
 
+	By("deploying the host-exec daemonset")
+	Expect(k8sUtils.EnsureHostExecDaemonSet(f)).To(Succeed())
+
 	By(fmt.Sprintf("getting the node with the node label key %s and value %s",
 		f.Options.NgNameLabelKey, f.Options.NgNameLabelVal))
 	nodes, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)

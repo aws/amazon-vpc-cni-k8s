@@ -36,6 +36,7 @@ import (
 type PodManager interface {
 	PodExec(namespace string, name string, command []string) (string, string, error)
 	PodExecInContainer(namespace, name, container string, command []string) (string, string, error)
+	PodExecInContainerWithContext(ctx context.Context, namespace, name, container string, command []string) (string, string, error)
 	PodLogs(namespace string, name string) (string, error)
 	GetPodsWithLabelSelector(labelKey string, labelVal string) (v1.PodList, error)
 	GetPodsWithLabelSelectorMap(labels map[string]string) (v1.PodList, error)
@@ -207,6 +208,12 @@ func (d *defaultPodManager) PodExec(namespace string, name string, command []str
 }
 
 func (d *defaultPodManager) PodExecInContainer(namespace, name, container string, command []string) (string, string, error) {
+	return d.PodExecInContainerWithContext(context.Background(), namespace, name, container, command)
+}
+
+// PodExecInContainerWithContext is PodExecInContainer bounded by ctx, so a
+// wedged connection or command cannot hang the caller.
+func (d *defaultPodManager) PodExecInContainerWithContext(ctx context.Context, namespace, name, container string, command []string) (string, string, error) {
 	execOptions := &v1.PodExecOptions{
 		Container: container,
 		Stdout:    true,
@@ -227,11 +234,25 @@ func (d *defaultPodManager) PodExecInContainer(namespace, name, container string
 	}
 
 	var stdout, stderr bytes.Buffer
-	err = exec.Stream(remotecommand.StreamOptions{
-		Stdout: &stdout,
-		Stderr: &stderr,
-	})
-	return stdout.String(), stderr.String(), err
+	// StreamWithContext does not watch ctx while it waits for the upgrade
+	// response, so wait on ctx here as well.
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- exec.StreamWithContext(ctx, remotecommand.StreamOptions{
+			Stdout: &stdout,
+			Stderr: &stderr,
+		})
+	}()
+	select {
+	case err = <-errCh:
+		// The stream finished, so the buffers are complete.
+		if err == nil || ctx.Err() == nil {
+			return stdout.String(), stderr.String(), err
+		}
+	case <-ctx.Done():
+	}
+	// Cancelled: the stream may still be writing the buffers, so do not read them.
+	return "", "", ctx.Err()
 }
 
 func (d *defaultPodManager) GetPodsWithLabelSelector(labelKey string, labelVal string) (v1.PodList, error) {
