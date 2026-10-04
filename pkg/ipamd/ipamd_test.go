@@ -4130,8 +4130,8 @@ func TestReconcileCooldownCache_RestoreDropsExpired(t *testing.T) {
 	store := datastore.NewTestCheckpoint(&cooldownCheckpointData{
 		Version: cooldownCheckpointFormatVersion,
 		Entries: map[string]int64{
-			"10.0.0.1/32": time.Now().Add(ipReconcileCooldown).UnixNano(),  // fresh
-			"10.0.0.9/32": time.Now().Add(-1 * time.Hour).UnixNano(),       // expired
+			"10.0.0.1/32": time.Now().Add(ipReconcileCooldown).UnixNano(), // fresh
+			"10.0.0.9/32": time.Now().Add(-1 * time.Hour).UnixNano(),      // expired
 		},
 	})
 

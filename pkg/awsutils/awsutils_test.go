@@ -687,7 +687,7 @@ func TestDescribeAllENIsStaleIMDSAddressDroppedMultiENI(t *testing.T) {
 	// IMDS reports two ENIs. The primary ENI additionally reports a stale secondary IP that EC2
 	// no longer lists; the second ENI's single IP is fully confirmed by EC2.
 	mockMetadata := testMetadata(map[string]interface{}{
-		metadataMACPath:                                primaryMAC + " " + eni2MAC,
+		metadataMACPath: primaryMAC + " " + eni2MAC,
 		metadataMACPath + primaryMAC + metadataIPv4s:   eni1PrivateIP + " " + staleIP,
 		metadataMACPath + eni2MAC:                      imdsMACFields,
 		metadataMACPath + eni2MAC + metadataDeviceNum:  eni2Device,
