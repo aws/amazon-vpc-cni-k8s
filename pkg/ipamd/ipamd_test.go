@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"testing"
@@ -4099,6 +4100,87 @@ func TestReconcileCooldownCache_RecentlyFreed(t *testing.T) {
 	found, recentlyFreed = cache.RecentlyFreed(cidr)
 	assert.True(t, found)
 	assert.False(t, recentlyFreed)
+}
+
+// Verifies that cooldown entries survive a simulated IPAMD restart via the backing store.
+func TestReconcileCooldownCache_PersistAndRestore(t *testing.T) {
+	store := datastore.NewTestCheckpoint(nil)
+
+	// First "process": add a couple of CIDRs; Add persists through the backing store.
+	c1 := &ReconcileCooldownCache{cache: make(map[string]time.Time)}
+	c1.SetBackingStore(store)
+	c1.Add("10.0.0.1/32")
+	c1.Add("10.0.0.2/32")
+
+	// Second "process" after restart: fresh empty cache sharing the same backing store.
+	c2 := &ReconcileCooldownCache{cache: make(map[string]time.Time)}
+	c2.SetBackingStore(store)
+	c2.Restore()
+
+	for _, cidr := range []string{"10.0.0.1/32", "10.0.0.2/32"} {
+		found, recentlyFreed := c2.RecentlyFreed(cidr)
+		assert.True(t, found, "entry %s should be restored after restart", cidr)
+		assert.True(t, recentlyFreed, "entry %s should still be within cooldown", cidr)
+	}
+}
+
+// Verifies that entries whose cooldown has already elapsed are not resurrected on restart.
+func TestReconcileCooldownCache_RestoreDropsExpired(t *testing.T) {
+	// Seed the backing store with one fresh and one already-expired entry.
+	store := datastore.NewTestCheckpoint(&cooldownCheckpointData{
+		Version: cooldownCheckpointFormatVersion,
+		Entries: map[string]int64{
+			"10.0.0.1/32": time.Now().Add(ipReconcileCooldown).UnixNano(),  // fresh
+			"10.0.0.9/32": time.Now().Add(-1 * time.Hour).UnixNano(),       // expired
+		},
+	})
+
+	c := &ReconcileCooldownCache{cache: make(map[string]time.Time)}
+	c.SetBackingStore(store)
+	c.Restore()
+
+	found, recentlyFreed := c.RecentlyFreed("10.0.0.1/32")
+	assert.True(t, found, "fresh entry should be restored")
+	assert.True(t, recentlyFreed)
+
+	found, _ = c.RecentlyFreed("10.0.0.9/32")
+	assert.False(t, found, "expired entry must not be restored")
+}
+
+// Vrifies a fresh node (no persisted file) is handled gracefully: Restore is a no-op and the cache stays empty.
+func TestReconcileCooldownCache_RestoreMissingStore(t *testing.T) {
+	// NullCheckpoint.Restore always returns os.ErrNotExist, modeling a fresh node.
+	c := &ReconcileCooldownCache{cache: make(map[string]time.Time)}
+	c.SetBackingStore(datastore.NullCheckpoint{})
+	c.Restore()
+
+	found, _ := c.RecentlyFreed("10.0.0.1/32")
+	assert.False(t, found)
+}
+
+// Exercises the real file-based checkpointer (atomic temp+rename) end to end through a temp directory.
+func TestReconcileCooldownCache_PersistRestoreViaJSONFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "reconcile-cooldown.json")
+
+	c1 := &ReconcileCooldownCache{cache: make(map[string]time.Time)}
+	c1.SetBackingStore(datastore.NewJSONFile(path))
+	c1.Add("10.0.0.5/32")
+
+	c2 := &ReconcileCooldownCache{cache: make(map[string]time.Time)}
+	c2.SetBackingStore(datastore.NewJSONFile(path))
+	c2.Restore()
+
+	found, recentlyFreed := c2.RecentlyFreed("10.0.0.5/32")
+	assert.True(t, found, "entry should round-trip through the JSON file")
+	assert.True(t, recentlyFreed)
+
+	// Remove should persist too: after removal and a fresh restore, the entry is gone.
+	c2.Remove("10.0.0.5/32")
+	c3 := &ReconcileCooldownCache{cache: make(map[string]time.Time)}
+	c3.SetBackingStore(datastore.NewJSONFile(path))
+	c3.Restore()
+	found, _ = c3.RecentlyFreed("10.0.0.5/32")
+	assert.False(t, found, "removal should persist across restart")
 }
 
 func TestIPAMContext_SetTerminating(t *testing.T) {

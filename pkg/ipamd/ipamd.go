@@ -329,6 +329,25 @@ func (c *IPAMContext) markUnmanagedNetworkCards(efaOnlyENINetworkCards []string,
 type ReconcileCooldownCache struct {
 	sync.RWMutex
 	cache map[string]time.Time
+	// Persists the cooldown entries across IPAMD restarts.
+	backingStore datastore.Checkpointer
+}
+
+// Version stamp used for the persisted cooldown cache.
+const cooldownCheckpointFormatVersion = "vpc-cni-cooldown/1"
+
+// On-disk format of the persisted cooldown cache. Expiries are stored as Unix-nanosecond
+// timestamps so a restart can honor the remaining cooldown rather than restarting the clock.
+type cooldownCheckpointData struct {
+	Version string           `json:"version"`
+	Entries map[string]int64 `json:"entries"`
+}
+
+// Enables persistence for the cooldown cache. Can pass a datastore.NullCheckpoint (or leave unset) to disable persistence.
+func (r *ReconcileCooldownCache) SetBackingStore(store datastore.Checkpointer) {
+	r.Lock()
+	defer r.Unlock()
+	r.backingStore = store
 }
 
 // Add sets a timestamp for the CIDR added that says how long they are not to be put back in the data store.
@@ -337,6 +356,7 @@ func (r *ReconcileCooldownCache) Add(cidr string) {
 	defer r.Unlock()
 	expiry := time.Now().Add(ipReconcileCooldown)
 	r.cache[cidr] = expiry
+	r.persistUnsafe()
 }
 
 // Remove removes a CIDR from the cooldown cache.
@@ -345,6 +365,7 @@ func (r *ReconcileCooldownCache) Remove(cidr string) {
 	defer r.Unlock()
 	log.Debugf("Removing %s from cooldown cache.", cidr)
 	delete(r.cache, cidr)
+	r.persistUnsafe()
 }
 
 // RecentlyFreed checks if this CIDR was recently freed.
@@ -357,6 +378,58 @@ func (r *ReconcileCooldownCache) RecentlyFreed(cidr string) (found, recentlyFree
 		return true, now.Sub(expiry) < 0
 	}
 	return false, false
+}
+
+// Writes the current cooldown entries to the backing store.
+func (r *ReconcileCooldownCache) persistUnsafe() {
+	if r.backingStore == nil {
+		return
+	}
+	entries := make(map[string]int64, len(r.cache))
+	for cidr, expiry := range r.cache {
+		entries[cidr] = expiry.UnixNano()
+	}
+	data := cooldownCheckpointData{Version: cooldownCheckpointFormatVersion, Entries: entries}
+	if err := r.backingStore.Checkpoint(&data); err != nil {
+		log.Warnf("Failed to persist reconcile cooldown cache: %v", err)
+	}
+}
+
+// Restore loads cooldown entries from the backing store, dropping any that have already expired.
+func (r *ReconcileCooldownCache) Restore() {
+	r.Lock()
+	defer r.Unlock()
+	if r.backingStore == nil {
+		return
+	}
+	var data cooldownCheckpointData
+	if err := r.backingStore.Restore(&data); err != nil {
+		if os.IsNotExist(err) {
+			log.Debugf("No persisted reconcile cooldown cache found; starting empty")
+		} else {
+			log.Warnf("Failed to restore reconcile cooldown cache, starting empty: %v", err)
+		}
+		return
+	}
+	if data.Version != cooldownCheckpointFormatVersion {
+		log.Warnf("Ignoring persisted reconcile cooldown cache due to unexpected version %q (want %q)", data.Version, cooldownCheckpointFormatVersion)
+		return
+	}
+	now := time.Now()
+	restored := 0
+	for cidr, expiryNano := range data.Entries {
+		expiry := time.Unix(0, expiryNano)
+		// Only keep entries still within their cooldown window.
+		if now.Before(expiry) {
+			r.cache[cidr] = expiry
+			restored++
+		}
+	}
+	if restored > 0 {
+		log.Infof("Restored %d reconcile cooldown cache entries still within cooldown after restart", restored)
+	}
+	// Rewrite so the on-disk file reflects the pruned set.
+	r.persistUnsafe()
 }
 
 func prometheusRegister() {
@@ -420,6 +493,12 @@ func New(ctx context.Context, k8sClient client.Client, withApiServer bool) (*IPA
 
 	c.primaryIP = make(map[string]string)
 	c.reconcileCooldownCache.cache = make(map[string]time.Time)
+	// Persist the cooldown cache across aws-node/IPAMD restarts. Without this, a restart wipes
+	// the cache and a recently unassigned (but still IMDS-stale) IP can be re-added to the
+	// datastore and allocated to a pod with no working network path (issue #3887). Restore
+	// drops entries whose cooldown has already elapsed.
+	c.reconcileCooldownCache.SetBackingStore(datastore.NewJSONFile(cooldownBackingStorePath()))
+	c.reconcileCooldownCache.Restore()
 	// WARM and Min IP/Prefix targets are ignored in IPv6 mode
 	c.warmENITarget = getWarmENITarget()
 	c.warmIPTarget = getWarmIPTarget()
@@ -2062,6 +2141,12 @@ func dsBackingStorePath() string {
 		return value
 	}
 	return defaultBackingStorePath
+}
+
+// Returns the path for the persisted reconcile cooldown cache.
+func cooldownBackingStorePath() string {
+	base := dsBackingStorePath()
+	return strings.TrimSuffix(base, ".json") + "-reconcile-cooldown.json"
 }
 
 func getWarmIPTarget() int {

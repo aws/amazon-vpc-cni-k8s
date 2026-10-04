@@ -1820,12 +1820,6 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs(ctx context.Context) (Des
 		return DescribeAllENIsResult{}, err
 	}
 
-	// Collect the verified ENIs
-	var verifiedENIs []ENIMetadata
-	for _, eniMetadata := range eniMap {
-		verifiedENIs = append(verifiedENIs, eniMetadata)
-	}
-
 	// Collect ENI response into ENI metadata and tags.
 	var trunkENI string
 	efaENIs := make(map[string]bool, 0)
@@ -1878,9 +1872,19 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs(ctx context.Context) (Des
 		// Check IPv4 addresses
 		if len(eniMetadata.IPv4Addresses) > 0 {
 			logOutOfSyncState(eniID, eniMetadata.IPv4Addresses, ec2res.PrivateIpAddresses)
+			// Treat EC2 DescribeNetworkInterfaces as the source of truth.
+			eniMetadata.IPv4Addresses = reconcileIPv4AddressesWithEC2(eniID, eniMetadata.IPv4Addresses, ec2res.PrivateIpAddresses)
+			eniMap[eniID] = eniMetadata
 		}
 		tagMap[eniMetadata.ENIID] = convertSDKTagsToTags(ec2res.TagSet)
 	}
+
+	// Collect the verified ENIs.
+	var verifiedENIs []ENIMetadata
+	for _, eniMetadata := range eniMap {
+		verifiedENIs = append(verifiedENIs, eniMetadata)
+	}
+
 	return DescribeAllENIsResult{
 		ENIMetadata:             verifiedENIs,
 		TagMap:                  tagMap,
@@ -1954,6 +1958,29 @@ func badENIID(errMsg string) string {
 		return ""
 	}
 	return found[1]
+}
+
+// Returns the subset of IMDS-derived IPv4 addresses that EC2 DescribeNetworkInterfaces also reports for the ENI (EC2 is treated as the source of truth).
+func reconcileIPv4AddressesWithEC2(eniID string, imdsIPv4s, ec2IPv4s []ec2types.NetworkInterfacePrivateIpAddress) []ec2types.NetworkInterfacePrivateIpAddress {
+	if len(ec2IPv4s) == 0 {
+		return imdsIPv4s
+	}
+	ec2IPv4Set := sets.NewString()
+	for _, ec2IPv4 := range ec2IPv4s {
+		ec2IPv4Set.Insert(aws.ToString(ec2IPv4.PrivateIpAddress))
+	}
+
+	reconciled := make([]ec2types.NetworkInterfacePrivateIpAddress, 0, len(imdsIPv4s))
+	for _, imdsIPv4 := range imdsIPv4s {
+		ip := aws.ToString(imdsIPv4.PrivateIpAddress)
+		// Always keep the primary address; it must never be dropped.
+		if aws.ToBool(imdsIPv4.Primary) || ec2IPv4Set.Has(ip) {
+			reconciled = append(reconciled, imdsIPv4)
+			continue
+		}
+		log.Infof("reconcileIPv4AddressesWithEC2: dropping IPv4 address %s on ENI %s that IMDS reports but EC2 DescribeNetworkInterfaces does not, to prevent allocating a stale address", ip, eniID)
+	}
+	return reconciled
 }
 
 // logOutOfSyncState compares the IP and metadata returned by IMDS and the EC2 API DescribeNetworkInterfaces calls
