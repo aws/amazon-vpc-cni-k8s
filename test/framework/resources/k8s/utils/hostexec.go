@@ -29,10 +29,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// The host-exec DaemonSet keeps one long-lived privileged pod on every Linux
-// node so tests can run host commands through the API exec subresource. Exec
-// into a running pod returns the command's full stdout, unlike kubectl run -i,
-// which can attach after a short command has exited.
+// The host-exec DaemonSet keeps one long-lived privileged pod per test node so
+// tests can run host commands through the exec subresource, which returns the
+// full stdout. kubectl run -i can attach after a short command has exited.
 const (
 	hostExecDaemonSetName = "host-exec"
 	hostExecLabelKey      = "app"
@@ -46,17 +45,14 @@ const (
 	hostExecRetryInterval = 10 * time.Second
 )
 
-// EnsureHostExecDaemonSet creates the host-exec DaemonSet in the default test
-// namespace if it does not exist yet, then waits until it is ready. It is
-// idempotent, so each spec that runs host commands calls it from its own
-// setup hook rather than paying for the DaemonSet in BeforeSuite: focused
-// runs such as the canaries never need it. The DaemonSet lives in the test
-// namespace, so deleting that namespace in AfterSuite removes it.
+// EnsureHostExecDaemonSet creates the host-exec DaemonSet in the test
+// namespace if needed and waits until it is ready. Idempotent, so specs that
+// run host commands call it from their setup hooks instead of BeforeSuite.
+// Deleting the test namespace in AfterSuite removes it.
 func EnsureHostExecDaemonSet(f *framework.Framework) error {
 	dsManager := f.K8sResourceManagers.DaemonSetManager()
 	_, err := dsManager.CreateAndWaitTillDaemonSetIsReady(newHostExecDaemonSet(f), utils.DefaultDeploymentReadyTimeout)
 	if k8sErrors.IsAlreadyExists(err) {
-		// Created by an earlier spec in this run (or a parallel process).
 		return dsManager.CheckIfDaemonSetIsReady(utils.DefaultTestNamespace, hostExecDaemonSetName)
 	}
 	if err != nil {
@@ -65,22 +61,17 @@ func EnsureHostExecDaemonSet(f *framework.Framework) error {
 	return nil
 }
 
-// ExecOnHost runs command with bash in the host namespaces of nodeName and
-// returns its stdout, bounded by hostExecTimeout so a wedged node cannot hang
-// a spec or its cleanup. A non-zero exit status is returned as an error
-// carrying the exit code and stderr. The host-exec DaemonSet must already be
-// running; see EnsureHostExecDaemonSet.
-//
-// The command runs with the host's own binaries, so the host must provide
-// bash in its mount namespace. AL2 and AL2023 do; Bottlerocket does not, as
-// was already the case with kubectl node-shell.
+// ExecOnHost runs command with the host's bash in the host namespaces of
+// nodeName and returns its stdout, bounded by hostExecTimeout. A non-zero exit
+// is an error carrying the exit code and stderr. Requires bash on the host
+// (AL2, AL2023; not Bottlerocket) and the host-exec DaemonSet; see
+// EnsureHostExecDaemonSet.
 func ExecOnHost(f *framework.Framework, nodeName string, command string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), hostExecTimeout)
 	defer cancel()
 
 	pods := &v1.PodList{}
-	// f.K8sClient reads pods from the informer cache, which has no spec.nodeName
-	// field index, so filter by node in memory rather than with MatchingFields.
+	// The cached client has no spec.nodeName index, so filter by node in memory.
 	err := f.K8sClient.List(ctx, pods, client.InNamespace(utils.DefaultTestNamespace),
 		client.MatchingLabels{hostExecLabelKey: hostExecLabelVal})
 	if err != nil {
@@ -90,8 +81,6 @@ func ExecOnHost(f *framework.Framework, nodeName string, command string) (string
 		return p.Spec.NodeName == nodeName && p.Status.Phase == v1.PodRunning && p.DeletionTimestamp == nil
 	})
 	if !found {
-		// Also hit when a DaemonSet left by an aborted run was scoped to a
-		// different node group; deleting the test namespace clears it.
 		return "", fmt.Errorf("no running host-exec pod on node %s", nodeName)
 	}
 	// Enter PID 1's mount, UTS, IPC, network and PID namespaces.
@@ -105,11 +94,8 @@ func ExecOnHost(f *framework.Framework, nodeName string, command string) (string
 }
 
 // ExecOnHostWithRetries is ExecOnHost plus retries on any failure for up to
-// hostExecRetryFor, for remote commands whose success depends on the node
-// converging (for example kube-proxy re-creating state between a cleanup and
-// its check). Callers must therefore pass commands that are idempotent and
-// expected to succeed; a command that can never succeed, such as a missing
-// binary, costs the full retry window.
+// hostExecRetryFor. Commands must be idempotent and expected to succeed; one
+// that cannot succeed costs the full retry window.
 func ExecOnHostWithRetries(f *framework.Framework, nodeName string, command string) (string, error) {
 	deadline := time.Now().Add(hostExecRetryFor)
 	for {
@@ -123,13 +109,10 @@ func ExecOnHostWithRetries(f *framework.Framework, nodeName string, command stri
 	}
 }
 
-// newHostExecDaemonSet builds the host-exec DaemonSet. It is scoped to the
-// Linux nodes carrying the --ng-name-label selector, the nodes the tests run
-// commands on, so an unrelated node that cannot run the pod does not hold up
-// readiness and privileged host access stays within the node group under
-// test. It tolerates every taint so a tainted test node group is still
-// covered. busybox supplies nsenter and sleep; the command itself runs with
-// the host's own binaries once nsenter switches to the host mount namespace.
+// newHostExecDaemonSet builds the host-exec DaemonSet, scoped to the
+// --ng-name-label Linux nodes so unrelated nodes neither block readiness nor
+// get a privileged pod. It tolerates all taints. busybox supplies nsenter and
+// sleep; commands run with the host's binaries after nsenter.
 func newHostExecDaemonSet(f *framework.Framework) *appsV1.DaemonSet {
 	container := manifest.NewBusyBoxContainerBuilder(f.Options.TestImageRegistry).
 		Name(hostExecContainerName).

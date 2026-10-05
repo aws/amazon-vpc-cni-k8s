@@ -211,15 +211,10 @@ func (d *defaultPodManager) PodExecInContainer(namespace, name, container string
 	return d.PodExecInContainerWithContext(context.Background(), namespace, name, container, command)
 }
 
-// PodExecInContainerWithContext is PodExecInContainer bounded by ctx, so a
-// wedged connection or command cannot hang the caller; ctx should carry a
-// deadline, which the WebSocket dialer applies to the upgrade handshake.
-//
-// It uses WebSocket only. kubectl falls back to SPDY for pre-1.31 API servers
-// and proxies that reject WebSocket upgrades, but the SPDY upgrade reads its
-// response with no deadline, so a stalled fallback would escape ctx. Every
-// supported EKS version accepts WebSocket exec and the tests connect to the
-// endpoint directly, so the fallback is not worth that hole.
+// PodExecInContainerWithContext is PodExecInContainer bounded by ctx; ctx
+// should carry a deadline, which the WebSocket dialer applies to the upgrade.
+// WebSocket only: the SPDY fallback kubectl uses for pre-1.31 servers reads
+// its upgrade response with no deadline, and EKS supports 1.31+.
 func (d *defaultPodManager) PodExecInContainerWithContext(ctx context.Context, namespace, name, container string, command []string) (string, string, error) {
 	execOptions := &v1.PodExecOptions{
 		Container: container,
