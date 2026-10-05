@@ -69,6 +69,10 @@ const (
 	// during reconciliation after being discovered on the EC2 instance metadata.
 	ipReconcileCooldown = 60 * time.Second
 
+	// hyperPodReservedENIs is the number of network card 0 slots used by the HyperPod-owned ENI at device index 0.
+	// That ENI lives in the service account, so it is filtered out of DescribeAllENIs and never counted as attached.
+	hyperPodReservedENIs = 1
+
 	// This environment variable is used to specify the desired number of free IPs always available in the "warm pool".
 	// When it is not set, ipamd defaults to use all available IPs per ENI for that instance type.
 	// For example, for a m4.4xlarge node,
@@ -297,7 +301,12 @@ func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap) {
 // If there is a ENA device on a Network Card along with EFA-only device, CNI manages the Network Card but excludes the EFA-only device
 func (c *IPAMContext) markUnmanagedNetworkCards(efaOnlyENINetworkCards []string, enisByNetworkCard [][]string) []bool {
 	skipNetworkCards := make([]bool, c.numNetworkCards)
-	if !c.enableMultiNICSupport {
+	// SageMaker can only attach ENIs to network card 0 on HyperPod nodes, so treat multi-NIC as disabled
+	isHyperPod := c.awsClient.IsHyperPod()
+	if isHyperPod && c.enableMultiNICSupport {
+		log.Warnf("%s is not supported on HyperPod nodes, only network card %d will be managed", envEnableMultiNICSupport, DefaultNetworkCardIndex)
+	}
+	if !c.enableMultiNICSupport || isHyperPod {
 		skipNetworkCards = lo.Times(c.numNetworkCards, func(i int) bool {
 			return true
 		})
@@ -485,6 +494,38 @@ func (c *IPAMContext) nodeInit(ctx context.Context) error {
 		log.Debugf("Failed to clean up stale AWS chains: %v", err)
 	}
 
+	// if apiserver is connected, get the maxPods from node
+	var node corev1.Node
+	if c.withApiServer {
+		node, err = k8sapi.GetNode(ctx, c.k8sClient)
+		if err != nil {
+			log.Errorf("Failed to get node, %s", err)
+			podENIErrInc("nodeInit")
+			return err
+		} else {
+			maxPods, isInt64 := node.Status.Capacity.Pods().AsInt64()
+			if !isInt64 {
+				log.Errorf("Failed to parse max pods: %s", node.Status.Capacity.Pods().String)
+				podENIErrInc("nodeInit")
+				return errors.New("error while trying to determine max pods")
+			}
+			c.maxPods = int(maxPods)
+		}
+		// On HyperPod nodes the ENI attach is delegated to SageMaker; error out so startup retries.
+		// Must run before markUnmanagedNetworkCards, which restricts HyperPod nodes to network card 0.
+		if err := c.awsClient.InitHyperPodFromProviderID(ctx, node.Spec.ProviderID); err != nil {
+			return err
+		}
+	} else {
+		maxPods, err := c.getMaxPodsFromFile()
+		if err != nil {
+			log.Warnf("Using default maxPods as %d because reading from file failed: %v", defaultMaxPodsFromKubelet, err)
+			c.maxPods = defaultMaxPodsFromKubelet
+		} else {
+			c.maxPods = int(maxPods)
+		}
+	}
+
 	// Queries IMDS for all attached ENIs and then compares it against EC2.
 	// Groups the ENIs into different types
 	metadataResult, err := c.awsClient.DescribeAllENIs(ctx)
@@ -602,37 +643,6 @@ func (c *IPAMContext) nodeInit(ctx context.Context) error {
 		go wait.Forever(func() {
 			c.awsClient.RefreshSGIDs(ctx, primaryENIMac, c.dataStoreAccess)
 		}, 30*time.Second)
-	}
-
-	// if apiserver is connected, get the maxPods from node
-	var node corev1.Node
-	if c.withApiServer {
-		node, err = k8sapi.GetNode(ctx, c.k8sClient)
-		if err != nil {
-			log.Errorf("Failed to get node, %s", err)
-			podENIErrInc("nodeInit")
-			return err
-		} else {
-			maxPods, isInt64 := node.Status.Capacity.Pods().AsInt64()
-			if !isInt64 {
-				log.Errorf("Failed to parse max pods: %s", node.Status.Capacity.Pods().String)
-				podENIErrInc("nodeInit")
-				return errors.New("error while trying to determine max pods")
-			}
-			c.maxPods = int(maxPods)
-		}
-		// On HyperPod nodes the ENI attach is delegated to SageMaker; error out so startup retries.
-		if err := c.awsClient.InitHyperPodFromProviderID(ctx, node.Spec.ProviderID); err != nil {
-			return err
-		}
-	} else {
-		maxPods, err := c.getMaxPodsFromFile()
-		if err != nil {
-			log.Warnf("Using default maxPods as %d because reading from file failed: %v", defaultMaxPodsFromKubelet, err)
-			c.maxPods = defaultMaxPodsFromKubelet
-		} else {
-			c.maxPods = int(maxPods)
-		}
 	}
 
 	if c.useCustomNetworking {
@@ -767,8 +777,9 @@ func (c *IPAMContext) updateCIDRsRulesOnChange(oldVPCCIDRs []string) []string {
 }
 
 func (c *IPAMContext) updateIPStats(unmanaged int) {
-	prometheusmetrics.IpMax.Set(float64(c.maxIPsPerENI * (c.maxENI - unmanaged)))
-	prometheusmetrics.EnisMax.Set(float64(c.maxENI - unmanaged))
+	maxENIs := c.maxENI - unmanaged - c.reservedENIs(DefaultNetworkCardIndex)
+	prometheusmetrics.IpMax.Set(float64(c.maxIPsPerENI * maxENIs))
+	prometheusmetrics.EnisMax.Set(float64(maxENIs))
 }
 
 // StartNodeIPPoolManager monitors the IP pool, add or del them when it is required.
@@ -1504,7 +1515,7 @@ func (c *IPAMContext) logPoolStats(dataStoreStats *datastore.DataStoreStats, net
 
 func (c *IPAMContext) tryEnableSecurityGroupsForPods(ctx context.Context) {
 	// For IPv4, check that there is room for a trunk ENI before patching CNINode CRD. We only check on the Default Network Card
-	if c.enableIPv4 && (c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetENIs() >= (c.maxENI - c.unmanagedENI[DefaultNetworkCardIndex])) {
+	if c.enableIPv4 && (c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetENIs() >= (c.maxENI - c.unmanagedENI[DefaultNetworkCardIndex] - c.reservedENIs(DefaultNetworkCardIndex))) {
 		log.Error("No slot available for a trunk ENI to be attached.")
 		return
 	}
@@ -2625,8 +2636,20 @@ func (c *IPAMContext) isDatastorePoolEmpty(networkCard int) bool {
 	return stats.TotalIPs == 0
 }
 
+// reservedENIs returns the number of ENI slots on the network card that are occupied by ENIs the node cannot see
+func (c *IPAMContext) reservedENIs(networkCard int) int {
+	if networkCard == DefaultNetworkCardIndex && c.awsClient.IsHyperPod() {
+		return hyperPodReservedENIs
+	}
+	return 0
+}
+
 // Return whether the maximum number of ENIs that can be attached to the node has already been reached
 func (c *IPAMContext) hasRoomForEni(networkCard int) bool {
+	if c.awsClient.IsHyperPod() && networkCard != DefaultNetworkCardIndex {
+		log.Debugf("hasRoomForEni: networkCard=%d, HyperPod nodes only attach ENIs to network card %d", networkCard, DefaultNetworkCardIndex)
+		return false
+	}
 	trunkEni := 0
 	if c.awsClient.IsTrunkingCompatible() && c.enablePodENI && networkCard == DefaultNetworkCardIndex && c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetTrunkENI() == "" {
 		trunkEni = 1
@@ -2646,13 +2669,14 @@ func (c *IPAMContext) hasRoomForEni(networkCard int) bool {
 	currentENIs := c.dataStoreAccess.GetDataStore(networkCard).GetENIs()
 	// Subtract excluded ENIs from current count to match the exclusion from max count
 	currentUsableENIs := currentENIs - excludedENI
-	maxUsableENIs := c.maxENI - c.unmanagedENI[networkCard] - trunkEni - excludedENI
+	reservedENI := c.reservedENIs(networkCard)
+	maxUsableENIs := c.maxENI - c.unmanagedENI[networkCard] - reservedENI - trunkEni - excludedENI
 
 	// Check if we have room considering the excluded ENI
 	hasRoom := currentUsableENIs < maxUsableENIs
 
-	log.Debugf("hasRoomForEni: networkCard=%d, currentENIs=%d, currentUsableENIs=%d, maxENI=%d, unmanagedENI=%d, trunkEni=%d, excludedENI=%d, hasRoom=%v",
-		networkCard, currentENIs, currentUsableENIs, c.maxENI, c.unmanagedENI[networkCard], trunkEni, excludedENI, hasRoom)
+	log.Debugf("hasRoomForEni: networkCard=%d, currentENIs=%d, currentUsableENIs=%d, maxENI=%d, unmanagedENI=%d, reservedENI=%d, trunkEni=%d, excludedENI=%d, hasRoom=%v",
+		networkCard, currentENIs, currentUsableENIs, c.maxENI, c.unmanagedENI[networkCard], reservedENI, trunkEni, excludedENI, hasRoom)
 
 	return hasRoom
 }
