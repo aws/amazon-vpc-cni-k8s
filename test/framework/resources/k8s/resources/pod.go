@@ -23,7 +23,6 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/streaming/pkg/httpstream"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -214,9 +213,13 @@ func (d *defaultPodManager) PodExecInContainer(namespace, name, container string
 
 // PodExecInContainerWithContext is PodExecInContainer bounded by ctx, so a
 // wedged connection or command cannot hang the caller; ctx should carry a
-// deadline, which the WebSocket upgrade honours where cancellation alone is
-// not. Like kubectl it uses WebSocket and falls back to SPDY only if the
-// WebSocket upgrade is refused, since the SPDY upgrade ignores ctx.
+// deadline, which the WebSocket dialer applies to the upgrade handshake.
+//
+// It uses WebSocket only. kubectl falls back to SPDY for pre-1.31 API servers
+// and proxies that reject WebSocket upgrades, but the SPDY upgrade reads its
+// response with no deadline, so a stalled fallback would escape ctx. Every
+// supported EKS version accepts WebSocket exec and the tests connect to the
+// endpoint directly, so the fallback is not worth that hole.
 func (d *defaultPodManager) PodExecInContainerWithContext(ctx context.Context, namespace, name, container string, command []string) (string, string, error) {
 	execOptions := &v1.PodExecOptions{
 		Container: container,
@@ -233,17 +236,7 @@ func (d *defaultPodManager) PodExecInContainerWithContext(ctx context.Context, n
 		VersionedParams(execOptions, runtime.NewParameterCodec(d.k8sSchema))
 
 	// WebSocket requires GET (RFC 6455 Sec. 4.1).
-	wsExec, err := remotecommand.NewWebSocketExecutor(d.config, http.MethodGet, req.URL().String())
-	if err != nil {
-		return "", "", err
-	}
-	spdyExec, err := remotecommand.NewSPDYExecutor(d.config, http.MethodPost, req.URL())
-	if err != nil {
-		return "", "", err
-	}
-	exec, err := remotecommand.NewFallbackExecutor(wsExec, spdyExec, func(err error) bool {
-		return httpstream.IsUpgradeFailure(err) || httpstream.IsHTTPSProxyError(err)
-	})
+	exec, err := remotecommand.NewWebSocketExecutor(d.config, http.MethodGet, req.URL().String())
 	if err != nil {
 		return "", "", err
 	}
