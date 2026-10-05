@@ -25,7 +25,6 @@ import (
 	"github.com/samber/lo"
 	appsV1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
-	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -46,20 +45,14 @@ const (
 	hostExecRetryInterval = 10 * time.Second
 )
 
-// EnsureHostExecDaemonSet creates the host-exec DaemonSet in the default test
-// namespace unless it already exists, then waits until it is ready. It lives
-// in the test namespace, so deleting that namespace also removes it.
-func EnsureHostExecDaemonSet(f *framework.Framework) error {
-	dsManager := f.K8sResourceManagers.DaemonSetManager()
-	_, err := dsManager.GetDaemonSet(utils.DefaultTestNamespace, hostExecDaemonSetName)
-	if err == nil {
-		return dsManager.CheckIfDaemonSetIsReady(utils.DefaultTestNamespace, hostExecDaemonSetName)
-	}
-	if !k8sErrors.IsNotFound(err) {
-		return fmt.Errorf("getting host-exec daemonset: %w", err)
-	}
-	_, err = dsManager.CreateAndWaitTillDaemonSetIsReady(newHostExecDaemonSet(f.Options.TestImageRegistry),
-		utils.DefaultDeploymentReadyTimeout)
+// CreateHostExecDaemonSet creates the host-exec DaemonSet in the default test
+// namespace and waits until it is ready. It lives in the test namespace, so
+// deleting that namespace in AfterSuite also removes it; a run therefore
+// expects no DaemonSet to exist yet, and one left by an aborted run must be
+// deleted before re-running.
+func CreateHostExecDaemonSet(f *framework.Framework) error {
+	_, err := f.K8sResourceManagers.DaemonSetManager().CreateAndWaitTillDaemonSetIsReady(
+		newHostExecDaemonSet(f), utils.DefaultDeploymentReadyTimeout)
 	if err != nil {
 		return fmt.Errorf("creating host-exec daemonset: %w", err)
 	}
@@ -70,7 +63,7 @@ func EnsureHostExecDaemonSet(f *framework.Framework) error {
 // returns its stdout, bounded by hostExecTimeout so a wedged node cannot hang
 // a spec or its cleanup. A non-zero exit status is returned as an error
 // carrying the exit code and stderr. The host-exec DaemonSet must already be
-// running; see EnsureHostExecDaemonSet.
+// running; see CreateHostExecDaemonSet.
 //
 // The command runs with the host's own binaries, so the host must provide
 // bash in its mount namespace. AL2 and AL2023 do; Bottlerocket does not, as
@@ -122,13 +115,15 @@ func ExecOnHostWithRetries(f *framework.Framework, nodeName string, command stri
 	}
 }
 
-// newHostExecDaemonSet builds the host-exec DaemonSet. It covers every Linux
-// node, not just the --ng-name-label nodes, so a DaemonSet left by a run that
-// targeted another node group is still valid to reuse. busybox supplies
-// nsenter and sleep; the command itself runs with the host's own binaries once
-// nsenter switches to the host mount namespace.
-func newHostExecDaemonSet(testImageRegistry string) *appsV1.DaemonSet {
-	container := manifest.NewBusyBoxContainerBuilder(testImageRegistry).
+// newHostExecDaemonSet builds the host-exec DaemonSet. It is scoped to the
+// Linux nodes carrying the --ng-name-label selector, the nodes the tests run
+// commands on, so an unrelated node that cannot run the pod does not hold up
+// readiness and privileged host access stays within the node group under
+// test. It tolerates every taint so a tainted test node group is still
+// covered. busybox supplies nsenter and sleep; the command itself runs with
+// the host's own binaries once nsenter switches to the host mount namespace.
+func newHostExecDaemonSet(f *framework.Framework) *appsV1.DaemonSet {
+	container := manifest.NewBusyBoxContainerBuilder(f.Options.TestImageRegistry).
 		Name(hostExecContainerName).
 		Command([]string{"sleep", "infinity"}).
 		Build()
@@ -137,6 +132,7 @@ func newHostExecDaemonSet(testImageRegistry string) *appsV1.DaemonSet {
 		Name(hostExecDaemonSetName).
 		Labels(map[string]string{hostExecLabelKey: hostExecLabelVal}).
 		Container(container).
+		NodeSelector(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal).
 		HostNetwork(true).
 		TerminationGracePeriod(0).
 		Build()
