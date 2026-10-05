@@ -16,10 +16,12 @@ package utils
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
+	. "github.com/onsi/ginkgo/v2"
 	"github.com/samber/lo"
 	appsV1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
@@ -36,6 +38,12 @@ const (
 	hostExecLabelKey      = "app"
 	hostExecLabelVal      = "vpc-cni-host-exec"
 	hostExecContainerName = "host-exec"
+
+	// hostExecTimeout bounds a single command run on a node's host.
+	hostExecTimeout = 2 * time.Minute
+	// hostExecRetryFor and hostExecRetryInterval shape ExecOnHostWithRetries.
+	hostExecRetryFor      = 5 * time.Minute
+	hostExecRetryInterval = 10 * time.Second
 )
 
 // EnsureHostExecDaemonSet creates the host-exec DaemonSet in the default test
@@ -62,8 +70,14 @@ func EnsureHostExecDaemonSet(f *framework.Framework) error {
 // returns its stdout. A non-zero exit status is returned as an error carrying
 // the exit code and stderr. The host-exec DaemonSet must already be running;
 // see EnsureHostExecDaemonSet.
+//
+// The command runs with the host's own binaries, so the host must provide
+// bash in its mount namespace. AL2 and AL2023 do; Bottlerocket does not, as
+// was already the case with kubectl node-shell.
 func HostExec(ctx context.Context, f *framework.Framework, nodeName string, command string) (string, error) {
 	pods := &v1.PodList{}
+	// f.K8sClient reads pods from the informer cache, which has no spec.nodeName
+	// field index, so filter by node in memory rather than with MatchingFields.
 	err := f.K8sClient.List(ctx, pods, client.InNamespace(utils.DefaultTestNamespace),
 		client.MatchingLabels{hostExecLabelKey: hostExecLabelVal})
 	if err != nil {
@@ -83,6 +97,33 @@ func HostExec(ctx context.Context, f *framework.Framework, nodeName string, comm
 		return stdout, fmt.Errorf("host exec on node %s: %w (stderr: %s)", nodeName, err, stderr)
 	}
 	return stdout, nil
+}
+
+// ExecOnHost is HostExec bounded by hostExecTimeout, so a wedged node cannot
+// hang a spec or its cleanup.
+func ExecOnHost(f *framework.Framework, nodeName string, command string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), hostExecTimeout)
+	defer cancel()
+	return HostExec(ctx, f, nodeName, command)
+}
+
+// ExecOnHostWithRetries is ExecOnHost plus retries on any failure for up to
+// hostExecRetryFor, for remote commands whose success depends on the node
+// converging (for example kube-proxy re-creating state between a cleanup and
+// its check). Callers must therefore pass commands that are idempotent and
+// expected to succeed; a command that can never succeed, such as a missing
+// binary, costs the full retry window.
+func ExecOnHostWithRetries(f *framework.Framework, nodeName string, command string) (string, error) {
+	deadline := time.Now().Add(hostExecRetryFor)
+	for {
+		output, err := ExecOnHost(f, nodeName, command)
+		if err == nil || time.Now().After(deadline) {
+			return output, err
+		}
+		fmt.Fprintf(GinkgoWriter, "host exec on %s failed, retrying in %s: %v (output: %s)\n",
+			nodeName, hostExecRetryInterval, err, output)
+		time.Sleep(hostExecRetryInterval)
+	}
 }
 
 // newHostExecDaemonSet builds the host-exec DaemonSet. It covers every Linux
