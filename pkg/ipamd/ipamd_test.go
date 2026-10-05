@@ -4147,7 +4147,7 @@ func TestReconcileCooldownCache_RestoreDropsExpired(t *testing.T) {
 	assert.False(t, found, "expired entry must not be restored")
 }
 
-// Vrifies a fresh node (no persisted file) is handled gracefully: Restore is a no-op and the cache stays empty.
+// Verifies a fresh node (no persisted file) is handled gracefully: Restore is a no-op and the cache stays empty.
 func TestReconcileCooldownCache_RestoreMissingStore(t *testing.T) {
 	// NullCheckpoint.Restore always returns os.ErrNotExist, modeling a fresh node.
 	c := &ReconcileCooldownCache{cache: make(map[string]time.Time)}
@@ -4181,6 +4181,29 @@ func TestReconcileCooldownCache_PersistRestoreViaJSONFile(t *testing.T) {
 	c3.Restore()
 	found, _ = c3.RecentlyFreed("10.0.0.5/32")
 	assert.False(t, found, "removal should persist across restart")
+}
+
+// Verifies that a corrupt on-disk cooldown file is self-healed on restore (overwritten with a valid empty checkpoint) so nodes do not warn on every subsequent restart.
+func TestReconcileCooldownCache_RestoreSelfHealsCorruptFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "reconcile-cooldown.json")
+	// Write garbage that cannot be decoded as cooldownCheckpointData.
+	assert.NoError(t, os.WriteFile(path, []byte("}{ not json"), 0o600))
+
+	c := &ReconcileCooldownCache{cache: make(map[string]time.Time)}
+	c.SetBackingStore(datastore.NewJSONFile(path))
+	c.Restore() // should log, reset the file, and not panic
+
+	// The file should now be a valid, empty checkpoint: a second restore is clean and the cache stays empty.
+	c2 := &ReconcileCooldownCache{cache: make(map[string]time.Time)}
+	c2.SetBackingStore(datastore.NewJSONFile(path))
+	c2.Restore()
+	found, _ := c2.RecentlyFreed("10.0.0.1/32")
+	assert.False(t, found)
+
+	var data cooldownCheckpointData
+	assert.NoError(t, datastore.NewJSONFile(path).Restore(&data), "file should be valid JSON after self-heal")
+	assert.Equal(t, cooldownCheckpointFormatVersion, data.Version)
+	assert.Empty(t, data.Entries)
 }
 
 func TestIPAMContext_SetTerminating(t *testing.T) {
