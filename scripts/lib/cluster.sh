@@ -153,6 +153,8 @@ function deprovision_cluster() {
 
     if [[ "$RUN_KOPS_TEST" == true ]]; then
         down-kops-cluster || deprovision_status=$?
+    elif [[ "${RUN_HYPERPOD_TEST:-}" == true ]]; then
+        down-hyperpod-cluster || deprovision_status=$?
     elif [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
         eksctl delete cluster "$CLUSTER_NAME" --disable-nodegroup-eviction || deprovision_status=$?
     elif [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
