@@ -359,14 +359,14 @@ EOF
 udevadm control --reload
 `, value)
 
-	out, err := k8sUtils.ExecOnHost(f, nodeName, script)
+	out, err := k8sUtils.ExecOnHostWithRetries(f, nodeName, script)
 	fmt.Fprintln(GinkgoWriter, out)
 
 	return err
 }
 
 func currentMacAddressPolicy(nodeName string) (string, error) {
-	out, err := k8sUtils.ExecOnHost(f, nodeName, `systemd-analyze cat-config systemd/network/99-default.link`)
+	out, err := k8sUtils.ExecOnHostWithRetries(f, nodeName, `systemd-analyze cat-config systemd/network/99-default.link`)
 	if err != nil {
 		return "", err
 	}
