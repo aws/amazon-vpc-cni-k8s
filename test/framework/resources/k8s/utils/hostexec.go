@@ -66,15 +66,19 @@ func EnsureHostExecDaemonSet(f *framework.Framework) error {
 	return nil
 }
 
-// HostExec runs command with bash in the host namespaces of nodeName and
-// returns its stdout. A non-zero exit status is returned as an error carrying
-// the exit code and stderr. The host-exec DaemonSet must already be running;
-// see EnsureHostExecDaemonSet.
+// ExecOnHost runs command with bash in the host namespaces of nodeName and
+// returns its stdout, bounded by hostExecTimeout so a wedged node cannot hang
+// a spec or its cleanup. A non-zero exit status is returned as an error
+// carrying the exit code and stderr. The host-exec DaemonSet must already be
+// running; see EnsureHostExecDaemonSet.
 //
 // The command runs with the host's own binaries, so the host must provide
 // bash in its mount namespace. AL2 and AL2023 do; Bottlerocket does not, as
 // was already the case with kubectl node-shell.
-func HostExec(ctx context.Context, f *framework.Framework, nodeName string, command string) (string, error) {
+func ExecOnHost(f *framework.Framework, nodeName string, command string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), hostExecTimeout)
+	defer cancel()
+
 	pods := &v1.PodList{}
 	// f.K8sClient reads pods from the informer cache, which has no spec.nodeName
 	// field index, so filter by node in memory rather than with MatchingFields.
@@ -97,14 +101,6 @@ func HostExec(ctx context.Context, f *framework.Framework, nodeName string, comm
 		return stdout, fmt.Errorf("host exec on node %s: %w (stderr: %s)", nodeName, err, stderr)
 	}
 	return stdout, nil
-}
-
-// ExecOnHost is HostExec bounded by hostExecTimeout, so a wedged node cannot
-// hang a spec or its cleanup.
-func ExecOnHost(f *framework.Framework, nodeName string, command string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), hostExecTimeout)
-	defer cancel()
-	return HostExec(ctx, f, nodeName, command)
 }
 
 // ExecOnHostWithRetries is ExecOnHost plus retries on any failure for up to
