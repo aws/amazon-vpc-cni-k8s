@@ -280,6 +280,7 @@ var _ = Describe("pod egress traffic test", Ordered, func() {
 		if primaryNode.Status.NodeInfo.OSImage == "Amazon Linux 2" {
 			Skip("Skipping pod egress Mac address Policy test on Amazon linux 2 node")
 		}
+		Expect(k8sUtils.EnsureHostExecDaemonSet(f)).To(Succeed())
 		originalPolicy, err = currentMacAddressPolicy(primaryNode.Name)
 		Expect(err).ToNot(HaveOccurred())
 	})
