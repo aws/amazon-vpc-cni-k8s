@@ -213,8 +213,9 @@ func (d *defaultPodManager) PodExecWithContainer(namespace string, name string, 
 
 // PodExecInContainerWithContext is PodExecWithContainer bounded by ctx; ctx
 // should carry a deadline, which the WebSocket dialer applies to the upgrade.
-// WebSocket only: the SPDY fallback kubectl uses for pre-1.31 servers reads
-// its upgrade response with no deadline, and EKS supports 1.31+.
+// WebSocket only: the SPDY fallback kubectl keeps for servers older than 1.31
+// (WebSocket exec GA) reads its upgrade response with no deadline, and EKS
+// supports 1.31+.
 func (d *defaultPodManager) PodExecInContainerWithContext(ctx context.Context, namespace, name, container string, command []string) (string, string, error) {
 	execOptions := &v1.PodExecOptions{
 		Container: container,

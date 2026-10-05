@@ -16,6 +16,7 @@ package utils
 import (
 	"context"
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
@@ -29,9 +30,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// The host-exec DaemonSet keeps one long-lived privileged pod per test node so
-// tests can run host commands through the exec subresource, which returns the
-// full stdout. kubectl run -i can attach after a short command has exited.
+// The host-exec DaemonSet keeps one long-lived privileged pod on each node of
+// the test node group so tests can run host commands through the exec
+// subresource.
 const (
 	hostExecDaemonSetName = "host-exec"
 	hostExecLabelKey      = "app"
@@ -53,6 +54,14 @@ func EnsureHostExecDaemonSet(f *framework.Framework) error {
 	dsManager := f.K8sResourceManagers.DaemonSetManager()
 	_, err := dsManager.CreateAndWaitTillDaemonSetIsReady(newHostExecDaemonSet(f), utils.DefaultDeploymentReadyTimeout)
 	if k8sErrors.IsAlreadyExists(err) {
+		existing, err := dsManager.GetDaemonSet(utils.DefaultTestNamespace, hostExecDaemonSetName)
+		if err != nil {
+			return fmt.Errorf("getting host-exec daemonset: %w", err)
+		}
+		if want, got := newHostExecDaemonSet(f).Spec.Template.Spec.NodeSelector, existing.Spec.Template.Spec.NodeSelector; !maps.Equal(want, got) {
+			return fmt.Errorf("host-exec daemonset left by an earlier run targets nodes %v, this run wants %v; delete namespace %s and rerun",
+				got, want, utils.DefaultTestNamespace)
+		}
 		return dsManager.CheckIfDaemonSetIsReady(utils.DefaultTestNamespace, hostExecDaemonSetName)
 	}
 	if err != nil {
@@ -62,7 +71,7 @@ func EnsureHostExecDaemonSet(f *framework.Framework) error {
 }
 
 // ExecOnHost runs command with the host's bash in the host namespaces of
-// nodeName and returns its stdout, bounded by hostExecTimeout. A non-zero exit
+// nodeName and returns its stdout, bounded by a 2-minute deadline. A non-zero exit
 // is an error carrying the exit code and stderr. Requires bash on the host
 // (AL2, AL2023; not Bottlerocket) and the host-exec DaemonSet; see
 // EnsureHostExecDaemonSet.
@@ -87,6 +96,9 @@ func ExecOnHost(f *framework.Framework, nodeName string, command string) (string
 	stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExecInContainerWithContext(ctx,
 		pod.Namespace, pod.Name, hostExecContainerName,
 		[]string{"nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "bash", "-c", command})
+	if err != nil && ctx.Err() != nil {
+		return "", fmt.Errorf("host exec on node %s: %w after %s", nodeName, ctx.Err(), hostExecTimeout)
+	}
 	if err != nil {
 		return stdout, fmt.Errorf("host exec on node %s: %w (stderr: %s)", nodeName, err, stderr)
 	}
@@ -94,7 +106,7 @@ func ExecOnHost(f *framework.Framework, nodeName string, command string) (string
 }
 
 // ExecOnHostWithRetries is ExecOnHost plus retries on any failure for up to
-// hostExecRetryFor. Commands must be idempotent and expected to succeed; one
+// 5 minutes. Commands must be idempotent and expected to succeed; one
 // that cannot succeed costs the full retry window.
 func ExecOnHostWithRetries(f *framework.Framework, nodeName string, command string) (string, error) {
 	deadline := time.Now().Add(hostExecRetryFor)
