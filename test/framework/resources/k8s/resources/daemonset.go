@@ -15,7 +15,7 @@ package resources
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
@@ -54,7 +54,7 @@ func (d *defaultDaemonSetManager) CreateAndWaitTillDaemonSetIsReady(daemonSet *v
 	// Allow for the cache to sync
 	time.Sleep(utils.PollIntervalLong)
 
-	err = d.CheckIfDaemonSetIsReady(daemonSet.Namespace, daemonSet.Name)
+	err = d.waitTillDaemonSetIsReady(daemonSet.Namespace, daemonSet.Name, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -94,29 +94,32 @@ func (d *defaultDaemonSetManager) UpdateAndWaitTillDaemonSetReady(old *v1.Daemon
 	}, ctx.Done())
 }
 
+// CheckIfDaemonSetIsReady waits up to 2 minutes for the daemonset to be ready.
+// aws-node startup waits up to 30s for API server connectivity, longer
+// (~50s+ measured) right after a kube-proxy restart; 2 minutes bounds that.
 func (d *defaultDaemonSetManager) CheckIfDaemonSetIsReady(namespace string, name string) error {
+	return d.waitTillDaemonSetIsReady(namespace, name, 2*time.Minute)
+}
+
+// waitTillDaemonSetIsReady polls until every scheduled pod of the daemonset is
+// ready, returning as soon as it is or failing once timeout elapses.
+func (d *defaultDaemonSetManager) waitTillDaemonSetIsReady(namespace string, name string, timeout time.Duration) error {
 	ds, err := d.GetDaemonSet(namespace, name)
 	if err != nil {
 		return err
 	}
-	ctx := context.Background()
-	attempts := 0
-	return wait.PollImmediateUntil(utils.PollIntervalMedium, func() (bool, error) {
-		attempts += 1
-		if attempts > 4 {
-			return false, errors.New("daemonset taking too long to become ready")
-		}
-
-		if err := d.k8sClient.Get(ctx, utils.NamespacedName(ds), ds); err != nil {
-			return false, err
-		}
-		// Need to ensure the DesiredNumberScheduled is not 0 as it may happen if the DS is still being deleted from previous run
-		if ds.Status.DesiredNumberScheduled != 0 && ds.Status.NumberReady == ds.Status.DesiredNumberScheduled {
-			return true, nil
-		}
-		return false, nil
-	}, ctx.Done())
-
+	err = wait.PollUntilContextTimeout(context.Background(), utils.PollIntervalMedium, timeout, true,
+		func(ctx context.Context) (bool, error) {
+			if err := d.k8sClient.Get(ctx, utils.NamespacedName(ds), ds); err != nil {
+				return false, err
+			}
+			// DesiredNumberScheduled can be 0 while the previous run's daemonset is still deleting.
+			return ds.Status.DesiredNumberScheduled != 0 && ds.Status.NumberReady == ds.Status.DesiredNumberScheduled, nil
+		})
+	if err != nil {
+		return fmt.Errorf("daemonset %s/%s not ready: %w", namespace, name, err)
+	}
+	return nil
 }
 
 func (d *defaultDaemonSetManager) DeleteAndWaitTillDaemonSetIsDeleted(daemonSet *v1.DaemonSet, timeout time.Duration) error {
