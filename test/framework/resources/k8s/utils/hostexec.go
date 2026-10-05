@@ -85,7 +85,9 @@ func HostExec(ctx context.Context, f *framework.Framework, nodeName string, comm
 	return stdout, nil
 }
 
-// newHostExecDaemonSet builds the host-exec DaemonSet. busybox supplies
+// newHostExecDaemonSet builds the host-exec DaemonSet. It covers every Linux
+// node, not just the --ng-name-label nodes, so a DaemonSet left by a run that
+// targeted another node group is still valid to reuse. busybox supplies
 // nsenter and sleep; the command itself runs with the host's own binaries once
 // nsenter switches to the host mount namespace.
 func newHostExecDaemonSet(testImageRegistry string) *appsV1.DaemonSet {
