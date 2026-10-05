@@ -242,8 +242,9 @@ func (d *defaultPodManager) PodExecInContainerWithContext(ctx context.Context, n
 		Stdout: &stdout,
 		Stderr: &stderr,
 	})
-	// On cancellation the stream returns while its copy goroutines may still be
-	// writing the buffers, so do not read them.
+	// When the deadline fires, client-go returns before its background goroutine
+	// has stopped writing into stdout/stderr, so reading them here would be a
+	// data race; return empty strings instead.
 	if err != nil && ctx.Err() != nil {
 		return "", "", err
 	}
