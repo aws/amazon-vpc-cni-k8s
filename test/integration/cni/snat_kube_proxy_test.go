@@ -317,7 +317,10 @@ func verifyConnmarkRules(nodeName, backend string) {
 		Expect(out).To(ContainSubstring("chain nat-prerouting"))
 		Expect(out).To(ContainSubstring("chain snat-mark"))
 
-		out, _ = k8sUtils.ExecOnHostWithRetries(f, nodeName, "iptables-legacy -t nat -L PREROUTING -n")
+		// AL2023 ships no iptables-legacy; exit 0 with no output rather than
+		// retrying a command that cannot succeed for the full retry window.
+		out, _ = k8sUtils.ExecOnHostWithRetries(f, nodeName,
+			"command -v iptables-legacy >/dev/null 2>&1 || exit 0; iptables-legacy -t nat -L PREROUTING -n")
 		Expect(out).ToNot(ContainSubstring("AWS-CONNMARK"))
 	} else {
 		out, err := k8sUtils.ExecOnHostWithRetries(f, nodeName, "iptables-legacy -t nat -L PREROUTING -n")
