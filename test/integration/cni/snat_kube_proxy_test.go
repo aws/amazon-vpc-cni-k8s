@@ -16,6 +16,7 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
+	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/integration/common"
 	"github.com/samber/lo"
@@ -252,12 +253,12 @@ func cleanupIPVSLeftovers() error {
 	}
 	cleanup := "ipvsadm --clear 2>/dev/null; ip link del kube-ipvs0 2>/dev/null; " +
 		"[ ! -e /sys/class/net/kube-ipvs0 ] && ! grep -qE \"^(TCP|UDP|SCTP)\" /proc/net/ip_vs 2>/dev/null"
-	// execOnHostWithRetries retries any failure for ~5 minutes, which covers a
+	// ExecOnHostWithRetries retries any failure for ~5 minutes, which covers a
 	// kube-proxy pod that restarted with a stale (still ipvs) config recreating
 	// the interface and virtual services between cleanup and check: re-running
 	// the command re-cleans.
 	for _, node := range nodes.Items {
-		if out, err := execOnHostWithRetries(node.Name, cleanup); err != nil {
+		if out, err := k8sUtils.ExecOnHostWithRetries(f, node.Name, cleanup); err != nil {
 			return fmt.Errorf("ipvs cleanup on node %s left interface or virtual services behind: %w (output: %s)", node.Name, err, out)
 		}
 	}
@@ -309,23 +310,23 @@ func detectIptablesBackend(nodeName string) string {
 // verifyConnmarkRules checks that CNI connmark rules exist ONLY in the appropriate backend
 func verifyConnmarkRules(nodeName, backend string) {
 	if backend == "nftables" {
-		out, err := execOnHostWithRetries(nodeName, "nft list table ip aws-cni")
+		out, err := k8sUtils.ExecOnHostWithRetries(f, nodeName, "nft list table ip aws-cni")
 		fmt.Fprintf(GinkgoWriter, "nftables rules:\n%s\n", out)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(out).To(ContainSubstring("chain nat-prerouting"))
 		Expect(out).To(ContainSubstring("chain snat-mark"))
 
-		out, _ = execOnHostWithRetries(nodeName, "iptables-legacy -t nat -L PREROUTING -n")
+		out, _ = k8sUtils.ExecOnHostWithRetries(f, nodeName, "iptables-legacy -t nat -L PREROUTING -n")
 		Expect(out).ToNot(ContainSubstring("AWS-CONNMARK"))
 	} else {
-		out, err := execOnHostWithRetries(nodeName, "iptables-legacy -t nat -L PREROUTING -n")
+		out, err := k8sUtils.ExecOnHostWithRetries(f, nodeName, "iptables-legacy -t nat -L PREROUTING -n")
 		fmt.Fprintf(GinkgoWriter, "iptables-legacy:\n%s\n", out)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(out).To(ContainSubstring("AWS-CONNMARK"))
 
 		// Inverted so that success means the aws-cni nftables table is absent,
-		// keeping the retry-on-failure semantics of execOnHostWithRetries.
-		out, err = execOnHostWithRetries(nodeName, "! nft list table ip aws-cni")
+		// keeping the retry-on-failure semantics of ExecOnHostWithRetries.
+		out, err = k8sUtils.ExecOnHostWithRetries(f, nodeName, "! nft list table ip aws-cni")
 		Expect(err).ToNot(HaveOccurred(), "aws-cni nftables table should not exist with %s backend (output: %s)", backend, out)
 	}
 }

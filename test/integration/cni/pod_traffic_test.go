@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/integration/common"
@@ -310,38 +309,6 @@ var _ = Describe("pod egress traffic test", Ordered, func() {
 
 })
 
-// hostExecTimeout bounds a single command run on a node's host.
-const hostExecTimeout = 2 * time.Minute
-
-// execOnHost runs command on nodeName's host through the host-exec DaemonSet
-// and returns its stdout.
-func execOnHost(nodeName string, command string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), hostExecTimeout)
-	defer cancel()
-	return k8sUtils.HostExec(ctx, f, nodeName, command)
-}
-
-// execOnHostWithRetries is execOnHost plus retries on any failure for up to
-// ~5 minutes, for remote commands whose success depends on the node
-// converging. Callers must therefore pass commands that are idempotent and
-// expected to succeed.
-func execOnHostWithRetries(nodeName string, command string) (string, error) {
-	const (
-		retryFor      = 5 * time.Minute
-		retryInterval = 10 * time.Second
-	)
-	deadline := time.Now().Add(retryFor)
-	for {
-		output, err := execOnHost(nodeName, command)
-		if err == nil || time.Now().After(deadline) {
-			return output, err
-		}
-		fmt.Fprintf(GinkgoWriter, "host exec on %s failed, retrying in %s: %v (output: %s)\n",
-			nodeName, retryInterval, err, output)
-		time.Sleep(retryInterval)
-	}
-}
-
 // sets requested policy in drop file and restarts udev
 func setMACAddressPolicy(nodeName string, value string) error {
 
@@ -365,14 +332,14 @@ EOF
 udevadm control --reload
 `, value)
 
-	out, err := execOnHost(nodeName, script)
-	fmt.Println(out)
+	out, err := k8sUtils.ExecOnHost(f, nodeName, script)
+	fmt.Fprintln(GinkgoWriter, out)
 
 	return err
 }
 
 func currentMacAddressPolicy(nodeName string) (string, error) {
-	out, err := execOnHost(nodeName, `systemd-analyze cat-config systemd/network/99-default.link`)
+	out, err := k8sUtils.ExecOnHost(f, nodeName, `systemd-analyze cat-config systemd/network/99-default.link`)
 	if err != nil {
 		return "", err
 	}
@@ -384,7 +351,7 @@ func currentMacAddressPolicy(nodeName string) (string, error) {
 			policy = strings.SplitAfter(line, "=")[1]
 		}
 	}
-	fmt.Println("extracted current mac address policy", policy)
+	fmt.Fprintln(GinkgoWriter, "extracted current mac address policy", policy)
 	return policy, nil
 }
 
