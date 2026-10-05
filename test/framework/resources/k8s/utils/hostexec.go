@@ -105,9 +105,10 @@ func ExecOnHost(f *framework.Framework, nodeName string, command string) (string
 	return stdout, nil
 }
 
-// ExecOnHostWithRetries is ExecOnHost plus retries on any failure for up to
-// 5 minutes. Commands must be idempotent and expected to succeed; one
-// that cannot succeed costs the full retry window.
+// ExecOnHostWithRetries is ExecOnHost plus retries on any failure until 5
+// minutes have elapsed; a final attempt may run up to 2 minutes beyond that.
+// Commands must be idempotent and expected to succeed; one that cannot
+// succeed costs the full retry window.
 func ExecOnHostWithRetries(f *framework.Framework, nodeName string, command string) (string, error) {
 	deadline := time.Now().Add(hostExecRetryFor)
 	for {
