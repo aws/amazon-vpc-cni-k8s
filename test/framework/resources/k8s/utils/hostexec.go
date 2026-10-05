@@ -25,6 +25,7 @@ import (
 	"github.com/samber/lo"
 	appsV1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
+	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -45,14 +46,19 @@ const (
 	hostExecRetryInterval = 10 * time.Second
 )
 
-// CreateHostExecDaemonSet creates the host-exec DaemonSet in the default test
-// namespace and waits until it is ready. It lives in the test namespace, so
-// deleting that namespace in AfterSuite also removes it; a run therefore
-// expects no DaemonSet to exist yet, and one left by an aborted run must be
-// deleted before re-running.
-func CreateHostExecDaemonSet(f *framework.Framework) error {
-	_, err := f.K8sResourceManagers.DaemonSetManager().CreateAndWaitTillDaemonSetIsReady(
-		newHostExecDaemonSet(f), utils.DefaultDeploymentReadyTimeout)
+// EnsureHostExecDaemonSet creates the host-exec DaemonSet in the default test
+// namespace if it does not exist yet, then waits until it is ready. It is
+// idempotent, so each spec that runs host commands calls it from its own
+// setup hook rather than paying for the DaemonSet in BeforeSuite: focused
+// runs such as the canaries never need it. The DaemonSet lives in the test
+// namespace, so deleting that namespace in AfterSuite removes it.
+func EnsureHostExecDaemonSet(f *framework.Framework) error {
+	dsManager := f.K8sResourceManagers.DaemonSetManager()
+	_, err := dsManager.CreateAndWaitTillDaemonSetIsReady(newHostExecDaemonSet(f), utils.DefaultDeploymentReadyTimeout)
+	if k8sErrors.IsAlreadyExists(err) {
+		// Created by an earlier spec in this run (or a parallel process).
+		return dsManager.CheckIfDaemonSetIsReady(utils.DefaultTestNamespace, hostExecDaemonSetName)
+	}
 	if err != nil {
 		return fmt.Errorf("creating host-exec daemonset: %w", err)
 	}
@@ -63,7 +69,7 @@ func CreateHostExecDaemonSet(f *framework.Framework) error {
 // returns its stdout, bounded by hostExecTimeout so a wedged node cannot hang
 // a spec or its cleanup. A non-zero exit status is returned as an error
 // carrying the exit code and stderr. The host-exec DaemonSet must already be
-// running; see CreateHostExecDaemonSet.
+// running; see EnsureHostExecDaemonSet.
 //
 // The command runs with the host's own binaries, so the host must provide
 // bash in its mount namespace. AL2 and AL2023 do; Bottlerocket does not, as
@@ -84,6 +90,8 @@ func ExecOnHost(f *framework.Framework, nodeName string, command string) (string
 		return p.Spec.NodeName == nodeName && p.Status.Phase == v1.PodRunning && p.DeletionTimestamp == nil
 	})
 	if !found {
+		// Also hit when a DaemonSet left by an aborted run was scoped to a
+		// different node group; deleting the test namespace clears it.
 		return "", fmt.Errorf("no running host-exec pod on node %s", nodeName)
 	}
 	// Enter PID 1's mount, UTS, IPC, network and PID namespaces.

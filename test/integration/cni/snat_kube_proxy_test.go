@@ -42,6 +42,7 @@ var _ = Describe("test SNAT with kube-proxy modes", func() {
 	)
 
 	BeforeEach(func() {
+		Expect(k8sUtils.EnsureHostExecDaemonSet(f)).To(Succeed())
 		serverContainer := manifest.NewBusyBoxContainerBuilder(f.Options.TestImageRegistry).
 			Image(utils.GetTestImage(f.Options.TestImageRegistry, utils.NginxImage)).
 			Command(nil).
