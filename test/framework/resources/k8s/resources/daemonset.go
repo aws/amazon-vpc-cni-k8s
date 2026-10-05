@@ -54,7 +54,7 @@ func (d *defaultDaemonSetManager) CreateAndWaitTillDaemonSetIsReady(daemonSet *v
 	// Allow for the cache to sync
 	time.Sleep(utils.PollIntervalLong)
 
-	err = d.CheckIfDaemonSetIsReady(daemonSet.Namespace, daemonSet.Name)
+	err = d.waitTillDaemonSetIsReady(daemonSet.Namespace, daemonSet.Name, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -94,15 +94,21 @@ func (d *defaultDaemonSetManager) UpdateAndWaitTillDaemonSetReady(old *v1.Daemon
 	}, ctx.Done())
 }
 
+// CheckIfDaemonSetIsReady waits up to 2 minutes for the daemonset to be ready.
+// aws-node startup waits up to 30s for API server connectivity, longer
+// (~50s+ measured) right after a kube-proxy restart; 2 minutes bounds that.
 func (d *defaultDaemonSetManager) CheckIfDaemonSetIsReady(namespace string, name string) error {
+	return d.waitTillDaemonSetIsReady(namespace, name, 2*time.Minute)
+}
+
+// waitTillDaemonSetIsReady polls until every scheduled pod of the daemonset is
+// ready, returning as soon as it is or failing once timeout elapses.
+func (d *defaultDaemonSetManager) waitTillDaemonSetIsReady(namespace string, name string, timeout time.Duration) error {
 	ds, err := d.GetDaemonSet(namespace, name)
 	if err != nil {
 		return err
 	}
-	// aws-node startup waits up to 30s for API server connectivity, longer
-	// (~50s+ measured) right after a kube-proxy restart; 2 minutes bounds
-	// that. Polling returns as soon as the daemonset is ready.
-	err = wait.PollUntilContextTimeout(context.Background(), utils.PollIntervalMedium, 2*time.Minute, true,
+	err = wait.PollUntilContextTimeout(context.Background(), utils.PollIntervalMedium, timeout, true,
 		func(ctx context.Context) (bool, error) {
 			if err := d.k8sClient.Get(ctx, utils.NamespacedName(ds), ds); err != nil {
 				return false, err
