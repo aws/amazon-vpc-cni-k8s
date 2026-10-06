@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"maps"
 	"math/bits"
 	"net"
 	"strings"
@@ -275,25 +276,21 @@ func (c *nftConnmark) ensureBaseChainRules(table *nftables.Table, baseChain, tar
 	if err != nil {
 		return err
 	}
-	var fibRule, jumpRule *nftables.Rule
 	fibRuleIndex, jumpRuleIndex := -1, -1
-	restoreRules := make(map[restoreRuleKey]*nftables.Rule)
 	restoreRuleIndexes := make(map[restoreRuleKey]int)
 	var staleRules []*nftables.Rule
 
 	for ruleIndex, rule := range rules {
 		bit, set, isRestoreRule := classifyRestoreRule(rule, c.mark)
 		restoreKey := restoreRuleKey{bit: bit, set: set}
+		_, restoreExists := restoreRuleIndexes[restoreKey]
 
 		switch {
-		case isFibLocalReturnRule(rule) && fibRule == nil:
-			fibRule = rule
+		case isFibLocalReturnRule(rule) && fibRuleIndex == -1:
 			fibRuleIndex = ruleIndex
-		case isJumpRule(rule, targetChain.Name, c.vethPrefix) && jumpRule == nil:
-			jumpRule = rule
+		case isJumpRule(rule, targetChain.Name, c.vethPrefix) && jumpRuleIndex == -1:
 			jumpRuleIndex = ruleIndex
-		case isRestoreRule && restoreRules[restoreKey] == nil:
-			restoreRules[restoreKey] = rule
+		case isRestoreRule && !restoreExists:
 			restoreRuleIndexes[restoreKey] = ruleIndex
 		default:
 			staleRules = append(staleRules, rule)
@@ -301,26 +298,25 @@ func (c *nftConnmark) ensureBaseChainRules(table *nftables.Table, baseChain, tar
 	}
 
 	desiredRestoreRuleCount := restoreRulesPerBit * bits.OnesCount32(c.mark)
-	allRulesPresent := fibRule != nil && jumpRule != nil && len(restoreRules) == desiredRestoreRuleCount
+	// Classification allows only clear/set keys for owned bits, so this many
+	// unique keys guarantees a complete restore pair for every owned bit.
+	allRulesPresent := fibRuleIndex != -1 && jumpRuleIndex != -1 && len(restoreRuleIndexes) == desiredRestoreRuleCount
 	ordered := allRulesPresent && fibRuleIndex < jumpRuleIndex
-	for bit := uint32(1); ordered && bit != 0; bit <<= 1 {
-		if c.mark&bit == 0 {
-			continue
+	for ruleIndex := range maps.Values(restoreRuleIndexes) {
+		if ruleIndex <= jumpRuleIndex {
+			ordered = false
+			break
 		}
-		clearRuleIndex, clearExists := restoreRuleIndexes[restoreRuleKey{bit: bit, set: false}]
-		setRuleIndex, setExists := restoreRuleIndexes[restoreRuleKey{bit: bit, set: true}]
-		ordered = clearExists && setExists &&
-			jumpRuleIndex < clearRuleIndex && jumpRuleIndex < setRuleIndex
 	}
 
 	desiredRuleCount := 2 + desiredRestoreRuleCount
-	if allRulesPresent && ordered && len(staleRules) == 0 {
-		log.Debugf("base chain %s: all %d desired rules present in correct order; no reconciliation needed", baseChain.Name, desiredRuleCount)
-		return nil
-	}
-	var errs []error
-	if allRulesPresent && ordered {
-		log.Infof("base chain %s: %d desired rules present and ordered, but %d stale rule(s) found; deleting stale rules", baseChain.Name, desiredRuleCount, len(staleRules))
+	if ordered {
+		if len(staleRules) == 0 {
+			log.Debugf("base chain %s: all %d desired rules present in correct order; no reconciliation needed", baseChain.Name, desiredRuleCount)
+		} else {
+			log.Infof("base chain %s: %d desired rules present and ordered, but %d stale rule(s) found; deleting stale rules", baseChain.Name, desiredRuleCount, len(staleRules))
+		}
+		var errs []error
 		for _, r := range staleRules {
 			if err := c.nft.DelRule(r); err != nil {
 				errs = append(errs, fmt.Errorf("failed to delete stale rule with handle %d: %w", r.Handle, err))
@@ -330,7 +326,7 @@ func (c *nftConnmark) ensureBaseChainRules(table *nftables.Table, baseChain, tar
 	}
 
 	log.Infof("base chain %s: rules missing or out of order (fib=%v jump=%v restore=%d/%d ordered=%v stale=%d); flushing and reinstalling all %d rules",
-		baseChain.Name, fibRule != nil, jumpRule != nil, len(restoreRules), desiredRestoreRuleCount, ordered, len(staleRules), desiredRuleCount)
+		baseChain.Name, fibRuleIndex != -1, jumpRuleIndex != -1, len(restoreRuleIndexes), desiredRestoreRuleCount, ordered, len(staleRules), desiredRuleCount)
 	c.nft.FlushChain(baseChain)
 	c.addFibLocalReturnRule(table, baseChain)
 	c.addJumpRule(table, baseChain, targetChain)
@@ -529,8 +525,8 @@ func (c *nftConnmark) addJumpRule(table *nftables.Table, baseChain, targetChain 
 }
 
 // addRestoreRules copies each bit owned by the CNI from the conntrack mark to
-// the packet mark. Two mutually exclusive rules per bit are required because
-// nftables' netlink bitwise expression combines a register only with constants.
+// the packet mark. Two mutually exclusive rules per bit support kernels whose
+// nftables bitwise expressions combine a register only with constants.
 // Both rules read conntrack state before writing the packet mark, so untracked
 // packets remain unchanged.
 func (c *nftConnmark) addRestoreRules(table *nftables.Table, chain *nftables.Chain) {
@@ -552,10 +548,8 @@ func (c *nftConnmark) addRestoreRule(table *nftables.Table, chain *nftables.Chai
 	// bit from the packet mark. The set rule matches when the conntrack bit is
 	// set and sets that bit in the packet mark.
 	compareBytes := zeroBytes
-	packetXorBytes := zeroBytes
 	if set {
 		compareBytes = bitBytes
-		packetXorBytes = bitBytes
 	}
 
 	c.nft.AddRule(&nftables.Rule{
@@ -587,7 +581,7 @@ func (c *nftConnmark) addRestoreRule(table *nftables.Table, chain *nftables.Chai
 				DestRegister:   1,
 				Len:            4,
 				Mask:           binaryutil.NativeEndian.PutUint32(^bit),
-				Xor:            packetXorBytes,
+				Xor:            compareBytes,
 			},
 
 			// Store register 1 back into the packet firewall mark.
@@ -652,7 +646,6 @@ func classifyRestoreRule(rule *nftables.Rule, mark uint32) (uint32, bool, bool) 
 	if compareValue != 0 && compareValue != bit {
 		return 0, false, false
 	}
-	set := compareValue == bit
 	if _, ok := rule.Exprs[3].(*expr.Counter); !ok {
 		return 0, false, false
 	}
@@ -663,21 +656,15 @@ func classifyRestoreRule(rule *nftables.Rule, mark uint32) (uint32, bool, bool) 
 	packetBitwise, ok := rule.Exprs[5].(*expr.Bitwise)
 	if !ok ||
 		packetBitwise.SourceRegister != 1 || packetBitwise.DestRegister != 1 || packetBitwise.Len != 4 ||
-		!bytes.Equal(packetBitwise.Mask, binaryutil.NativeEndian.PutUint32(^bit)) {
-		return 0, false, false
-	}
-	expectedXor := binaryutil.NativeEndian.PutUint32(0)
-	if set {
-		expectedXor = binaryutil.NativeEndian.PutUint32(bit)
-	}
-	if !bytes.Equal(packetBitwise.Xor, expectedXor) {
+		!bytes.Equal(packetBitwise.Mask, binaryutil.NativeEndian.PutUint32(^bit)) ||
+		!bytes.Equal(packetBitwise.Xor, cmp.Data) {
 		return 0, false, false
 	}
 	metaStore, ok := rule.Exprs[6].(*expr.Meta)
 	if !ok || metaStore.Key != expr.MetaKeyMARK || !metaStore.SourceRegister || metaStore.Register != 1 {
 		return 0, false, false
 	}
-	return bit, set, true
+	return bit, compareValue == bit, true
 }
 
 // extractCIDRFromRule recovers the daddr CIDR from a rule shaped like:
