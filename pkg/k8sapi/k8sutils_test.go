@@ -41,14 +41,16 @@ func TestKubeClientStopContextIdempotent(t *testing.T) {
 	// Recreating the kube client when the API server becomes available must not
 	// invoke it again. Use a stand-in that panics on a second call to prove we
 	// only set up the stop context once.
+	//
+	// sync.Once must not be copied (go vet: copies lock value). Reset package
+	// state with a fresh Once instead of saving/restoring the previous value.
 	calls := 0
 	oldSetup := setupStopContext
-	oldOnce := kubeClientStopOnce
 	oldCtx := kubeClientStopCtx
 	t.Cleanup(func() {
 		setupStopContext = oldSetup
-		kubeClientStopOnce = oldOnce
 		kubeClientStopCtx = oldCtx
+		kubeClientStopOnce = sync.Once{}
 	})
 
 	kubeClientStopOnce = sync.Once{}
