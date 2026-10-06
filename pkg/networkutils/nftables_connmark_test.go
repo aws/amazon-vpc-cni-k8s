@@ -15,6 +15,7 @@ package networkutils
 
 import (
 	"fmt"
+	"math/bits"
 	"net"
 	"syscall"
 	"testing"
@@ -321,10 +322,8 @@ func newTestRestoreRule(bit uint32, set bool) *nftables.Rule {
 	bitBytes := binaryutil.NativeEndian.PutUint32(bit)
 	zeroBytes := binaryutil.NativeEndian.PutUint32(0)
 	compareBytes := zeroBytes
-	packetXorBytes := zeroBytes
 	if set {
 		compareBytes = bitBytes
-		packetXorBytes = bitBytes
 	}
 	return &nftables.Rule{
 		Exprs: []expr.Any{
@@ -338,7 +337,7 @@ func newTestRestoreRule(bit uint32, set bool) *nftables.Rule {
 				DestRegister:   1,
 				Len:            4,
 				Mask:           binaryutil.NativeEndian.PutUint32(^bit),
-				Xor:            packetXorBytes,
+				Xor:            compareBytes,
 			},
 			&expr.Meta{Key: expr.MetaKeyMARK, SourceRegister: true, Register: 1},
 		},
@@ -385,93 +384,71 @@ func newTestJumpRule(handle uint64) *nftables.Rule {
 	}
 }
 
-func TestAddRestoreRulePreservesUnownedPacketMark(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockNft := mock_nft.NewMockClient(ctrl)
-	connmark := &nftConnmark{
-		nft:  mockNft,
-		mark: 0x80,
-	}
-
-	var rules []*nftables.Rule
-	mockNft.EXPECT().AddRule(gomock.Any()).DoAndReturn(func(rule *nftables.Rule) *nftables.Rule {
-		rules = append(rules, rule)
-		return rule
-	}).AnyTimes()
-
-	connmark.addRestoreRules(
-		&nftables.Table{Family: nftables.TableFamilyIPv4, Name: nftTableName},
-		&nftables.Chain{Name: nftBaseChainName},
-	)
-	require.Len(t, rules, 2)
-
+func TestAddRestoreRulesCopiesOwnedBits(t *testing.T) {
 	tests := []struct {
 		name       string
+		mark       uint32
 		packetMark uint32
 		ctMark     uint32
 		expected   uint32
 	}{
 		{
 			name:       "sets owned bit without clearing Calico mark",
+			mark:       0x80,
 			packetMark: 0x01000000,
 			ctMark:     0x80,
 			expected:   0x01000080,
 		},
 		{
 			name:       "clears only owned bit",
+			mark:       0x80,
 			packetMark: 0x01000080,
 			ctMark:     0,
 			expected:   0x01000000,
 		},
 		{
 			name:       "preserves packet mark when owned bit remains clear",
+			mark:       0x80,
 			packetMark: 0x01000000,
 			ctMark:     0,
 			expected:   0x01000000,
 		},
 		{
 			name:       "preserves packet mark when owned bit remains set",
+			mark:       0x80,
 			packetMark: 0x01000080,
 			ctMark:     0x80,
 			expected:   0x01000080,
+		},
+		{
+			name:       "copies multiple owned bits without clearing Calico mark",
+			mark:       0x80000001,
+			packetMark: 0x01000001,
+			ctMark:     0x80000000,
+			expected:   0x81000000,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockNft := mock_nft.NewMockClient(ctrl)
+			connmark := &nftConnmark{nft: mockNft, mark: tt.mark}
+			var rules []*nftables.Rule
+			mockNft.EXPECT().AddRule(gomock.Any()).DoAndReturn(func(rule *nftables.Rule) *nftables.Rule {
+				rules = append(rules, rule)
+				return rule
+			}).Times(restoreRulesPerBit * bits.OnesCount32(tt.mark))
+
+			connmark.addRestoreRules(
+				&nftables.Table{Family: nftables.TableFamilyIPv4, Name: nftTableName},
+				&nftables.Chain{Name: nftBaseChainName},
+			)
 			assert.Equal(t, tt.expected, evaluateRestoreRules(rules, tt.packetMark, tt.ctMark))
 		})
 	}
-}
-
-func TestAddRestoreRulesCopiesMultipleOwnedBits(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	const mark = uint32(0x80000001)
-	mockNft := mock_nft.NewMockClient(ctrl)
-	connmark := &nftConnmark{
-		nft:  mockNft,
-		mark: mark,
-	}
-
-	var rules []*nftables.Rule
-	mockNft.EXPECT().AddRule(gomock.Any()).DoAndReturn(func(rule *nftables.Rule) *nftables.Rule {
-		rules = append(rules, rule)
-		return rule
-	}).Times(4)
-
-	connmark.addRestoreRules(
-		&nftables.Table{Family: nftables.TableFamilyIPv4, Name: nftTableName},
-		&nftables.Chain{Name: nftBaseChainName},
-	)
-
-	const packetMark = uint32(0x01000001)
-	const conntrackMark = uint32(0x80000000)
-	const expected = uint32(0x81000000)
-	assert.Equal(t, expected, evaluateRestoreRules(rules, packetMark, conntrackMark))
 }
 
 func evaluateRestoreRules(rules []*nftables.Rule, packetMark, ctMark uint32) uint32 {
@@ -824,33 +801,57 @@ func TestEnsureBaseChainRulesReconcilesInvalidRestoreRuleAndUsesReturnedOrder(t 
 	assert.NoError(t, connmark.ensureBaseChainRules(table, baseChain, targetChain))
 }
 
-func TestEnsureBaseChainRulesAcceptsMultiBitRestoreRulesInEitherOrder(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
+func TestEnsureBaseChainRulesReconcilesMultiBitRestoreRules(t *testing.T) {
 	const mark = uint32(0x80000001)
-	mockNft := mock_nft.NewMockClient(ctrl)
-	connmark := &nftConnmark{
-		nft:        mockNft,
-		vethPrefix: "eni",
-		mark:       mark,
+	fibRule, jumpRule := newTestFibRule(1), newTestJumpRule(2)
+	lowClear, lowSet := newTestRestoreRule(0x1, false), newTestRestoreRule(0x1, true)
+	highClear, highSet := newTestRestoreRule(0x80000000, false), newTestRestoreRule(0x80000000, true)
+	tests := []struct {
+		name    string
+		rules   []*nftables.Rule
+		rebuild bool
+	}{
+		{
+			name:  "complete pairs in either order",
+			rules: []*nftables.Rule{fibRule, jumpRule, lowSet, highClear, lowClear, highSet},
+		},
+		{
+			name:    "duplicate set rule in place of a missing clear rule",
+			rules:   []*nftables.Rule{fibRule, jumpRule, lowSet, lowSet, lowClear, highSet},
+			rebuild: true,
+		},
+		{
+			name:    "restore rule before the jump",
+			rules:   []*nftables.Rule{lowSet, fibRule, jumpRule, highClear, lowClear, highSet},
+			rebuild: true,
+		},
 	}
 
-	table := &nftables.Table{Family: nftables.TableFamilyIPv4, Name: nftTableName}
-	baseChain := &nftables.Chain{Name: nftBaseChainName, Table: table}
-	targetChain := &nftables.Chain{Name: nftChainName, Table: table}
-	rules := []*nftables.Rule{
-		newTestFibRule(1),
-		newTestJumpRule(2),
-		newTestRestoreRule(0x1, true),
-		newTestRestoreRule(0x80000000, false),
-		newTestRestoreRule(0x1, false),
-		newTestRestoreRule(0x80000000, true),
-	}
-	mockNft.EXPECT().GetRules(table, baseChain).Return(rules, nil).Times(2)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
 
-	require.NoError(t, connmark.ensureBaseChainRules(table, baseChain, targetChain))
-	require.NoError(t, connmark.ensureBaseChainRules(table, baseChain, targetChain))
+			mockNft := mock_nft.NewMockClient(ctrl)
+			connmark := &nftConnmark{nft: mockNft, vethPrefix: "eni", mark: mark}
+			table := &nftables.Table{Family: nftables.TableFamilyIPv4, Name: nftTableName}
+			baseChain := &nftables.Chain{Name: nftBaseChainName, Table: table}
+			targetChain := &nftables.Chain{Name: nftChainName, Table: table}
+			getRules := mockNft.EXPECT().GetRules(table, baseChain).Return(tt.rules, nil)
+			if tt.rebuild {
+				mockNft.EXPECT().FlushChain(baseChain)
+				mockNft.EXPECT().InsertRule(gomock.Any()).Return(&nftables.Rule{})
+				mockNft.EXPECT().AddRule(gomock.Any()).Return(&nftables.Rule{}).Times(5)
+			} else {
+				getRules.Times(2)
+			}
+
+			require.NoError(t, connmark.ensureBaseChainRules(table, baseChain, targetChain))
+			if !tt.rebuild {
+				require.NoError(t, connmark.ensureBaseChainRules(table, baseChain, targetChain))
+			}
+		})
+	}
 }
 
 func TestEnsureBaseChainRulesDeletesOnlyStaleRules(t *testing.T) {
