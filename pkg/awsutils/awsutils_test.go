@@ -4008,3 +4008,72 @@ func TestAllocIPv6PrefixesNonRetryable(t *testing.T) {
 	_, err := cache.allocIPv6Prefixes(context.Background(), eniID, time.Millisecond)
 	assert.Error(t, err)
 }
+
+func TestDescribeAllENIsReconcilesIPv4AddressesWithEC2(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	staleIP := "10.0.0.99"
+	ec2OnlyIP := "10.0.0.2"
+
+	mockMetadata := testMetadata(map[string]interface{}{
+		metadataMACPath + primaryMAC + metadataIPv4s: eni1PrivateIP + " " + staleIP,
+	})
+
+	result := &ec2.DescribeNetworkInterfacesOutput{
+		NetworkInterfaces: []ec2types.NetworkInterface{{
+			NetworkInterfaceId: aws.String(primaryeniID),
+			Attachment: &ec2types.NetworkInterfaceAttachment{
+				NetworkCardIndex: aws.Int32(0),
+			},
+			PrivateIpAddresses: []ec2types.NetworkInterfacePrivateIpAddress{
+				{
+					PrivateIpAddress: aws.String(eni1PrivateIP),
+					Primary:          aws.Bool(true),
+				},
+				{
+					PrivateIpAddress: aws.String(ec2OnlyIP),
+				},
+			},
+		}},
+	}
+
+	mockEC2.EXPECT().
+		DescribeNetworkInterfaces(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(result, nil)
+
+	vpc.SetInstance(
+		"test",
+		4,
+		10,
+		0,
+		[]vpc.NetworkCard{{
+			MaximumNetworkInterfaces: 4,
+			NetworkCardIndex:         0,
+		}},
+		"nitro",
+		false,
+	)
+
+	cache := &EC2InstanceMetadataCache{
+		imds:         TypedIMDS{mockMetadata},
+		ec2SVC:       mockEC2,
+		instanceType: "test",
+	}
+
+	metadata, err := cache.DescribeAllENIs(context.Background())
+	assert.NoError(t, err)
+	assert.Len(t, metadata.ENIMetadata, 1)
+
+	var addresses []string
+	for _, addr := range metadata.ENIMetadata[0].IPv4Addresses {
+		addresses = append(addresses, aws.ToString(addr.PrivateIpAddress))
+	}
+
+	assert.ElementsMatch(
+		t,
+		[]string{eni1PrivateIP, ec2OnlyIP},
+		addresses,
+	)
+	assert.NotContains(t, addresses, staleIP)
+}
