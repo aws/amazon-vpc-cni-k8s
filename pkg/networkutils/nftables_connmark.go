@@ -17,7 +17,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"maps"
 	"math/bits"
 	"net"
 	"strings"
@@ -298,15 +297,16 @@ func (c *nftConnmark) ensureBaseChainRules(table *nftables.Table, baseChain, tar
 	}
 
 	desiredRestoreRuleCount := restoreRulesPerBit * bits.OnesCount32(c.mark)
-	// Classification allows only clear/set keys for owned bits, so this many
-	// unique keys guarantees a complete restore pair for every owned bit.
 	allRulesPresent := fibRuleIndex != -1 && jumpRuleIndex != -1 && len(restoreRuleIndexes) == desiredRestoreRuleCount
 	ordered := allRulesPresent && fibRuleIndex < jumpRuleIndex
-	for ruleIndex := range maps.Values(restoreRuleIndexes) {
-		if ruleIndex <= jumpRuleIndex {
-			ordered = false
-			break
+	for bit := uint32(1); ordered && bit != 0; bit <<= 1 {
+		if c.mark&bit == 0 {
+			continue
 		}
+		clearRuleIndex, clearExists := restoreRuleIndexes[restoreRuleKey{bit: bit, set: false}]
+		setRuleIndex, setExists := restoreRuleIndexes[restoreRuleKey{bit: bit, set: true}]
+		ordered = clearExists && setExists &&
+			jumpRuleIndex < clearRuleIndex && jumpRuleIndex < setRuleIndex
 	}
 
 	desiredRuleCount := 2 + desiredRestoreRuleCount
