@@ -816,6 +816,11 @@ func TestEnsureBaseChainRulesReconcilesMultiBitRestoreRules(t *testing.T) {
 			rules: []*nftables.Rule{fibRule, jumpRule, lowSet, highClear, lowClear, highSet},
 		},
 		{
+			name:    "jump rule before the fib return",
+			rules:   []*nftables.Rule{jumpRule, fibRule, lowSet, highClear, lowClear, highSet},
+			rebuild: true,
+		},
+		{
 			name:    "duplicate set rule in place of a missing clear rule",
 			rules:   []*nftables.Rule{fibRule, jumpRule, lowSet, lowSet, lowClear, highSet},
 			rebuild: true,
