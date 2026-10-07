@@ -15,18 +15,16 @@ package cni
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/integration/common"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
+	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -256,7 +254,7 @@ var _ = Describe("pod egress traffic test", Ordered, func() {
 		if primaryNode.Status.NodeInfo.OSImage == "Amazon Linux 2" {
 			Skip("Skipping pod egress Mac address Policy test on Amazon linux 2 node")
 		}
-		Expect(checkNodeShellPlugin()).To(BeNil())
+		Expect(k8sUtils.EnsureHostExecDaemonSet(f)).To(Succeed())
 		originalPolicy, err = currentMacAddressPolicy(primaryNode.Name)
 		Expect(err).ToNot(HaveOccurred())
 	})
@@ -312,64 +310,6 @@ var _ = Describe("pod egress traffic test", Ordered, func() {
 
 })
 
-func checkNodeShellPlugin() error {
-	cmd := exec.Command("kubectl", "plugin", "list")
-	out, err := cmd.Output()
-	if err != nil {
-		return fmt.Errorf("kubectl node-shell plugin not present")
-	}
-	if !strings.Contains(string(out), "node_shell") {
-		return fmt.Errorf("node-shell not part of supported plugin %s", string(out))
-	}
-	return nil
-}
-
-func execNodeShell(nodeName string, command string) ([]byte, error) {
-
-	cmd := exec.Command("kubectl", "node-shell", nodeName, "--", "bash", "-c", command)
-	output, err := cmd.Output()
-	return output, err
-}
-
-// execNodeShellWithTimeout bounds the remote exec and captures combined output
-// so a wedged node cannot hang cleanup and failures carry their output.
-func execNodeShellWithTimeout(nodeName string, command string, timeout time.Duration) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "kubectl", "node-shell", nodeName, "--", "bash", "-c", command)
-	output, err := cmd.CombinedOutput()
-	// Surface the context deadline: CombinedOutput reports a killed process
-	// as "signal: killed", which hides that the timeout fired.
-	if err != nil && ctx.Err() != nil {
-		err = fmt.Errorf("%w: %v", ctx.Err(), err)
-	}
-	return output, err
-}
-
-// execNodeShellWithRetries is execNodeShellWithTimeout plus retries on any
-// failure for up to ~5 minutes. This absorbs node-shell scaffolding flakes
-// (e.g. attach racing the nsenter container startup on a busy node) as well
-// as remote commands whose success depends on the node converging. Callers
-// must therefore pass commands that are idempotent and expected to succeed.
-func execNodeShellWithRetries(nodeName string, command string, attemptTimeout time.Duration) ([]byte, error) {
-	const (
-		retryFor      = 5 * time.Minute
-		retryInterval = 10 * time.Second
-	)
-	deadline := time.Now().Add(retryFor)
-	var output []byte
-	var err error
-	for {
-		output, err = execNodeShellWithTimeout(nodeName, command, attemptTimeout)
-		if err == nil || time.Now().After(deadline) {
-			return output, err
-		}
-		fmt.Fprintf(GinkgoWriter, "node-shell on %s failed, retrying in %s: %v (output: %s)\n",
-			nodeName, retryInterval, err, output)
-		time.Sleep(retryInterval)
-	}
-}
-
 // sets requested policy in drop file and restarts udev
 func setMACAddressPolicy(nodeName string, value string) error {
 
@@ -393,26 +333,26 @@ EOF
 udevadm control --reload
 `, value)
 
-	out, err := execNodeShell(nodeName, script)
-	fmt.Println(string(out))
+	out, err := k8sUtils.ExecOnHostWithRetries(f, nodeName, script)
+	fmt.Fprintln(GinkgoWriter, out)
 
 	return err
 }
 
 func currentMacAddressPolicy(nodeName string) (string, error) {
-	out, err := execNodeShell(nodeName, `systemd-analyze cat-config systemd/network/99-default.link`)
+	out, err := k8sUtils.ExecOnHostWithRetries(f, nodeName, `systemd-analyze cat-config systemd/network/99-default.link`)
 	if err != nil {
 		return "", err
 	}
 	var policy string
-	sc := bufio.NewScanner(bytes.NewReader(out))
+	sc := bufio.NewScanner(strings.NewReader(out))
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		if strings.HasPrefix(line, "MACAddressPolicy") {
 			policy = strings.SplitAfter(line, "=")[1]
 		}
 	}
-	fmt.Println("extracted current mac address policy", policy)
+	fmt.Fprintln(GinkgoWriter, "extracted current mac address policy", policy)
 	return policy, nil
 }
 
