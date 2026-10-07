@@ -1820,6 +1820,24 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs(ctx context.Context) (Des
 		return DescribeAllENIsResult{}, err
 	}
 
+	// Leave out ENIs whose detach is in progress or done. IMDS can still list such an ENI for
+	// a while, e.g. when the instance rebooted right after ipamd asked EC2 to detach it. Its IPs
+	// must not go to pods: they stop working once the detach completes, and the reconcile then
+	// force-removes the ENI with those pods still using its IPs.
+	leftOut := make(map[string]bool)
+	for _, ec2res := range ec2Response.NetworkInterfaces {
+		attachment := ec2res.Attachment
+		if attachment == nil {
+			continue
+		}
+		if attachment.Status == ec2types.AttachmentStatusDetaching || attachment.Status == ec2types.AttachmentStatusDetached {
+			eniID := aws.ToString(ec2res.NetworkInterfaceId)
+			log.Warnf("DescribeAllENIs: ENI %s is in instance metadata but its EC2 attachment is %s, leaving it out", eniID, attachment.Status)
+			leftOut[eniID] = true
+			delete(eniMap, eniID)
+		}
+	}
+
 	// Collect the verified ENIs
 	var verifiedENIs []ENIMetadata
 	for _, eniMetadata := range eniMap {
@@ -1833,6 +1851,9 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs(ctx context.Context) (Des
 
 	for _, ec2res := range ec2Response.NetworkInterfaces {
 		eniID := aws.ToString(ec2res.NetworkInterfaceId)
+		if leftOut[eniID] {
+			continue
+		}
 		attachment := ec2res.Attachment
 		// Validate that Attachment is populated by EC2 response before logging
 		if attachment != nil {
