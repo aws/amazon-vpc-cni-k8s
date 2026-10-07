@@ -36,6 +36,7 @@ import (
 type PodManager interface {
 	PodExec(namespace string, name string, command []string) (string, string, error)
 	PodExecInContainer(namespace, name, container string, command []string) (string, string, error)
+	PodExecInContainerWithContext(ctx context.Context, namespace, name, container string, command []string) (string, string, error)
 	PodLogs(namespace string, name string) (string, error)
 	GetPodsWithLabelSelector(labelKey string, labelVal string) (v1.PodList, error)
 	GetPodsWithLabelSelectorMap(labels map[string]string) (v1.PodList, error)
@@ -207,6 +208,16 @@ func (d *defaultPodManager) PodExec(namespace string, name string, command []str
 }
 
 func (d *defaultPodManager) PodExecInContainer(namespace, name, container string, command []string) (string, string, error) {
+	return d.PodExecInContainerWithContext(context.Background(), namespace, name, container, command)
+}
+
+// PodExecInContainerWithContext is PodExecInContainer bounded by ctx; ctx
+// should carry a deadline, which the WebSocket dialer applies to the upgrade.
+// If ctx expires, the returned stdout and stderr are empty.
+// WebSocket only: the SPDY fallback kubectl keeps for servers older than 1.31
+// (WebSocket exec GA) reads its upgrade response with no deadline, and EKS
+// supports 1.31+.
+func (d *defaultPodManager) PodExecInContainerWithContext(ctx context.Context, namespace, name, container string, command []string) (string, string, error) {
 	execOptions := &v1.PodExecOptions{
 		Container: container,
 		Stdout:    true,
@@ -221,16 +232,23 @@ func (d *defaultPodManager) PodExecInContainer(namespace, name, container string
 		SubResource("exec").
 		VersionedParams(execOptions, runtime.NewParameterCodec(d.k8sSchema))
 
-	exec, err := remotecommand.NewSPDYExecutor(d.config, http.MethodPost, req.URL())
+	// WebSocket requires GET (RFC 6455 Sec. 4.1).
+	exec, err := remotecommand.NewWebSocketExecutor(d.config, http.MethodGet, req.URL().String())
 	if err != nil {
 		return "", "", err
 	}
 
 	var stdout, stderr bytes.Buffer
-	err = exec.Stream(remotecommand.StreamOptions{
+	err = exec.StreamWithContext(ctx, remotecommand.StreamOptions{
 		Stdout: &stdout,
 		Stderr: &stderr,
 	})
+	// When the deadline fires, client-go returns before its background goroutine
+	// has stopped writing into stdout/stderr, so reading them here would be a
+	// data race; return empty strings instead.
+	if err != nil && ctx.Err() != nil {
+		return "", "", err
+	}
 	return stdout.String(), stderr.String(), err
 }
 
