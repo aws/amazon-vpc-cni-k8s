@@ -15,7 +15,7 @@
 
 // Kernel-level nftables tests verify rules against a real netfilter stack.
 // Run: go test -c -o /tmp/nft_test ./pkg/networkutils/
-//      sudo RUN_NFT_KERNEL_TESTS=1 /tmp/nft_test -test.run TestNftKernel -test.v
+//      unshare -Urn env RUN_NFT_KERNEL_TESTS=1 /tmp/nft_test -test.run TestNftKernel -test.v
 
 package networkutils
 
@@ -24,6 +24,7 @@ import (
 	"math/bits"
 	"net"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/nft"
@@ -46,8 +47,8 @@ func newTestConnmark(t *testing.T) *nftConnmark {
 	require.NoError(t, err)
 	c := &nftConnmark{nft: client, vethPrefix: "eni", mark: 0x80}
 	c.cleanupOnce.Store(true)
-	c.Cleanup()
-	t.Cleanup(func() { c.Cleanup() })
+	require.NoError(t, c.Cleanup())
+	t.Cleanup(func() { require.NoError(t, c.Cleanup()) })
 	return c
 }
 
@@ -114,10 +115,24 @@ func TestNftKernel_Idempotent(t *testing.T) {
 	cidrs := []string{"10.0.0.0/8", "172.16.0.0/12"}
 
 	require.NoError(t, c.Setup(cidrs))
+	conn, err := nftables.New()
+	require.NoError(t, err)
+	for _, chain := range []string{nftBaseChainName, nftChainName} {
+		for _, rule := range getRules(t, chain) {
+			for _, e := range rule.Exprs {
+				if counter, ok := e.(*expr.Counter); ok {
+					counter.Packets, counter.Bytes = 17, 200
+				}
+			}
+			conn.AddRule(rule)
+		}
+	}
+	require.NoError(t, conn.Flush())
+	baseBefore, snatBefore := getRules(t, nftBaseChainName), getRules(t, nftChainName)
 	require.NoError(t, c.Setup(cidrs))
 
-	assert.Len(t, getRules(t, nftBaseChainName), 4, "base chain: fib + jump + 2 restore rules")
-	assert.Len(t, getRules(t, nftChainName), 3, "snat-mark: 2 CIDRs + set-mark")
+	assert.Equal(t, baseBefore, getRules(t, nftBaseChainName))
+	assert.Equal(t, snatBefore, getRules(t, nftChainName))
 }
 
 func TestNftKernel_CIDRReconciliation(t *testing.T) {
@@ -134,6 +149,131 @@ func TestNftKernel_CIDRReconciliation(t *testing.T) {
 		}
 	}
 	assert.ElementsMatch(t, []string{"10.0.0.0/8", "192.168.0.0/16"}, cidrs)
+}
+
+func TestNftKernel_ConnmarkDuplicateAndOrderRepair(t *testing.T) {
+	skipUnlessKernelTest(t)
+	for _, tt := range []struct {
+		name        string
+		rules       []*nftables.Rule
+		retained    []int
+		missingMark bool
+	}{
+		{
+			name: "desired and stale duplicates",
+			rules: []*nftables.Rule{
+				newTestCIDRRule(0, "10.0.0.0/8"), newTestCIDRRule(0, "10.0.0.0/8"),
+				newTestCIDRRule(0, "172.16.0.0/12"), newTestCIDRRule(0, "172.16.0.0/12"),
+				newTestSetMarkRule(0, 0x80), newTestSetMarkRule(0, 0x80),
+			},
+			retained: []int{0, 5},
+		},
+		{
+			name:     "mark before CIDR",
+			rules:    []*nftables.Rule{newTestSetMarkRule(0, 0x80), newTestCIDRRule(0, "10.0.0.0/8")},
+			retained: []int{1},
+		},
+		{
+			name: "duplicate marks keep final rule",
+			rules: []*nftables.Rule{
+				newTestSetMarkRule(0, 0x80), newTestCIDRRule(0, "10.0.0.0/8"), newTestSetMarkRule(0, 0x80),
+			},
+			retained: []int{1, 2},
+		},
+		{
+			name: "trailing stale rules preserve mark",
+			rules: []*nftables.Rule{
+				newTestCIDRRule(0, "10.0.0.0/8"), newTestSetMarkRule(0, 0x80),
+				newTestCIDRRule(0, "10.0.0.0/8"), newTestCIDRRule(0, "172.16.0.0/12"),
+			},
+			retained: []int{0, 1},
+		},
+		{
+			name: "missing mark", rules: []*nftables.Rule{newTestCIDRRule(0, "10.0.0.0/8")},
+			retained: []int{0}, missingMark: true,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newTestConnmark(t)
+			require.NoError(t, c.Setup([]string{"10.0.0.0/8"}))
+			baseBefore := getRules(t, nftBaseChainName)
+			conn, err := nftables.New()
+			require.NoError(t, err)
+			table := &nftables.Table{Family: nftables.TableFamilyIPv4, Name: nftTableName}
+			snat := &nftables.Chain{Name: nftChainName, Table: table}
+			conn.FlushChain(snat)
+			for _, rule := range tt.rules {
+				rule.Table, rule.Chain = table, snat
+				rule.Exprs[0].(*expr.Counter).Packets = 17
+				rule.Exprs[0].(*expr.Counter).Bytes = 200
+				conn.AddRule(rule)
+			}
+			require.NoError(t, conn.Flush())
+			before := getRules(t, nftChainName)
+
+			// Both inputs name one canonical IPv4 network.
+			cidrs := []string{"10.1.2.3/8", "10.0.0.0/8"}
+			require.NoError(t, c.Setup(cidrs))
+			after := getRules(t, nftChainName)
+			require.Len(t, after, 2)
+			wantCIDR, wantMark := newTestCIDRRule(0, "10.0.0.0/8"), newTestSetMarkRule(0, 0x80)
+			wantCIDR.Exprs[0] = &expr.Counter{Packets: 17, Bytes: 200}
+			if !tt.missingMark {
+				wantMark.Exprs[0] = &expr.Counter{Packets: 17, Bytes: 200}
+			}
+			assert.Equal(t, wantCIDR.Exprs, after[0].Exprs)
+			assert.Equal(t, wantMark.Exprs, after[1].Exprs)
+			for _, index := range tt.retained {
+				retainedIndex := slices.IndexFunc(after, func(rule *nftables.Rule) bool {
+					return rule.Handle == before[index].Handle
+				})
+				require.NotEqual(t, -1, retainedIndex, "handle %d must remain", before[index].Handle)
+				assert.Equal(t, before[index].Exprs, after[retainedIndex].Exprs)
+			}
+			assert.Equal(t, baseBefore, getRules(t, nftBaseChainName))
+			require.NoError(t, c.Setup(cidrs))
+			assert.Equal(t, after, getRules(t, nftChainName), "second Setup must preserve rules and counters")
+			assert.Equal(t, baseBefore, getRules(t, nftBaseChainName))
+		})
+	}
+}
+
+func TestNftKernel_RejectsExtraTrafficConditions(t *testing.T) {
+	skipUnlessKernelTest(t)
+	for _, tt := range []struct {
+		name  string
+		chain string
+		index int
+	}{
+		{name: "fib", chain: nftBaseChainName, index: 0},
+		{name: "jump", chain: nftBaseChainName, index: 1},
+		{name: "CIDR", chain: nftChainName, index: 0},
+		{name: "set mark", chain: nftChainName, index: 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newTestConnmark(t)
+			cidrs := []string{"10.0.0.0/8"}
+			require.NoError(t, c.Setup(cidrs))
+			rule := getRules(t, tt.chain)[tt.index]
+			wantExprs := rule.Exprs
+			rule.Exprs = append([]expr.Any{
+				&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
+				&expr.Cmp{Register: 1, Op: expr.CmpOpEq, Data: []byte{6}},
+			}, rule.Exprs...)
+			conn, err := nftables.New()
+			require.NoError(t, err)
+			conn.AddRule(rule)
+			require.NoError(t, conn.Flush())
+			require.Len(t, getRules(t, tt.chain)[tt.index].Exprs, len(wantExprs)+2)
+
+			require.NoError(t, c.Setup(cidrs))
+			after := getRules(t, tt.chain)
+			require.Len(t, after, map[string]int{nftBaseChainName: 4, nftChainName: 2}[tt.chain])
+			assert.Equal(t, wantExprs, after[tt.index].Exprs)
+			require.NoError(t, c.Setup(cidrs))
+			assert.Equal(t, after, getRules(t, tt.chain))
+		})
+	}
 }
 
 func TestNftKernel_RestoreRulesReconciled(t *testing.T) {
