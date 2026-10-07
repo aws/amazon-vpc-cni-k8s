@@ -27,6 +27,7 @@ import (
 type EC2 interface {
 	DescribeInstanceType(ctx context.Context, instanceType string) ([]types.InstanceTypeInfo, error)
 	DescribeInstance(ctx context.Context, instanceID string) (types.Instance, error)
+	DescribeHyperPodInstance(ctx context.Context, instanceID string, instanceType string) (types.Instance, error)
 	DescribeVPC(ctx context.Context, vpcID string) (*ec2.DescribeVpcsOutput, error)
 	DescribeNetworkInterface(ctx context.Context, interfaceIDs []string) (*ec2.DescribeNetworkInterfacesOutput, error)
 	AuthorizeSecurityGroupIngress(ctx context.Context, groupID string, protocol string, fromPort int, toPort int, cidrIP string, sourceSG bool) error
@@ -98,6 +99,56 @@ func (d *defaultEC2) DescribeInstance(ctx context.Context, instanceID string) (t
 		return types.Instance{}, fmt.Errorf("failed to find instance %s", instanceID)
 	}
 	return describeInstanceOutput.Reservations[0].Instances[0], nil
+}
+
+// DescribeHyperPodInstance builds an Instance from the ENIs attached to a HyperPod node. HyperPod instances live in
+// the SageMaker service account, so DescribeInstances cannot find them. ipamd tags every ENI it manages with
+// node.k8s.amazonaws.com/instance_id, so NetworkInterfaces holds the ENIs visible to the CNI. The HyperPod-owned ENI
+// at device index 0 is not included.
+func (d *defaultEC2) DescribeHyperPodInstance(ctx context.Context, instanceID string, instanceType string) (types.Instance, error) {
+	describeNetworkInterfacesInput := &ec2.DescribeNetworkInterfacesInput{
+		Filters: []types.Filter{
+			{Name: aws.String("tag:node.k8s.amazonaws.com/instance_id"), Values: []string{instanceID}},
+			{Name: aws.String("attachment.status"), Values: []string{"attached"}},
+		},
+	}
+	describeNetworkInterfacesOutput, err := d.client.DescribeNetworkInterfaces(ctx, describeNetworkInterfacesInput)
+	if err != nil {
+		return types.Instance{}, err
+	}
+	if len(describeNetworkInterfacesOutput.NetworkInterfaces) == 0 {
+		return types.Instance{}, fmt.Errorf("failed to find ENIs for HyperPod instance %s", instanceID)
+	}
+
+	instance := types.Instance{
+		InstanceId:   aws.String(instanceID),
+		InstanceType: types.InstanceType(instanceType),
+	}
+	for _, ni := range describeNetworkInterfacesOutput.NetworkInterfaces {
+		var privateIPs []types.InstancePrivateIpAddress
+		for _, ip := range ni.PrivateIpAddresses {
+			privateIPs = append(privateIPs, types.InstancePrivateIpAddress{PrivateIpAddress: ip.PrivateIpAddress, Primary: ip.Primary})
+		}
+		var prefixes []types.InstanceIpv4Prefix
+		for _, prefix := range ni.Ipv4Prefixes {
+			prefixes = append(prefixes, types.InstanceIpv4Prefix{Ipv4Prefix: prefix.Ipv4Prefix})
+		}
+		instance.NetworkInterfaces = append(instance.NetworkInterfaces, types.InstanceNetworkInterface{
+			NetworkInterfaceId: ni.NetworkInterfaceId,
+			SubnetId:           ni.SubnetId,
+			VpcId:              ni.VpcId,
+			PrivateIpAddress:   ni.PrivateIpAddress,
+			PrivateIpAddresses: privateIPs,
+			Ipv4Prefixes:       prefixes,
+			Attachment: &types.InstanceNetworkInterfaceAttachment{
+				AttachmentId:     ni.Attachment.AttachmentId,
+				DeviceIndex:      ni.Attachment.DeviceIndex,
+				NetworkCardIndex: ni.Attachment.NetworkCardIndex,
+				Status:           ni.Attachment.Status,
+			},
+		})
+	}
+	return instance, nil
 }
 
 func (d *defaultEC2) AuthorizeSecurityGroupIngress(ctx context.Context, groupID string, protocol string, fromPort int, toPort int, cidrIP string, sourceSG bool) error {
