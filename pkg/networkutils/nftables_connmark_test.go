@@ -14,6 +14,7 @@
 package networkutils
 
 import (
+	"bytes"
 	"fmt"
 	"math/bits"
 	"net"
@@ -319,6 +320,10 @@ func TestClassifyRestoreRule(t *testing.T) {
 }
 
 func newTestRestoreRule(bit uint32, set bool) *nftables.Rule {
+	return newTestRestoreRuleWithRegister(bit, set, restoreRegister)
+}
+
+func newTestRestoreRuleWithRegister(bit uint32, set bool, register uint32) *nftables.Rule {
 	bitBytes := binaryutil.NativeEndian.PutUint32(bit)
 	zeroBytes := binaryutil.NativeEndian.PutUint32(0)
 	compareBytes := zeroBytes
@@ -327,21 +332,99 @@ func newTestRestoreRule(bit uint32, set bool) *nftables.Rule {
 	}
 	return &nftables.Rule{
 		Exprs: []expr.Any{
-			&expr.Ct{Key: expr.CtKeyMARK, Register: 1},
-			&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 4, Mask: bitBytes, Xor: zeroBytes},
-			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: compareBytes},
+			&expr.Ct{Key: expr.CtKeyMARK, Register: register},
+			&expr.Bitwise{SourceRegister: register, DestRegister: register, Len: 4, Mask: bitBytes, Xor: zeroBytes},
+			&expr.Cmp{Op: expr.CmpOpEq, Register: register, Data: compareBytes},
 			&expr.Counter{},
-			&expr.Meta{Key: expr.MetaKeyMARK, Register: 1},
+			&expr.Meta{Key: expr.MetaKeyMARK, Register: register},
 			&expr.Bitwise{
-				SourceRegister: 1,
-				DestRegister:   1,
+				SourceRegister: register,
+				DestRegister:   register,
 				Len:            4,
 				Mask:           binaryutil.NativeEndian.PutUint32(^bit),
 				Xor:            compareBytes,
 			},
-			&expr.Meta{Key: expr.MetaKeyMARK, SourceRegister: true, Register: 1},
+			&expr.Meta{Key: expr.MetaKeyMARK, SourceRegister: true, Register: register},
 		},
 	}
+}
+
+func TestLegacyIsRestoreRuleRejectsNewRules(t *testing.T) {
+	const mark = uint32(0x80)
+	require.True(t, legacyIsRestoreRule(newTestFullOverwriteRestoreRule(mark), mark))
+
+	for _, set := range []bool{false, true} {
+		t.Run(fmt.Sprintf("set=%t", set), func(t *testing.T) {
+			register1Rule := newTestRestoreRuleWithRegister(mark, set, 1)
+			_, _, ok := classifyRestoreRule(register1Rule, mark)
+			assert.False(t, ok, "register-1 rules must migrate before a later rollback")
+
+			for _, legacyMask := range []uint32{mark, ^mark} {
+				// The old matcher accepts the first AND for mark. For ^mark,
+				// it also accepts the packet-mark AND in the clear rule.
+				assert.Equal(t, legacyMask == mark || !set, legacyIsRestoreRule(register1Rule, legacyMask))
+				assert.False(t, legacyIsRestoreRule(newTestRestoreRule(mark, set), legacyMask))
+			}
+		})
+	}
+}
+
+func TestClassifyRestoreRuleRejectsMixedRegisters(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*nftables.Rule)
+	}{
+		{"ct load", func(r *nftables.Rule) { r.Exprs[0].(*expr.Ct).Register = 1 }},
+		{"ct bitwise source", func(r *nftables.Rule) { r.Exprs[1].(*expr.Bitwise).SourceRegister = 1 }},
+		{"ct bitwise destination", func(r *nftables.Rule) { r.Exprs[1].(*expr.Bitwise).DestRegister = 1 }},
+		{"ct comparison", func(r *nftables.Rule) { r.Exprs[2].(*expr.Cmp).Register = 1 }},
+		{"packet load", func(r *nftables.Rule) { r.Exprs[4].(*expr.Meta).Register = 1 }},
+		{"packet bitwise source", func(r *nftables.Rule) { r.Exprs[5].(*expr.Bitwise).SourceRegister = 1 }},
+		{"packet bitwise destination", func(r *nftables.Rule) { r.Exprs[5].(*expr.Bitwise).DestRegister = 1 }},
+		{"packet store", func(r *nftables.Rule) { r.Exprs[6].(*expr.Meta).Register = 1 }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, set := range []bool{false, true} {
+				rule := newTestRestoreRule(0x80, set)
+				tt.mutate(rule)
+				_, _, ok := classifyRestoreRule(rule, 0x80)
+				assert.False(t, ok)
+			}
+		})
+	}
+}
+
+// legacyIsRestoreRule is copied from v1.23.1. v1.23.0 has the same matcher.
+// Keep its body unchanged to test what those released versions accept.
+func legacyIsRestoreRule(rule *nftables.Rule, mark uint32) bool {
+	hasCounter := false
+	hasCtLoad := false
+	hasBitwise := false
+	hasMetaStore := false
+	markBytes := binaryutil.NativeEndian.PutUint32(mark)
+	for _, e := range rule.Exprs {
+		if _, ok := e.(*expr.Counter); ok {
+			hasCounter = true
+		}
+		// Ct load: read ct mark into reg 1 (SourceRegister=false ⇒ Register is dest)
+		if ct, ok := e.(*expr.Ct); ok &&
+			ct.Key == expr.CtKeyMARK && !ct.SourceRegister && ct.Register == 1 {
+			hasCtLoad = true
+		}
+		// Restore rule uses AND: (ct_mark & mark) ^ 0x00, so Xor must be zero.
+		if bw, ok := e.(*expr.Bitwise); ok &&
+			bw.SourceRegister == 1 && bw.DestRegister == 1 && bw.Len == 4 &&
+			bytes.Equal(bw.Mask, markBytes) && bytes.Equal(bw.Xor, []byte{0, 0, 0, 0}) {
+			hasBitwise = true
+		}
+		// Meta store: write reg 1 into fwmark (SourceRegister=true ⇒ Register is src)
+		if m, ok := e.(*expr.Meta); ok &&
+			m.Key == expr.MetaKeyMARK && m.SourceRegister && m.Register == 1 {
+			hasMetaStore = true
+		}
+	}
+	return hasCounter && hasCtLoad && hasBitwise && hasMetaStore
 }
 
 func newTestFullOverwriteRestoreRule(mark uint32) *nftables.Rule {
@@ -739,6 +822,11 @@ func TestAddRestoreRulesCopiesOwnedBits(t *testing.T) {
 				&nftables.Table{Family: nftables.TableFamilyIPv4, Name: nftTableName},
 				&nftables.Chain{Name: nftBaseChainName},
 			)
+			for _, rule := range rules {
+				_, _, ok := classifyRestoreRule(rule, tt.mark)
+				assert.True(t, ok)
+				assert.False(t, legacyIsRestoreRule(rule, tt.mark))
+			}
 			assert.Equal(t, tt.expected, evaluateRestoreRules(rules, tt.packetMark, tt.ctMark))
 		})
 	}
@@ -1107,6 +1195,17 @@ func TestEnsureBaseChainRulesReconcilesMultiBitRestoreRules(t *testing.T) {
 		{
 			name:  "complete pairs in either order",
 			rules: []*nftables.Rule{fibRule, jumpRule, lowSet, highClear, lowClear, highSet},
+		},
+		{
+			name: "register-1 pairs",
+			rules: []*nftables.Rule{
+				fibRule, jumpRule,
+				newTestRestoreRuleWithRegister(0x1, false, 1),
+				newTestRestoreRuleWithRegister(0x1, true, 1),
+				newTestRestoreRuleWithRegister(0x80000000, false, 1),
+				newTestRestoreRuleWithRegister(0x80000000, true, 1),
+			},
+			rebuild: true,
 		},
 		{
 			name:    "jump rule before the fib return",

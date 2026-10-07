@@ -69,6 +69,7 @@ func TestNftKernel_Setup(t *testing.T) {
 	base := getRules(t, nftBaseChainName)
 	fibIndex, jumpIndex, restoreClearIndex, restoreSetIndex := -1, -1, -1, -1
 	for ruleIndex, r := range base {
+		assert.False(t, legacyIsRestoreRule(r, 0x80), "v1.23 must reject every new base-chain rule")
 		switch {
 		case isFibLocalReturnRule(r):
 			fibIndex = ruleIndex
@@ -115,24 +116,27 @@ func TestNftKernel_Idempotent(t *testing.T) {
 	cidrs := []string{"10.0.0.0/8", "172.16.0.0/12"}
 
 	require.NoError(t, c.Setup(cidrs))
+	// Seed nonzero counters so repeated Setup must preserve both state and handles.
 	conn, err := nftables.New()
 	require.NoError(t, err)
-	for _, chain := range []string{nftBaseChainName, nftChainName} {
-		for _, rule := range getRules(t, chain) {
-			for _, e := range rule.Exprs {
-				if counter, ok := e.(*expr.Counter); ok {
-					counter.Packets, counter.Bytes = 17, 200
-				}
+	for _, rule := range append(getRules(t, nftBaseChainName), getRules(t, nftChainName)...) {
+		for _, e := range rule.Exprs {
+			if counter, ok := e.(*expr.Counter); ok {
+				counter.Packets, counter.Bytes = 42, 420
+				conn.ReplaceRule(rule)
 			}
-			conn.AddRule(rule)
 		}
 	}
 	require.NoError(t, conn.Flush())
-	baseBefore, snatBefore := getRules(t, nftBaseChainName), getRules(t, nftChainName)
+	base, snat := getRules(t, nftBaseChainName), getRules(t, nftChainName)
+	require.Len(t, base, 4, "base chain: fib + jump + 2 restore rules")
+	require.Len(t, snat, 3, "snat-mark: 2 CIDRs + set-mark")
+	require.Equal(t, uint64(42), base[2].Exprs[3].(*expr.Counter).Packets)
+
 	require.NoError(t, c.Setup(cidrs))
 
-	assert.Equal(t, baseBefore, getRules(t, nftBaseChainName))
-	assert.Equal(t, snatBefore, getRules(t, nftChainName))
+	assert.Equal(t, base, getRules(t, nftBaseChainName), "base rules, handles, and counters must stay unchanged")
+	assert.Equal(t, snat, getRules(t, nftChainName), "SNAT rules, handles, and counters must stay unchanged")
 }
 
 func TestNftKernel_CIDRReconciliation(t *testing.T) {
@@ -280,19 +284,22 @@ func TestNftKernel_RestoreRulesReconciled(t *testing.T) {
 	skipUnlessKernelTest(t)
 
 	tests := []struct {
-		name string
-		rule func() *nftables.Rule
+		name  string
+		rules []*nftables.Rule
 	}{
 		{
-			name: "unrecognized rule",
-			rule: func() *nftables.Rule {
-				return &nftables.Rule{Exprs: []expr.Any{&expr.Counter{}}}
-			},
+			name:  "unrecognized rule",
+			rules: []*nftables.Rule{{Exprs: []expr.Any{&expr.Counter{}}}},
 		},
 		{
-			name: "full packet-mark overwrite rule",
-			rule: func() *nftables.Rule {
-				return newTestFullOverwriteRestoreRule(0x80)
+			name:  "full packet-mark overwrite rule",
+			rules: []*nftables.Rule{newTestFullOverwriteRestoreRule(0x80)},
+		},
+		{
+			name: "register-1 restore pair",
+			rules: []*nftables.Rule{
+				newTestRestoreRuleWithRegister(0x80, false, 1),
+				newTestRestoreRuleWithRegister(0x80, true, 1),
 			},
 		},
 	}
@@ -308,11 +315,7 @@ func TestNftKernel_RestoreRulesReconciled(t *testing.T) {
 			table := &nftables.Table{Family: nftables.TableFamilyIPv4, Name: nftTableName}
 			baseChain := &nftables.Chain{Name: nftBaseChainName, Table: table}
 			conn.FlushChain(baseChain)
-			for _, rule := range []*nftables.Rule{
-				newTestFibRule(0),
-				newTestJumpRule(0),
-				tt.rule(),
-			} {
+			for _, rule := range append([]*nftables.Rule{newTestFibRule(0), newTestJumpRule(0)}, tt.rules...) {
 				rule.Table = table
 				rule.Chain = baseChain
 				conn.AddRule(rule)
@@ -320,11 +323,11 @@ func TestNftKernel_RestoreRulesReconciled(t *testing.T) {
 			require.NoError(t, conn.Flush())
 
 			require.NoError(t, c.Setup(cidrs))
-			require.NoError(t, c.Setup(cidrs))
 
 			var fibRules, jumpRules, clearRules, setRules int
 			rules := getRules(t, nftBaseChainName)
 			for _, rule := range rules {
+				assert.False(t, legacyIsRestoreRule(rule, 0x80))
 				switch {
 				case isFibLocalReturnRule(rule):
 					fibRules++
@@ -346,6 +349,9 @@ func TestNftKernel_RestoreRulesReconciled(t *testing.T) {
 			assert.Equal(t, 1, clearRules)
 			assert.Equal(t, 1, setRules)
 			assert.Len(t, rules, 4)
+
+			require.NoError(t, c.Setup(cidrs))
+			assert.Equal(t, rules, getRules(t, nftBaseChainName), "second Setup must preserve the repaired rules")
 		})
 	}
 }
