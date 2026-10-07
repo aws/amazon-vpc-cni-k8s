@@ -39,6 +39,10 @@ const (
 	// Each owned connmark bit needs one rule to clear the packet bit and one
 	// rule to set it.
 	restoreRulesPerBit = 2
+	// Restore rules use NFT_REG_2 so v1.23.0 and v1.23.1 reject them on
+	// rollback. Those versions require register 1 and replace the base chain
+	// when no restore rule matches.
+	restoreRegister = 2
 	// https://github.com/torvalds/linux/blob/v7.0/include/uapi/linux/rtnetlink.h#L264
 	rtnLocal = uint32(2)
 	// nftBasePriority sits at dstnat (-100) + 10, so our chain runs after
@@ -556,36 +560,36 @@ func (c *nftConnmark) addRestoreRule(table *nftables.Table, chain *nftables.Chai
 		Table: table,
 		Chain: chain,
 		Exprs: []expr.Any{
-			// Load the connection mark into register 1.
-			&expr.Ct{Key: expr.CtKeyMARK, Register: 1},
+			// Load the connection mark into register 2.
+			&expr.Ct{Key: expr.CtKeyMARK, Register: restoreRegister},
 
 			// Isolate the selected connection-mark bit:
-			// register 1 = (connection mark & bit) ^ 0.
-			&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 4, Mask: bitBytes, Xor: zeroBytes},
+			// register 2 = (connection mark & bit) ^ 0.
+			&expr.Bitwise{SourceRegister: restoreRegister, DestRegister: restoreRegister, Len: 4, Mask: bitBytes, Xor: zeroBytes},
 
 			// The clear rule continues only when the isolated bit is zero; the
 			// set rule continues only when it equals bit.
-			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: compareBytes},
+			&expr.Cmp{Op: expr.CmpOpEq, Register: restoreRegister, Data: compareBytes},
 
 			// Count packets that matched this clear or set branch.
 			&expr.Counter{},
 
-			// Replace register 1 with the packet's current firewall mark.
-			&expr.Meta{Key: expr.MetaKeyMARK, Register: 1},
+			// Replace register 2 with the packet's current firewall mark.
+			&expr.Meta{Key: expr.MetaKeyMARK, Register: restoreRegister},
 
 			// Clear rule: (packet mark & ~bit) ^ 0 clears the selected bit.
 			// Set rule: (packet mark & ~bit) ^ bit sets the selected bit.
 			// Both operations preserve every unrelated packet-mark bit.
 			&expr.Bitwise{
-				SourceRegister: 1,
-				DestRegister:   1,
+				SourceRegister: restoreRegister,
+				DestRegister:   restoreRegister,
 				Len:            4,
 				Mask:           binaryutil.NativeEndian.PutUint32(^bit),
 				Xor:            compareBytes,
 			},
 
-			// Store register 1 back into the packet firewall mark.
-			&expr.Meta{Key: expr.MetaKeyMARK, SourceRegister: true, Register: 1},
+			// Store register 2 back into the packet firewall mark.
+			&expr.Meta{Key: expr.MetaKeyMARK, SourceRegister: true, Register: restoreRegister},
 		},
 	})
 }
@@ -625,12 +629,12 @@ func classifyRestoreRule(rule *nftables.Rule, mark uint32) (uint32, bool, bool) 
 	}
 
 	ctLoad, ok := rule.Exprs[0].(*expr.Ct)
-	if !ok || ctLoad.Key != expr.CtKeyMARK || ctLoad.SourceRegister || ctLoad.Register != 1 {
+	if !ok || ctLoad.Key != expr.CtKeyMARK || ctLoad.SourceRegister || ctLoad.Register != restoreRegister {
 		return 0, false, false
 	}
 	ctBitwise, ok := rule.Exprs[1].(*expr.Bitwise)
 	if !ok ||
-		ctBitwise.SourceRegister != 1 || ctBitwise.DestRegister != 1 || ctBitwise.Len != 4 ||
+		ctBitwise.SourceRegister != restoreRegister || ctBitwise.DestRegister != restoreRegister || ctBitwise.Len != 4 ||
 		len(ctBitwise.Mask) != 4 || !bytes.Equal(ctBitwise.Xor, []byte{0, 0, 0, 0}) {
 		return 0, false, false
 	}
@@ -639,7 +643,7 @@ func classifyRestoreRule(rule *nftables.Rule, mark uint32) (uint32, bool, bool) 
 		return 0, false, false
 	}
 	cmp, ok := rule.Exprs[2].(*expr.Cmp)
-	if !ok || cmp.Op != expr.CmpOpEq || cmp.Register != 1 || len(cmp.Data) != 4 {
+	if !ok || cmp.Op != expr.CmpOpEq || cmp.Register != restoreRegister || len(cmp.Data) != 4 {
 		return 0, false, false
 	}
 	compareValue := binaryutil.NativeEndian.Uint32(cmp.Data)
@@ -650,18 +654,18 @@ func classifyRestoreRule(rule *nftables.Rule, mark uint32) (uint32, bool, bool) 
 		return 0, false, false
 	}
 	metaLoad, ok := rule.Exprs[4].(*expr.Meta)
-	if !ok || metaLoad.Key != expr.MetaKeyMARK || metaLoad.SourceRegister || metaLoad.Register != 1 {
+	if !ok || metaLoad.Key != expr.MetaKeyMARK || metaLoad.SourceRegister || metaLoad.Register != restoreRegister {
 		return 0, false, false
 	}
 	packetBitwise, ok := rule.Exprs[5].(*expr.Bitwise)
 	if !ok ||
-		packetBitwise.SourceRegister != 1 || packetBitwise.DestRegister != 1 || packetBitwise.Len != 4 ||
+		packetBitwise.SourceRegister != restoreRegister || packetBitwise.DestRegister != restoreRegister || packetBitwise.Len != 4 ||
 		!bytes.Equal(packetBitwise.Mask, binaryutil.NativeEndian.PutUint32(^bit)) ||
 		!bytes.Equal(packetBitwise.Xor, cmp.Data) {
 		return 0, false, false
 	}
 	metaStore, ok := rule.Exprs[6].(*expr.Meta)
-	if !ok || metaStore.Key != expr.MetaKeyMARK || !metaStore.SourceRegister || metaStore.Register != 1 {
+	if !ok || metaStore.Key != expr.MetaKeyMARK || !metaStore.SourceRegister || metaStore.Register != restoreRegister {
 		return 0, false, false
 	}
 	return bit, compareValue == bit, true
