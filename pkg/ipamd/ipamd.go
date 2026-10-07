@@ -353,23 +353,19 @@ func (r *ReconcileCooldownCache) SetBackingStore(store datastore.Checkpointer) {
 // Add sets a timestamp for the CIDR added that says how long they are not to be put back in the data store.
 func (r *ReconcileCooldownCache) Add(cidr string) {
 	r.Lock()
+	defer r.Unlock()
 	expiry := time.Now().Add(ipReconcileCooldown)
 	r.cache[cidr] = expiry
-	snapshot := r.snapshotUnsafe()
-	r.Unlock()
-	// Persist outside the lock so filesystem latency never blocks RecentlyFreed/Add/Remove.
-	r.persist(snapshot)
+	r.persistUnsafe()
 }
 
 // Remove removes a CIDR from the cooldown cache.
 func (r *ReconcileCooldownCache) Remove(cidr string) {
 	r.Lock()
+	defer r.Unlock()
 	log.Debugf("Removing %s from cooldown cache.", cidr)
 	delete(r.cache, cidr)
-	snapshot := r.snapshotUnsafe()
-	r.Unlock()
-	// Persist outside the lock so filesystem latency never blocks RecentlyFreed/Add/Remove.
-	r.persist(snapshot)
+	r.persistUnsafe()
 }
 
 // RecentlyFreed checks if this CIDR was recently freed.
@@ -384,21 +380,14 @@ func (r *ReconcileCooldownCache) RecentlyFreed(cidr string) (found, recentlyFree
 	return false, false
 }
 
-// snapshotUnsafe returns the cooldown entries as a serializable map. The caller must hold the lock.
-func (r *ReconcileCooldownCache) snapshotUnsafe() map[string]int64 {
+// persistUnsafe writes the current cooldown entries to the backing store. The caller must hold the lock.
+func (r *ReconcileCooldownCache) persistUnsafe() {
+	if r.backingStore == nil {
+		return
+	}
 	entries := make(map[string]int64, len(r.cache))
 	for cidr, expiry := range r.cache {
 		entries[cidr] = expiry.UnixNano()
-	}
-	return entries
-}
-
-// persist writes the given snapshot to the backing store. It performs file I/O and must be
-// called without holding the cache lock, so disk latency cannot block cache callers and the
-// checkpointer can never deadlock against the cache mutex.
-func (r *ReconcileCooldownCache) persist(entries map[string]int64) {
-	if r.backingStore == nil {
-		return
 	}
 	data := cooldownCheckpointData{Version: cooldownCheckpointFormatVersion, Entries: entries}
 	if err := r.backingStore.Checkpoint(&data); err != nil {
@@ -407,14 +396,14 @@ func (r *ReconcileCooldownCache) persist(entries map[string]int64) {
 }
 
 // Restore loads cooldown entries from the backing store, dropping any that have already expired.
-// File I/O (Restore/Checkpoint) is performed without holding the cache lock, the lock is taken
-// only to apply the parsed, pruned result. A corrupt or version-mismatched file is self-healed by
-// rewriting an empty checkpoint so nodes don't log the same warning on every subsequent restart.
+// A corrupt or version-mismatched file is self-healed by rewriting an empty checkpoint so nodes
+// don't log the same warning on every subsequent restart.
 func (r *ReconcileCooldownCache) Restore() {
+	r.Lock()
+	defer r.Unlock()
 	if r.backingStore == nil {
 		return
 	}
-	// Read and decode without holding the cache lock.
 	var data cooldownCheckpointData
 	if err := r.backingStore.Restore(&data); err != nil {
 		if os.IsNotExist(err) {
@@ -422,40 +411,32 @@ func (r *ReconcileCooldownCache) Restore() {
 		} else {
 			// Corrupt/unreadable file: self-heal by overwriting with an empty checkpoint so we don't warn on every restart.
 			log.Warnf("Failed to restore reconcile cooldown cache, resetting it: %v", err)
-			r.persist(map[string]int64{})
+			r.persistUnsafe()
 		}
 		return
 	}
 	if data.Version != cooldownCheckpointFormatVersion {
 		// Unexpected version: self-heal by overwriting with the current format (empty).
 		log.Warnf("Resetting persisted reconcile cooldown cache due to unexpected version %q (want %q)", data.Version, cooldownCheckpointFormatVersion)
-		r.persist(map[string]int64{})
+		r.persistUnsafe()
 		return
 	}
 
-	// Prune expired entries into a temporary map (no lock needed yet).
 	now := time.Now()
-	restored := make(map[string]time.Time)
+	restored := 0
 	for cidr, expiryNano := range data.Entries {
 		expiry := time.Unix(0, expiryNano)
+		// Only keep entries still within their cooldown window.
 		if now.Before(expiry) {
-			restored[cidr] = expiry
+			r.cache[cidr] = expiry
+			restored++
 		}
 	}
-
-	// Apply under the lock, then snapshot for the rewrite.
-	r.Lock()
-	for cidr, expiry := range restored {
-		r.cache[cidr] = expiry
+	if restored > 0 {
+		log.Infof("Restored %d reconcile cooldown cache entries still within cooldown after restart", restored)
 	}
-	snapshot := r.snapshotUnsafe()
-	r.Unlock()
-
-	if len(restored) > 0 {
-		log.Infof("Restored %d reconcile cooldown cache entries still within cooldown after restart", len(restored))
-	}
-	// Rewrite outside the lock so the on-disk file reflects the pruned set.
-	r.persist(snapshot)
+	// Rewrite so the on-disk file reflects the pruned set.
+	r.persistUnsafe()
 }
 
 func prometheusRegister() {

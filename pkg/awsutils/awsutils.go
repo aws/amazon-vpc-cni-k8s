@@ -1978,7 +1978,7 @@ func reconcileIPv4AddressesWithEC2(eniID string, imdsIPv4s, ec2IPv4s []ec2types.
 			reconciled = append(reconciled, imdsIPv4)
 			continue
 		}
-		log.Infof("reconcileIPv4AddressesWithEC2: dropping IPv4 address %s on ENI %s that IMDS reports but EC2 DescribeNetworkInterfaces does not, to prevent allocating a stale address", ip, eniID)
+		log.Debugf("reconcileIPv4AddressesWithEC2: dropping IPv4 address %s on ENI %s that IMDS reports but EC2 DescribeNetworkInterfaces does not, to prevent allocating a stale address", ip, eniID)
 	}
 	return reconciled
 }
