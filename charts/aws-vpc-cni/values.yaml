@@ -197,7 +197,7 @@ updateStrategy:
     maxUnavailable: "10%"
 
 # Minimum seconds a newly created pod should be ready before it is treated as available
-# minReadySeconds: 0
+minReadySeconds:
 
 nodeSelector: {}
 
