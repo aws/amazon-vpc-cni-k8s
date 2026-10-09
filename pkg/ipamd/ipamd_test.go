@@ -4102,6 +4102,47 @@ func TestReconcileCooldownCache_RecentlyFreed(t *testing.T) {
 	assert.False(t, recentlyFreed)
 }
 
+// Wraps a Checkpointer and counts Checkpoint calls, to assert that batch mutations persist the backing store once per batch rather than once per entry.
+type countingCheckpoint struct {
+	datastore.Checkpointer
+	checkpoints int
+}
+
+func (c *countingCheckpoint) Checkpoint(data interface{}) error {
+	c.checkpoints++
+	return c.Checkpointer.Checkpoint(data)
+}
+
+// Verifies AddBatch/RemoveBatch apply every CIDR but persist the backing store only once per call.
+func TestReconcileCooldownCache_Batch(t *testing.T) {
+	store := &countingCheckpoint{Checkpointer: datastore.NewTestCheckpoint(nil)}
+	cache := &ReconcileCooldownCache{cache: make(map[string]time.Time)}
+	cache.SetBackingStore(store)
+
+	cidrs := []string{"10.0.0.0/32", "10.0.0.1/32", "10.0.0.2/32"}
+	cache.AddBatch(cidrs)
+
+	// All three present, but only one checkpoint write for the whole batch.
+	for _, c := range cidrs {
+		found, recentlyFreed := cache.RecentlyFreed(c)
+		assert.True(t, found, c)
+		assert.True(t, recentlyFreed, c)
+	}
+	assert.Equal(t, 1, store.checkpoints, "AddBatch should persist exactly once")
+
+	cache.RemoveBatch(cidrs)
+	for _, c := range cidrs {
+		found, _ := cache.RecentlyFreed(c)
+		assert.False(t, found, c)
+	}
+	assert.Equal(t, 2, store.checkpoints, "RemoveBatch should persist exactly once more")
+
+	// Empty batches are no-ops and must not write.
+	cache.AddBatch(nil)
+	cache.RemoveBatch(nil)
+	assert.Equal(t, 2, store.checkpoints, "empty batches should not persist")
+}
+
 // Verifies that cooldown entries survive a simulated IPAMD restart via the backing store.
 func TestReconcileCooldownCache_PersistAndRestore(t *testing.T) {
 	store := datastore.NewTestCheckpoint(nil)

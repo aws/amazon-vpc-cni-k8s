@@ -359,12 +359,40 @@ func (r *ReconcileCooldownCache) Add(cidr string) {
 	r.persistUnsafe()
 }
 
+// Adds multiple CIDRs to the cooldown cache and persists the backing store once for the whole batch (instead of once per CIDR).
+func (r *ReconcileCooldownCache) AddBatch(cidrs []string) {
+	if len(cidrs) == 0 {
+		return
+	}
+	r.Lock()
+	defer r.Unlock()
+	expiry := time.Now().Add(ipReconcileCooldown)
+	for _, cidr := range cidrs {
+		r.cache[cidr] = expiry
+	}
+	r.persistUnsafe()
+}
+
 // Remove removes a CIDR from the cooldown cache.
 func (r *ReconcileCooldownCache) Remove(cidr string) {
 	r.Lock()
 	defer r.Unlock()
 	log.Debugf("Removing %s from cooldown cache.", cidr)
 	delete(r.cache, cidr)
+	r.persistUnsafe()
+}
+
+// Removes multiple CIDRs from the cooldown cache and persists the backing store once for the whole batch, instead of once per CIDR.
+func (r *ReconcileCooldownCache) RemoveBatch(cidrs []string) {
+	if len(cidrs) == 0 {
+		return
+	}
+	r.Lock()
+	defer r.Unlock()
+	for _, cidr := range cidrs {
+		log.Debugf("Removing %s from cooldown cache.", cidr)
+		delete(r.cache, cidr)
+	}
 	r.persistUnsafe()
 }
 
@@ -2818,17 +2846,15 @@ func (c *IPAMContext) DeallocCidrs(ctx context.Context, eniID string, deletableC
 		if toDeleteCidr.IsPrefix {
 			strDeletablePrefix := toDeleteCidr.Cidr.String()
 			deletablePrefixes = append(deletablePrefixes, strDeletablePrefix)
-			// Track the last time we unassigned Cidrs from an ENI. We won't reconcile any Cidrs in this cache
-			// for at least ipReconcileCooldown
-			c.reconcileCooldownCache.Add(strDeletablePrefix)
 		} else {
 			strDeletableIP := toDeleteCidr.Cidr.IP.String()
 			deletableIPs = append(deletableIPs, strDeletableIP)
-			// Track the last time we unassigned IPs from an ENI. We won't reconcile any IPs in this cache
-			// for at least ipReconcileCooldown
-			c.reconcileCooldownCache.Add(strDeletableIP)
 		}
 	}
+
+	// Track the time we unassigned these Cidrs from the ENI. We won't reconcile any Cidr in this cache
+	// for at least ipReconcileCooldown. Persist once for the whole batch rather than once per Cidr.
+	c.reconcileCooldownCache.AddBatch(append(append([]string{}, deletablePrefixes...), deletableIPs...))
 
 	if err := c.awsClient.DeallocPrefixAddresses(ctx, eniID, deletablePrefixes); err != nil {
 		log.Warnf("Failed to free Prefixes %v from ENI %s: %s", deletablePrefixes, eniID, err)
