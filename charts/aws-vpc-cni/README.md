@@ -106,6 +106,7 @@ The following table lists the configurable parameters for this chart and their d
 | `readinessProbe`        | Readiness probe settings for daemonset                  | (see `values.yaml`)                 |
 | `tolerations`           | Optional deployment tolerations                         | `[{"operator": "Exists"}]`          |
 | `updateStrategy`        | Optional update strategy                                | `type: RollingUpdate`               |
+| `minReadySeconds`       | Minimum seconds a new pod must be ready to be available | `nil`                               |
 
 Specify each parameter using the `--set key=value[,key=value]` argument to `helm install` or provide a YAML file containing the values for the above parameters:
 
