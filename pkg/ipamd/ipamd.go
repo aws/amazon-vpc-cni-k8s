@@ -329,6 +329,25 @@ func (c *IPAMContext) markUnmanagedNetworkCards(efaOnlyENINetworkCards []string,
 type ReconcileCooldownCache struct {
 	sync.RWMutex
 	cache map[string]time.Time
+	// Persists the cooldown entries across IPAMD restarts.
+	backingStore datastore.Checkpointer
+}
+
+// Version stamp used for the persisted cooldown cache.
+const cooldownCheckpointFormatVersion = "vpc-cni-cooldown/1"
+
+// On-disk format of the persisted cooldown cache. Expiries are stored as Unix-nanosecond
+// timestamps so a restart can honor the remaining cooldown rather than restarting the clock.
+type cooldownCheckpointData struct {
+	Version string           `json:"version"`
+	Entries map[string]int64 `json:"entries"`
+}
+
+// Enables persistence for the cooldown cache. Can pass a datastore.NullCheckpoint (or leave unset) to disable persistence.
+func (r *ReconcileCooldownCache) SetBackingStore(store datastore.Checkpointer) {
+	r.Lock()
+	defer r.Unlock()
+	r.backingStore = store
 }
 
 // Add sets a timestamp for the CIDR added that says how long they are not to be put back in the data store.
@@ -337,6 +356,21 @@ func (r *ReconcileCooldownCache) Add(cidr string) {
 	defer r.Unlock()
 	expiry := time.Now().Add(ipReconcileCooldown)
 	r.cache[cidr] = expiry
+	r.persistUnsafe()
+}
+
+// Adds multiple CIDRs to the cooldown cache and persists the backing store once for the whole batch (instead of once per CIDR).
+func (r *ReconcileCooldownCache) AddBatch(cidrs []string) {
+	if len(cidrs) == 0 {
+		return
+	}
+	r.Lock()
+	defer r.Unlock()
+	expiry := time.Now().Add(ipReconcileCooldown)
+	for _, cidr := range cidrs {
+		r.cache[cidr] = expiry
+	}
+	r.persistUnsafe()
 }
 
 // Remove removes a CIDR from the cooldown cache.
@@ -345,6 +379,21 @@ func (r *ReconcileCooldownCache) Remove(cidr string) {
 	defer r.Unlock()
 	log.Debugf("Removing %s from cooldown cache.", cidr)
 	delete(r.cache, cidr)
+	r.persistUnsafe()
+}
+
+// Removes multiple CIDRs from the cooldown cache and persists the backing store once for the whole batch, instead of once per CIDR.
+func (r *ReconcileCooldownCache) RemoveBatch(cidrs []string) {
+	if len(cidrs) == 0 {
+		return
+	}
+	r.Lock()
+	defer r.Unlock()
+	for _, cidr := range cidrs {
+		log.Debugf("Removing %s from cooldown cache.", cidr)
+		delete(r.cache, cidr)
+	}
+	r.persistUnsafe()
 }
 
 // RecentlyFreed checks if this CIDR was recently freed.
@@ -357,6 +406,65 @@ func (r *ReconcileCooldownCache) RecentlyFreed(cidr string) (found, recentlyFree
 		return true, now.Sub(expiry) < 0
 	}
 	return false, false
+}
+
+// persistUnsafe writes the current cooldown entries to the backing store. The caller must hold the lock.
+func (r *ReconcileCooldownCache) persistUnsafe() {
+	if r.backingStore == nil {
+		return
+	}
+	entries := make(map[string]int64, len(r.cache))
+	for cidr, expiry := range r.cache {
+		entries[cidr] = expiry.UnixNano()
+	}
+	data := cooldownCheckpointData{Version: cooldownCheckpointFormatVersion, Entries: entries}
+	if err := r.backingStore.Checkpoint(&data); err != nil {
+		log.Warnf("Failed to persist reconcile cooldown cache: %v", err)
+	}
+}
+
+// Restore loads cooldown entries from the backing store, dropping any that have already expired.
+// A corrupt or version-mismatched file is self-healed by rewriting an empty checkpoint so nodes
+// don't log the same warning on every subsequent restart.
+func (r *ReconcileCooldownCache) Restore() {
+	r.Lock()
+	defer r.Unlock()
+	if r.backingStore == nil {
+		return
+	}
+	var data cooldownCheckpointData
+	if err := r.backingStore.Restore(&data); err != nil {
+		if os.IsNotExist(err) {
+			log.Debugf("No persisted reconcile cooldown cache found; starting empty")
+		} else {
+			// Corrupt/unreadable file: self-heal by overwriting with an empty checkpoint so we don't warn on every restart.
+			log.Warnf("Failed to restore reconcile cooldown cache, resetting it: %v", err)
+			r.persistUnsafe()
+		}
+		return
+	}
+	if data.Version != cooldownCheckpointFormatVersion {
+		// Unexpected version: self-heal by overwriting with the current format (empty).
+		log.Warnf("Resetting persisted reconcile cooldown cache due to unexpected version %q (want %q)", data.Version, cooldownCheckpointFormatVersion)
+		r.persistUnsafe()
+		return
+	}
+
+	now := time.Now()
+	restored := 0
+	for cidr, expiryNano := range data.Entries {
+		expiry := time.Unix(0, expiryNano)
+		// Only keep entries still within their cooldown window.
+		if now.Before(expiry) {
+			r.cache[cidr] = expiry
+			restored++
+		}
+	}
+	if restored > 0 {
+		log.Infof("Restored %d reconcile cooldown cache entries still within cooldown after restart", restored)
+	}
+	// Rewrite so the on-disk file reflects the pruned set.
+	r.persistUnsafe()
 }
 
 func prometheusRegister() {
@@ -420,6 +528,12 @@ func New(ctx context.Context, k8sClient client.Client, withApiServer bool) (*IPA
 
 	c.primaryIP = make(map[string]string)
 	c.reconcileCooldownCache.cache = make(map[string]time.Time)
+	// Persist the cooldown cache across aws-node/IPAMD restarts. Without this, a restart wipes
+	// the cache and a recently unassigned (but still IMDS-stale) IP can be re-added to the
+	// datastore and allocated to a pod with no working network path (issue #3887). Restore
+	// drops entries whose cooldown has already elapsed.
+	c.reconcileCooldownCache.SetBackingStore(datastore.NewJSONFile(cooldownBackingStorePath()))
+	c.reconcileCooldownCache.Restore()
 	// WARM and Min IP/Prefix targets are ignored in IPv6 mode
 	c.warmENITarget = getWarmENITarget()
 	c.warmIPTarget = getWarmIPTarget()
@@ -2064,6 +2178,12 @@ func dsBackingStorePath() string {
 	return defaultBackingStorePath
 }
 
+// Returns the path for the persisted reconcile cooldown cache.
+func cooldownBackingStorePath() string {
+	base := dsBackingStorePath()
+	return strings.TrimSuffix(base, ".json") + "-reconcile-cooldown.json"
+}
+
 func getWarmIPTarget() int {
 	inputStr, found := os.LookupEnv(envWarmIPTarget)
 	if !found {
@@ -2726,17 +2846,15 @@ func (c *IPAMContext) DeallocCidrs(ctx context.Context, eniID string, deletableC
 		if toDeleteCidr.IsPrefix {
 			strDeletablePrefix := toDeleteCidr.Cidr.String()
 			deletablePrefixes = append(deletablePrefixes, strDeletablePrefix)
-			// Track the last time we unassigned Cidrs from an ENI. We won't reconcile any Cidrs in this cache
-			// for at least ipReconcileCooldown
-			c.reconcileCooldownCache.Add(strDeletablePrefix)
 		} else {
 			strDeletableIP := toDeleteCidr.Cidr.IP.String()
 			deletableIPs = append(deletableIPs, strDeletableIP)
-			// Track the last time we unassigned IPs from an ENI. We won't reconcile any IPs in this cache
-			// for at least ipReconcileCooldown
-			c.reconcileCooldownCache.Add(strDeletableIP)
 		}
 	}
+
+	// Track the time we unassigned these Cidrs from the ENI. We won't reconcile any Cidr in this cache
+	// for at least ipReconcileCooldown. Persist once for the whole batch rather than once per Cidr.
+	c.reconcileCooldownCache.AddBatch(append(append([]string{}, deletablePrefixes...), deletableIPs...))
 
 	if err := c.awsClient.DeallocPrefixAddresses(ctx, eniID, deletablePrefixes); err != nil {
 		log.Warnf("Failed to free Prefixes %v from ENI %s: %s", deletablePrefixes, eniID, err)
