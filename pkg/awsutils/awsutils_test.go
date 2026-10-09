@@ -677,6 +677,64 @@ func TestReconcileIPv4AddressesWithEC2(t *testing.T) {
 	}
 }
 
+// Prefix-delegation analogue: EC2 is source of truth for /28 prefixes, an IMDS-only prefix EC2 does not
+// confirm is dropped, and an empty EC2 prefix list is a no-op.
+func TestReconcileIPv4PrefixesWithEC2(t *testing.T) {
+	prefix := func(cidr string) ec2types.Ipv4PrefixSpecification {
+		return ec2types.Ipv4PrefixSpecification{Ipv4Prefix: aws.String(cidr)}
+	}
+	cidrs := func(ps []ec2types.Ipv4PrefixSpecification) []string {
+		out := make([]string, 0, len(ps))
+		for _, p := range ps {
+			out = append(out, aws.ToString(p.Ipv4Prefix))
+		}
+		return out
+	}
+
+	prefixA := prefix("10.0.0.0/28")
+	prefixB := prefix("10.0.0.16/28")
+	stale := prefix("10.0.0.240/28")
+
+	testCases := []struct {
+		name     string
+		imds     []ec2types.Ipv4PrefixSpecification
+		ec2      []ec2types.Ipv4PrefixSpecification
+		expected []string
+	}{
+		{
+			name:     "empty EC2 response is a no-op (never wipe prefixes)",
+			imds:     []ec2types.Ipv4PrefixSpecification{prefixA, prefixB},
+			ec2:      nil,
+			expected: []string{"10.0.0.0/28", "10.0.0.16/28"},
+		},
+		{
+			name:     "IMDS and EC2 fully agree, nothing dropped",
+			imds:     []ec2types.Ipv4PrefixSpecification{prefixA, prefixB},
+			ec2:      []ec2types.Ipv4PrefixSpecification{prefixB, prefixA},
+			expected: []string{"10.0.0.0/28", "10.0.0.16/28"},
+		},
+		{
+			name:     "stale IMDS-only prefix dropped, confirmed prefix kept",
+			imds:     []ec2types.Ipv4PrefixSpecification{prefixA, stale},
+			ec2:      []ec2types.Ipv4PrefixSpecification{prefixA},
+			expected: []string{"10.0.0.0/28"},
+		},
+		{
+			name:     "all IMDS prefixes stale, EC2 confirms none",
+			imds:     []ec2types.Ipv4PrefixSpecification{stale},
+			ec2:      []ec2types.Ipv4PrefixSpecification{prefixA},
+			expected: []string{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := reconcileIPv4PrefixesWithEC2(primaryeniID, tc.imds, tc.ec2)
+			assert.ElementsMatch(t, tc.expected, cidrs(got), tc.name)
+		})
+	}
+}
+
 // Verifies that when two ENIs are attached and only one of them has a stale IMDS-only address, DescribeAllENIs trims only the stale address on the affected ENI and leaves the other ENI's addresses untouched.
 func TestDescribeAllENIsStaleIMDSAddressDroppedMultiENI(t *testing.T) {
 	ctrl, mockEC2 := setup(t)
