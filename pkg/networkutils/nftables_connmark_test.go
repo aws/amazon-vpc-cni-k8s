@@ -467,6 +467,299 @@ func newTestJumpRule(handle uint64) *nftables.Rule {
 	}
 }
 
+func newTestCIDRRule(handle uint64, cidrString string) *nftables.Rule {
+	_, cidr, _ := net.ParseCIDR(cidrString)
+	return &nftables.Rule{
+		Handle: handle,
+		Exprs: []expr.Any{
+			&expr.Counter{},
+			&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 16, Len: 4},
+			&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 4, Mask: cidr.Mask, Xor: []byte{0, 0, 0, 0}},
+			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: cidr.IP.To4()},
+			&expr.Verdict{Kind: expr.VerdictReturn},
+		},
+	}
+}
+
+func newTestSetMarkRule(handle uint64, mark uint32) *nftables.Rule {
+	return &nftables.Rule{
+		Handle: handle,
+		Exprs: []expr.Any{
+			&expr.Counter{},
+			&expr.Ct{Key: expr.CtKeyMARK, Register: 1},
+			&expr.Bitwise{
+				SourceRegister: 1, DestRegister: 1, Len: 4,
+				Mask: binaryutil.NativeEndian.PutUint32(^mark),
+				Xor:  binaryutil.NativeEndian.PutUint32(mark),
+			},
+			&expr.Ct{Key: expr.CtKeyMARK, Register: 1, SourceRegister: true},
+		},
+	}
+}
+
+func TestEnsureConnmarkChainRulesRepairsOnlyRequiredRules(t *testing.T) {
+	tests := []struct {
+		name       string
+		rules      []*nftables.Rule
+		desired    []string
+		deleted    []uint64
+		insertCIDR bool
+		appendMark bool
+	}{
+		{
+			name: "valid rules remain unchanged",
+			rules: []*nftables.Rule{
+				newTestCIDRRule(1, "10.0.0.0/8"), newTestSetMarkRule(2, 0x80),
+			},
+			desired: []string{"10.0.0.0/8"},
+		},
+		{
+			name: "all desired and stale duplicates removed",
+			rules: []*nftables.Rule{
+				newTestCIDRRule(1, "10.0.0.0/8"), newTestCIDRRule(2, "10.0.0.0/8"),
+				newTestCIDRRule(3, "172.16.0.0/12"), newTestCIDRRule(4, "172.16.0.0/12"),
+				newTestSetMarkRule(5, 0x80), newTestSetMarkRule(6, 0x80),
+				{Handle: 7, Exprs: []expr.Any{&expr.Counter{}}},
+			},
+			desired: []string{"10.0.0.0/8"}, deleted: []uint64{2, 3, 4, 5, 7},
+		},
+		{
+			name: "trailing stale rules do not move valid mark",
+			rules: []*nftables.Rule{
+				newTestCIDRRule(1, "10.0.0.0/8"), newTestSetMarkRule(2, 0x80),
+				newTestCIDRRule(3, "10.0.0.0/8"), newTestCIDRRule(4, "172.16.0.0/12"),
+			},
+			desired: []string{"10.0.0.0/8"}, deleted: []uint64{3, 4},
+		},
+		{
+			name: "mark precedes CIDR",
+			rules: []*nftables.Rule{
+				newTestSetMarkRule(1, 0x80), newTestCIDRRule(2, "10.0.0.0/8"),
+			},
+			desired: []string{"10.0.0.0/8"}, deleted: []uint64{1}, appendMark: true,
+		},
+		{
+			name: "changed CIDR set preserves final mark",
+			rules: []*nftables.Rule{
+				newTestCIDRRule(1, "10.0.0.0/8"), newTestCIDRRule(2, "172.16.0.0/12"), newTestSetMarkRule(3, 0x80),
+			},
+			desired: []string{"10.0.0.0/8", "192.168.0.0/16"}, deleted: []uint64{2}, insertCIDR: true,
+		},
+		{
+			name: "missing mark",
+			rules: []*nftables.Rule{
+				newTestCIDRRule(1, "10.0.0.0/8"),
+			},
+			desired: []string{"10.0.0.0/8"}, appendMark: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := mock_nft.NewMockClient(gomock.NewController(t))
+			c := &nftConnmark{nft: client, mark: 0x80}
+			table := &nftables.Table{Family: nftables.TableFamilyIPv4, Name: nftTableName}
+			snat := &nftables.Chain{Name: nftChainName, Table: table}
+			client.EXPECT().GetRules(table, snat).Return(tt.rules, nil)
+			var deleted []uint64
+			client.EXPECT().DelRule(gomock.Any()).DoAndReturn(func(rule *nftables.Rule) error {
+				deleted = append(deleted, rule.Handle)
+				return nil
+			}).Times(len(tt.deleted))
+			if tt.insertCIDR {
+				client.EXPECT().InsertRule(gomock.Any()).DoAndReturn(func(rule *nftables.Rule) *nftables.Rule {
+					require.Len(t, rule.Exprs, 5)
+					assert.Equal(t, []byte{192, 168, 0, 0}, rule.Exprs[3].(*expr.Cmp).Data)
+					assert.Equal(t, []byte{255, 255, 0, 0}, rule.Exprs[2].(*expr.Bitwise).Mask)
+					return rule
+				})
+			}
+			if tt.appendMark {
+				if tt.name == "mark precedes CIDR" {
+					tt.rules[0].Exprs[0].(*expr.Counter).Packets = 17
+				}
+				client.EXPECT().AddRule(gomock.Any()).DoAndReturn(func(rule *nftables.Rule) *nftables.Rule {
+					require.Len(t, rule.Exprs, 4)
+					require.Zero(t, rule.Handle)
+					require.Zero(t, rule.Position)
+					assert.Equal(t, binaryutil.NativeEndian.PutUint32(0xffffff7f), rule.Exprs[2].(*expr.Bitwise).Mask)
+					assert.Equal(t, binaryutil.NativeEndian.PutUint32(0x80), rule.Exprs[2].(*expr.Bitwise).Xor)
+					if tt.name == "mark precedes CIDR" {
+						assert.Equal(t, uint64(17), rule.Exprs[0].(*expr.Counter).Packets)
+					}
+					return rule
+				})
+			}
+			desired := make(map[string]*net.IPNet)
+			for _, cidrString := range tt.desired {
+				_, cidr, err := net.ParseCIDR(cidrString)
+				require.NoError(t, err)
+				desired[cidr.String()] = cidr
+			}
+			require.NoError(t, c.ensureConnmarkChainRules(table, snat, desired))
+			assert.ElementsMatch(t, tt.deleted, deleted)
+		})
+	}
+}
+
+func TestNftConnmarkSetupRejectsInvalidCIDRsBeforeChanges(t *testing.T) {
+	for _, cidrs := range [][]string{
+		nil, {""}, {"invalid"}, {"10.0.0.0/8", "invalid"},
+		{"::/0"}, {"::ffff:10.0.0.1/120"},
+	} {
+		t.Run(fmt.Sprint(cidrs), func(t *testing.T) {
+			client := mock_nft.NewMockClient(gomock.NewController(t))
+			c := &nftConnmark{nft: client, mark: 0x80}
+			require.Error(t, c.Setup(cidrs))
+			require.False(t, c.cleanupOnce.Load())
+		})
+	}
+}
+
+func TestEnsureBaseChainRulesPreservesValidPairOrder(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		mark  uint32
+		pairs []restoreRuleKey
+	}{
+		{name: "set before clear", mark: 0x80, pairs: []restoreRuleKey{{0x80, true}, {0x80, false}}},
+		{name: "mixed multi-bit pairs", mark: 0x80000001, pairs: []restoreRuleKey{{1, true}, {0x80000000, false}, {1, false}, {0x80000000, true}}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			client := mock_nft.NewMockClient(gomock.NewController(t))
+			c := &nftConnmark{nft: client, vethPrefix: "eni", mark: tt.mark}
+			table := &nftables.Table{Family: nftables.TableFamilyIPv4, Name: nftTableName}
+			base, snat := &nftables.Chain{Name: nftBaseChainName, Table: table}, &nftables.Chain{Name: nftChainName, Table: table}
+			rules := []*nftables.Rule{newTestFibRule(400), newTestJumpRule(100)}
+			for index, pair := range tt.pairs {
+				rule := newTestRestoreRule(pair.bit, pair.set)
+				rule.Handle = uint64(300 - index)
+				rules = append(rules, rule)
+			}
+			client.EXPECT().GetRules(table, base).Return(rules, nil).Times(2)
+			for range 2 {
+				require.NoError(t, c.ensureBaseChainRules(table, base, snat))
+				for _, rule := range rules {
+					for _, e := range rule.Exprs {
+						if counter, ok := e.(*expr.Counter); ok {
+							counter.Packets += 10
+							counter.Bytes += 200
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestConnmarkMatchersRequireExactRules(t *testing.T) {
+	tests := []struct {
+		name    string
+		rule    func() *nftables.Rule
+		matches func(*nftables.Rule) bool
+		changes map[string]func(*nftables.Rule)
+	}{
+		{
+			name: "fib", rule: func() *nftables.Rule { return newTestFibRule(1) }, matches: isFibLocalReturnRule,
+			changes: map[string]func(*nftables.Rule){
+				"result register": func(r *nftables.Rule) { r.Exprs[0].(*expr.Fib).Register = 2 },
+				"extra input":     func(r *nftables.Rule) { r.Exprs[0].(*expr.Fib).FlagMARK = true },
+				"extra result":    func(r *nftables.Rule) { r.Exprs[0].(*expr.Fib).ResultOIF = true },
+				"comparison":      func(r *nftables.Rule) { r.Exprs[1].(*expr.Cmp).Op = expr.CmpOpNeq },
+			},
+		},
+		{
+			name: "jump", rule: func() *nftables.Rule { return newTestJumpRule(1) },
+			matches: func(r *nftables.Rule) bool { return isJumpRule(r, nftChainName, "eni") },
+			changes: map[string]func(*nftables.Rule){
+				"meta store":      func(r *nftables.Rule) { r.Exprs[0].(*expr.Meta).SourceRegister = true },
+				"meta register":   func(r *nftables.Rule) { r.Exprs[0].(*expr.Meta).Register = 2 },
+				"interface key":   func(r *nftables.Rule) { r.Exprs[0].(*expr.Meta).Key = expr.MetaKeyOIFNAME },
+				"prefix wildcard": func(r *nftables.Rule) { r.Exprs[1].(*expr.Cmp).Data = []byte("eni*") },
+				"prefix zero":     func(r *nftables.Rule) { r.Exprs[1].(*expr.Cmp).Data = []byte("eni\x00") },
+				"target chain":    func(r *nftables.Rule) { r.Exprs[3].(*expr.Verdict).Chain = "other" },
+			},
+		},
+		{
+			name: "CIDR", rule: func() *nftables.Rule { return newTestCIDRRule(1, "10.0.0.0/8") },
+			matches: func(r *nftables.Rule) bool { return extractCIDRFromRule(r) == "10.0.0.0/8" },
+			changes: map[string]func(*nftables.Rule){
+				"payload store":    func(r *nftables.Rule) { r.Exprs[1].(*expr.Payload).OperationType = expr.PayloadWrite },
+				"payload offset":   func(r *nftables.Rule) { r.Exprs[1].(*expr.Payload).Offset = 12 },
+				"payload width":    func(r *nftables.Rule) { r.Exprs[1].(*expr.Payload).Len = 16 },
+				"mask register":    func(r *nftables.Rule) { r.Exprs[2].(*expr.Bitwise).SourceRegister = 2 },
+				"mask width":       func(r *nftables.Rule) { r.Exprs[2].(*expr.Bitwise).Len = 16 },
+				"mask XOR":         func(r *nftables.Rule) { r.Exprs[2].(*expr.Bitwise).Xor = []byte{0, 0, 0, 1} },
+				"noncontiguous":    func(r *nftables.Rule) { r.Exprs[2].(*expr.Bitwise).Mask = []byte{255, 0, 255, 0} },
+				"host bits":        func(r *nftables.Rule) { r.Exprs[3].(*expr.Cmp).Data = []byte{10, 0, 0, 1} },
+				"compare register": func(r *nftables.Rule) { r.Exprs[3].(*expr.Cmp).Register = 2 },
+			},
+		},
+		{
+			name: "set mark", rule: func() *nftables.Rule { return newTestSetMarkRule(1, 0x80) },
+			matches: func(r *nftables.Rule) bool { return isSetMarkRule(r, 0x80) },
+			changes: map[string]func(*nftables.Rule){
+				"CT load direction":  func(r *nftables.Rule) { r.Exprs[1].(*expr.Ct).SourceRegister = true },
+				"CT store direction": func(r *nftables.Rule) { r.Exprs[3].(*expr.Ct).SourceRegister = false },
+				"CT key":             func(r *nftables.Rule) { r.Exprs[1].(*expr.Ct).Key = expr.CtKeySTATUS },
+				"CT register":        func(r *nftables.Rule) { r.Exprs[3].(*expr.Ct).Register = 2 },
+				"bitwise register":   func(r *nftables.Rule) { r.Exprs[2].(*expr.Bitwise).DestRegister = 2 },
+				"bitwise width":      func(r *nftables.Rule) { r.Exprs[2].(*expr.Bitwise).Len = 16 },
+				"bitwise mask":       func(r *nftables.Rule) { r.Exprs[2].(*expr.Bitwise).Mask = binaryutil.NativeEndian.PutUint32(0x80) },
+				"bitwise XOR":        func(r *nftables.Rule) { r.Exprs[2].(*expr.Bitwise).Xor = binaryutil.NativeEndian.PutUint32(0x40) },
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			valid := tt.rule()
+			for _, e := range valid.Exprs {
+				if counter, ok := e.(*expr.Counter); ok {
+					counter.Packets, counter.Bytes = 10, 500
+				}
+			}
+			require.True(t, tt.matches(valid), "counter values must not affect recognition")
+			t.Run("nil rule", func(t *testing.T) { assert.False(t, tt.matches(nil)) })
+			t.Run("extra guard", func(t *testing.T) {
+				rule := tt.rule()
+				rule.Exprs = append([]expr.Any{
+					&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
+					&expr.Cmp{Register: 1, Op: expr.CmpOpEq, Data: []byte{6}},
+				}, rule.Exprs...)
+				assert.False(t, tt.matches(rule))
+			})
+			for position := range len(valid.Exprs) {
+				t.Run(fmt.Sprintf("missing expression %d", position), func(t *testing.T) {
+					rule := tt.rule()
+					rule.Exprs = append(rule.Exprs[:position], rule.Exprs[position+1:]...)
+					assert.False(t, tt.matches(rule))
+				})
+				t.Run(fmt.Sprintf("wrong expression %d", position), func(t *testing.T) {
+					rule := tt.rule()
+					rule.Exprs[position] = &expr.Immediate{Register: 1, Data: []byte{0, 0, 0, 0}}
+					assert.False(t, tt.matches(rule))
+				})
+				if position+1 < len(valid.Exprs) {
+					t.Run(fmt.Sprintf("reordered expression %d", position), func(t *testing.T) {
+						rule := tt.rule()
+						rule.Exprs[position], rule.Exprs[position+1] = rule.Exprs[position+1], rule.Exprs[position]
+						assert.False(t, tt.matches(rule))
+					})
+				}
+			}
+			for name, change := range tt.changes {
+				t.Run(name, func(t *testing.T) {
+					rule := tt.rule()
+					change(rule)
+					assert.False(t, tt.matches(rule))
+				})
+			}
+		})
+	}
+	for _, cidr := range []string{"0.0.0.0/0", "10.0.0.1/32"} {
+		assert.Equal(t, cidr, extractCIDRFromRule(newTestCIDRRule(1, cidr)))
+	}
+}
+
 func TestAddRestoreRulesCopiesOwnedBits(t *testing.T) {
 	tests := []struct {
 		name       string
