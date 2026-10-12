@@ -1989,11 +1989,12 @@ func reconcileIPv4AddressesWithEC2(eniID string, imdsIPv4s, ec2IPv4s []ec2types.
 	return reconciled
 }
 
-// Returns the subset of IMDS-derived IPv4 prefixes that EC2 DescribeNetworkInterfaces also reports for the ENI.
+// Returns the subset of IMDS-derived IPv4 prefixes that EC2 DescribeNetworkInterfaces also reports for the ENI
+// (EC2 is treated as the source of truth). Unlike secondary addresses, an ENI has no mandatory primary prefix,
+// so a successful DescribeNetworkInterfaces response with zero IPv4 prefixes is a legitimate, authoritative
+// state (the last prefix was unassigned): in that case every IMDS prefix is stale and must be dropped, rather
+// than retained the way reconcileIPv4AddressesWithEC2 preserves addresses on an empty EC2 response.
 func reconcileIPv4PrefixesWithEC2(eniID string, imdsPrefixes, ec2Prefixes []ec2types.Ipv4PrefixSpecification) []ec2types.Ipv4PrefixSpecification {
-	if len(ec2Prefixes) == 0 {
-		return imdsPrefixes
-	}
 	ec2PrefixSet := sets.NewString()
 	for _, ec2Prefix := range ec2Prefixes {
 		ec2PrefixSet.Insert(aws.ToString(ec2Prefix.Ipv4Prefix))

@@ -702,10 +702,10 @@ func TestReconcileIPv4PrefixesWithEC2(t *testing.T) {
 		expected []string
 	}{
 		{
-			name:     "empty EC2 response is a no-op (never wipe prefixes)",
+			name:     "empty EC2 prefix list is authoritative: all IMDS prefixes dropped",
 			imds:     []ec2types.Ipv4PrefixSpecification{prefixA, prefixB},
 			ec2:      nil,
-			expected: []string{"10.0.0.0/28", "10.0.0.16/28"},
+			expected: []string{},
 		},
 		{
 			name:     "IMDS and EC2 fully agree, nothing dropped",
