@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -39,6 +40,10 @@ const (
 
 	// envIPCooldownPeriod (default 30 seconds) specifies the time after pod deletion before an IP can be assigned to a new pod
 	envIPCooldownPeriod = "IP_COOLDOWN_PERIOD"
+
+	// envEnablePrefixPacking (default false) makes pod IP allocation in prefix delegation mode prefer the
+	// fullest prefix on an ENI instead of whichever prefix Go map iteration happens to visit first
+	envEnablePrefixPacking = "ENABLE_PREFIX_PACKING"
 
 	// DuplicatedENIError is an error when caller tries to add an duplicate ENI to data store
 	DuplicatedENIError = "data store: duplicate ENI"
@@ -286,17 +291,18 @@ type PodIPInfo struct {
 
 // DataStore contains node level ENI/IP
 type DataStore struct {
-	total            int
-	assigned         int
-	allocatedPrefix  int
-	eniPool          ENIPool
-	lock             sync.Mutex
-	log              logger.Logger
-	backingStore     Checkpointer
-	netLink          netlinkwrapper.NetLink
-	isPDEnabled      bool
-	ipCooldownPeriod time.Duration
-	networkCard      int
+	total                  int
+	assigned               int
+	allocatedPrefix        int
+	eniPool                ENIPool
+	lock                   sync.Mutex
+	log                    logger.Logger
+	backingStore           Checkpointer
+	netLink                netlinkwrapper.NetLink
+	isPDEnabled            bool
+	isPrefixPackingEnabled bool
+	ipCooldownPeriod       time.Duration
+	networkCard            int
 }
 
 // ENIInfos contains ENI IP information
@@ -312,13 +318,16 @@ type ENIInfos struct {
 // NewDataStore returns DataStore structure
 func NewDataStore(log logger.Logger, backingStore Checkpointer, isPDEnabled bool, networkCard int) *DataStore {
 	return &DataStore{
-		eniPool:          make(ENIPool),
-		log:              log,
-		backingStore:     backingStore,
-		netLink:          netlinkwrapper.NewNetLink(),
-		isPDEnabled:      isPDEnabled,
-		ipCooldownPeriod: getCooldownPeriod(),
-		networkCard:      networkCard,
+		eniPool:      make(ENIPool),
+		log:          log,
+		backingStore: backingStore,
+		netLink:      netlinkwrapper.NewNetLink(),
+		isPDEnabled:  isPDEnabled,
+		// Packing only has an effect on prefixes. In secondary IP mode every CIDR is a single /32,
+		// so there is nothing to pack and the ordering work would be pure overhead.
+		isPrefixPackingEnabled: isPDEnabled && utils.GetBoolAsStringEnvVar(envEnablePrefixPacking, false),
+		ipCooldownPeriod:       getCooldownPeriod(),
+		networkCard:            networkCard,
 	}
 }
 
@@ -777,6 +786,98 @@ func (ds *DataStore) AssignPodIPv6Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 	return "", -1, 0, ErrNoAvailableIPInDataStore
 }
 
+// enisForAssignment returns the ENI pool in the order pod IP allocation should consider it.
+//
+// With prefix packing enabled the ENIs holding the most pods come first, so an ENI is filled
+// before a less-used one is drawn from. An ENI can only be detached once it holds no pods at
+// all, so spreading pods thinly across ENIs keeps all of them pinned. Device number breaks
+// ties, which also makes the walk reproducible across ipamd restarts.
+//
+// With packing disabled the ENIs come back in Go map order, i.e. randomized, which is the
+// behaviour every release so far has had.
+func (ds *DataStore) enisForAssignment() []*ENI {
+	enis := make([]*ENI, 0, len(ds.eniPool))
+	for _, eni := range ds.eniPool {
+		enis = append(enis, eni)
+	}
+	if !ds.isPrefixPackingEnabled || len(enis) < 2 {
+		return enis
+	}
+
+	assigned := make([]int, len(enis))
+	for i, eni := range enis {
+		assigned[i] = eni.AssignedIPv4Addresses()
+	}
+	indices := sortedByOccupancy(assigned, func(i, j int) bool {
+		return enis[i].DeviceNumber < enis[j].DeviceNumber
+	})
+
+	ordered := make([]*ENI, len(enis))
+	for i, idx := range indices {
+		ordered[i] = enis[idx]
+	}
+	return ordered
+}
+
+// cidrsForAssignment returns an ENI's IPv4 CIDRs in the order pod IP allocation should
+// consider them.
+//
+// With prefix packing enabled the fullest CIDR comes first, so a new pod fills a gap in a
+// prefix that is already in use before it opens one that is still empty. A /28 is only
+// returned to EC2 once all 16 of its addresses are unassigned, so a single pod landing on an
+// otherwise empty prefix pins all 16. Ordering fullest-first needs no separate "prefer a
+// used prefix" rule: AssignedIPAddressesInCidr counts only assigned addresses, so empty
+// prefixes sort last on their own. The CIDR string breaks ties so allocation is reproducible.
+//
+// This also contains the cooldown spillover: when every address in a prefix is still within
+// IP_COOLDOWN_PERIOD, getFreeIPv4AddrfromCidr errors and the caller falls through to the next
+// candidate, which under this ordering is the next-fullest prefix rather than an arbitrary one.
+//
+// With packing disabled the CIDRs come back in Go map order, i.e. randomized, which is the
+// behaviour every release so far has had.
+func (ds *DataStore) cidrsForAssignment(eni *ENI) []*CidrInfo {
+	cidrs := make([]*CidrInfo, 0, len(eni.AvailableIPv4Cidrs))
+	for _, cidr := range eni.AvailableIPv4Cidrs {
+		cidrs = append(cidrs, cidr)
+	}
+	if !ds.isPrefixPackingEnabled || len(cidrs) < 2 {
+		return cidrs
+	}
+
+	assigned := make([]int, len(cidrs))
+	for i, cidr := range cidrs {
+		assigned[i] = cidr.AssignedIPAddressesInCidr()
+	}
+	indices := sortedByOccupancy(assigned, func(i, j int) bool {
+		return cidrs[i].Cidr.String() < cidrs[j].Cidr.String()
+	})
+
+	ordered := make([]*CidrInfo, len(cidrs))
+	for i, idx := range indices {
+		ordered[i] = cidrs[idx]
+	}
+	return ordered
+}
+
+// sortedByOccupancy returns the indices 0..len(assigned)-1 ordered by descending assigned
+// count, falling back to tieBreak for equal counts. The counts are passed in rather than
+// recomputed per comparison because counting assigned addresses is itself a loop over the
+// CIDR, and this runs on the pod add path.
+func sortedByOccupancy(assigned []int, tieBreak func(i, j int) bool) []int {
+	indices := make([]int, len(assigned))
+	for i := range indices {
+		indices[i] = i
+	}
+	sort.Slice(indices, func(a, b int) bool {
+		i, j := indices[a], indices[b]
+		if assigned[i] != assigned[j] {
+			return assigned[i] > assigned[j]
+		}
+		return tieBreak(i, j)
+	})
+	return indices
+}
+
 // AssignPodIPv4Address assigns an IPv4 address to pod
 // It returns the assigned IPv4 address, device number, route table ID, and error
 func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey, ipamMetadata IPAMMetadata) (ipv4address string, deviceNumber int, routeTableId int, err error) {
@@ -790,14 +891,14 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 		return addr.Address, eni.DeviceNumber, eni.RouteTableID, nil
 	}
 
-	for _, eni := range ds.eniPool {
+	for _, eni := range ds.enisForAssignment() {
 		// Skip ENIs that are excluded from pod IP allocation
 		if eni.IsExcludedForPodIPs {
 			ds.log.Debugf("Skipping ENI %s as it is excluded from pod IP allocation", eni.ID)
 			continue
 		}
 
-		for _, availableCidr := range eni.AvailableIPv4Cidrs {
+		for _, availableCidr := range ds.cidrsForAssignment(eni) {
 			var addr *AddressInfo
 			var strPrivateIPv4 string
 			var err error

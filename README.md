@@ -772,6 +772,32 @@ a. The network card does not have any devices attached to it
 b. The network card has an `efa` OR an `ena` device attached to it
 c. The network card has an `efa-only` AND an `ena` device attached to it
 
+#### `ENABLE_PREFIX_PACKING` (v1.24.0+)
+
+Type: Boolean as a String
+
+Default: `false`
+
+Applies only when `ENABLE_PREFIX_DELEGATION` is `true`; it is ignored in secondary IP mode.
+
+A (/28) prefix can only be returned to the VPC once all 16 of its addresses are unassigned. By
+default, when several prefixes on a node have free addresses, the prefix a new pod draws from is
+whichever one Go map iteration reaches first, which is randomized. Pod churn therefore tends to
+spread a shrinking pod population across every attached prefix, until none of them reaches zero
+assigned addresses and none can be released. A node can hold many prefixes while using only a
+fraction of their addresses, which matters in IP-constrained VPCs.
+
+Setting `ENABLE_PREFIX_PACKING` to `true` makes pod IP allocation prefer the prefix that already
+holds the most pods, breaking ties on the prefix itself so that allocation is reproducible. Pods
+fill the gaps in prefixes that are already in use instead of opening prefixes that are still
+empty, leaving empty prefixes for the existing release path to reclaim. The same ordering is
+applied to ENIs, so a less-used ENI is only drawn from once the fuller ones are exhausted.
+
+This changes only which already-attached prefix a new pod draws from. No pod is moved, evicted,
+or renumbered, no running pod's IP changes, and no additional EC2 API calls are made. It prevents
+further fragmentation but does not repair a node that is already fragmented; existing partially
+used prefixes are only recovered by recycling the node.
+
 ## Annotations
 
 #### Multi Homed Pods (v1.20.0+)

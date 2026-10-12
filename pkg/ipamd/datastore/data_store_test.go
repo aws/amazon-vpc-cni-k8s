@@ -2345,3 +2345,203 @@ func TestDataStore_FindFreeableCidrs(t *testing.T) {
 	cidrs := ds.FindFreeableCidrs(eniID)
 	assert.Len(t, cidrs, 1)
 }
+
+// newAssignedPrefix returns a /28 whose first assignedCount addresses are held by pods, which is
+// the shape the assignment path leaves behind.
+func newAssignedPrefix(t *testing.T, cidrStr string, assignedCount int) *CidrInfo {
+	t.Helper()
+
+	_, ipnet, err := net.ParseCIDR(cidrStr)
+	assert.NoError(t, err)
+
+	cidr := &CidrInfo{
+		Cidr:          *ipnet,
+		IPAddresses:   make(map[string]*AddressInfo),
+		IsPrefix:      true,
+		AddressFamily: "4",
+	}
+	ip := ipnet.IP.Mask(ipnet.Mask)
+	for i := 0; i < assignedCount; i++ {
+		addr := ip.String()
+		cidr.IPAddresses[addr] = &AddressInfo{
+			Address: addr,
+			IPAMKey: IPAMKey{NetworkName: "net0", ContainerID: fmt.Sprintf("%s-sandbox-%d", cidrStr, i), IfName: "eth0"},
+		}
+		getNextIPAddr(ip)
+	}
+	return cidr
+}
+
+// prefixOccupancy maps each of an ENI's IPv4 CIDRs to the number of addresses it has assigned.
+func prefixOccupancy(ds *DataStore, eniID string) map[string]int {
+	occupancy := make(map[string]int)
+	for cidrStr, cidr := range ds.eniPool[eniID].AvailableIPv4Cidrs {
+		occupancy[cidrStr] = cidr.AssignedIPAddressesInCidr()
+	}
+	return occupancy
+}
+
+func TestPrefixPackingFlag(t *testing.T) {
+	t.Run("off unless asked for", func(t *testing.T) {
+		ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
+		assert.False(t, ds.isPrefixPackingEnabled)
+	})
+
+	t.Run("on in prefix delegation mode", func(t *testing.T) {
+		t.Setenv(envEnablePrefixPacking, "true")
+		ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
+		assert.True(t, ds.isPrefixPackingEnabled)
+	})
+
+	t.Run("ignored in secondary IP mode", func(t *testing.T) {
+		t.Setenv(envEnablePrefixPacking, "true")
+		ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
+		assert.False(t, ds.isPrefixPackingEnabled)
+	})
+}
+
+func TestCidrsForAssignment(t *testing.T) {
+	prefixes := []struct {
+		cidr     string
+		assigned int
+	}{
+		{"10.0.3.0/28", 0},
+		{"10.0.4.0/28", 9},
+		{"10.0.1.0/28", 15},
+		{"10.0.2.0/28", 9},
+	}
+	newENI := func(t *testing.T) *ENI {
+		eni := &ENI{ID: "eni-1", AvailableIPv4Cidrs: make(map[string]*CidrInfo)}
+		for _, prefix := range prefixes {
+			eni.AvailableIPv4Cidrs[prefix.cidr] = newAssignedPrefix(t, prefix.cidr, prefix.assigned)
+		}
+		return eni
+	}
+	cidrStrings := func(cidrs []*CidrInfo) []string {
+		var strs []string
+		for _, cidr := range cidrs {
+			strs = append(strs, cidr.Cidr.String())
+		}
+		return strs
+	}
+
+	t.Run("orders fullest first when packing", func(t *testing.T) {
+		t.Setenv(envEnablePrefixPacking, "true")
+		ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
+
+		// Fullest first; the two nine-pod prefixes tie and break on the CIDR string; the empty
+		// prefix sorts last, since it is the only one that can still be returned to EC2.
+		assert.Equal(t,
+			[]string{"10.0.1.0/28", "10.0.2.0/28", "10.0.4.0/28", "10.0.3.0/28"},
+			cidrStrings(ds.cidrsForAssignment(newENI(t))))
+	})
+
+	t.Run("returns every CIDR without packing", func(t *testing.T) {
+		ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
+
+		// Order is Go map order, so only the set is promised.
+		assert.ElementsMatch(t,
+			[]string{"10.0.1.0/28", "10.0.2.0/28", "10.0.3.0/28", "10.0.4.0/28"},
+			cidrStrings(ds.cidrsForAssignment(newENI(t))))
+	})
+}
+
+func TestEnisForAssignmentOrdersFullestFirst(t *testing.T) {
+	t.Setenv(envEnablePrefixPacking, "true")
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
+
+	// eni-2 and eni-3 hold the same number of pods, so the device number decides between them.
+	enis := []struct {
+		id       string
+		device   int
+		assigned int
+	}{
+		{"eni-1", 1, 4},
+		{"eni-2", 3, 9},
+		{"eni-3", 2, 9},
+		{"eni-4", 4, 0},
+	}
+	for _, eni := range enis {
+		err := ds.AddENI(eni.id, eni.device, false, false, false, networkutils.CalculateRouteTableId(eni.device, 0), "")
+		assert.NoError(t, err)
+
+		cidr := fmt.Sprintf("10.0.%d.0/28", eni.device)
+		ds.eniPool[eni.id].AvailableIPv4Cidrs[cidr] = newAssignedPrefix(t, cidr, eni.assigned)
+	}
+
+	var got []string
+	for _, eni := range ds.enisForAssignment() {
+		got = append(got, eni.ID)
+	}
+	assert.Equal(t, []string{"eni-3", "eni-2", "eni-1", "eni-4"}, got)
+}
+
+func TestAssignPodIPv4AddressPacksPrefixes(t *testing.T) {
+	t.Setenv(envEnablePrefixPacking, "true")
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
+
+	err := ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0), "")
+	assert.NoError(t, err)
+	for _, prefix := range []string{"10.0.1.0/28", "10.0.2.0/28", "10.0.3.0/28"} {
+		_, ipnet, err := net.ParseCIDR(prefix)
+		assert.NoError(t, err)
+		assert.NoError(t, ds.AddIPv4CidrToStore("eni-1", *ipnet, true))
+	}
+
+	// 20 pods fit in two of the three /28s. All three start empty, so the tiebreak decides the
+	// order and 10.0.1.0/28 is filled before 10.0.2.0/28 is opened at all.
+	for i := 0; i < 20; i++ {
+		_, _, _, err := ds.AssignPodIPv4Address(IPAMKey{"net0", fmt.Sprintf("sandbox-%d", i), "eth0"}, IPAMMetadata{})
+		assert.NoError(t, err)
+	}
+
+	assert.Equal(t, map[string]int{
+		"10.0.1.0/28": 16,
+		"10.0.2.0/28": 4,
+		"10.0.3.0/28": 0,
+	}, prefixOccupancy(ds, "eni-1"))
+
+	// The prefix nothing was drawn from stays reclaimable by the existing release path.
+	assert.Equal(t, 1, ds.GetFreePrefixes())
+	freeable := ds.FreeablePrefixes("eni-1")
+	assert.Len(t, freeable, 1)
+	assert.Equal(t, "10.0.3.0/28", freeable[0].String())
+}
+
+func TestAssignPodIPv4AddressRefillsPrefixAfterChurn(t *testing.T) {
+	// No cooldown, so a freed address is immediately reusable and the churn below does not
+	// have to wait IP_COOLDOWN_PERIOD out.
+	t.Setenv(envIPCooldownPeriod, "0")
+	t.Setenv(envEnablePrefixPacking, "true")
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
+
+	err := ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0), "")
+	assert.NoError(t, err)
+	for _, prefix := range []string{"10.0.1.0/28", "10.0.2.0/28"} {
+		_, ipnet, err := net.ParseCIDR(prefix)
+		assert.NoError(t, err)
+		assert.NoError(t, ds.AddIPv4CidrToStore("eni-1", *ipnet, true))
+	}
+
+	for i := 0; i < 16; i++ {
+		_, _, _, err := ds.AssignPodIPv4Address(IPAMKey{"net0", fmt.Sprintf("sandbox-%d", i), "eth0"}, IPAMMetadata{})
+		assert.NoError(t, err)
+	}
+	assert.Equal(t, map[string]int{"10.0.1.0/28": 16, "10.0.2.0/28": 0}, prefixOccupancy(ds, "eni-1"))
+
+	// Churn: three pods go away and three replacements arrive. The replacements must refill the
+	// holes they left rather than open the clean prefix, which a single pod would pin for good.
+	for i := 0; i < 3; i++ {
+		_, _, _, _, _, err := ds.UnassignPodIPAddress(IPAMKey{"net0", fmt.Sprintf("sandbox-%d", i), "eth0"})
+		assert.NoError(t, err)
+	}
+	assert.Equal(t, map[string]int{"10.0.1.0/28": 13, "10.0.2.0/28": 0}, prefixOccupancy(ds, "eni-1"))
+
+	for i := 0; i < 3; i++ {
+		_, _, _, err := ds.AssignPodIPv4Address(IPAMKey{"net0", fmt.Sprintf("replacement-%d", i), "eth0"}, IPAMMetadata{})
+		assert.NoError(t, err)
+	}
+
+	assert.Equal(t, map[string]int{"10.0.1.0/28": 16, "10.0.2.0/28": 0}, prefixOccupancy(ds, "eni-1"))
+	assert.Equal(t, 1, ds.GetFreePrefixes())
+}
