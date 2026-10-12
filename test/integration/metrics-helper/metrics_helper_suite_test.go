@@ -189,11 +189,28 @@ var _ = BeforeSuite(func() {
 		utils.AwsNodeName, map[string]string{"SOME_NON_EXISTENT_VAR": "0"})
 
 	By("installing cni-metrics-helper using helm with IRSA")
+	// Recorded before the install so the wait below only counts datapoints this
+	// helper instance published. A back-to-back run would otherwise be satisfied
+	// instantly by the previous run's datapoints while this instance has not
+	// started scraping yet.
+	installedAt := time.Now()
 	err = f.InstallationManager.InstallCNIMetricsHelper(imageRepository, imageTag, ngName, f.Options.AWSRegion, roleARN)
 	Expect(err).ToNot(HaveOccurred())
 
+	// addReqCount is published as a delta between consecutive scrapes, so the
+	// helper must already be scraping before the spec creates its pods. If its
+	// first successful scrape lands after those ADD requests, they are absorbed
+	// into that first reading and never published as deltas, so the spec's sum
+	// can never account for them. Waiting for a published datapoint proves the
+	// helper is scraping; the fixed sleep this replaces raced pod startup, IRSA
+	// credential acquisition and the first scrape.
 	By("waiting for the metrics helper to publish initial metrics")
-	time.Sleep(time.Minute * 1)
+	Eventually(func(g Gomega) {
+		_, count, err := sumAddReqCount(
+			installedAt.Truncate(metricPublishPeriod*time.Second), time.Now())
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(count).ToNot(BeZero(), "cni-metrics-helper has not published addReqCount yet")
+	}).WithTimeout(5 * time.Minute).WithPolling(20 * time.Second).Should(Succeed())
 })
 
 var _ = AfterSuite(func() {
