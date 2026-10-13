@@ -1,6 +1,6 @@
 module github.com/aws/amazon-vpc-cni-k8s
 
-go 1.26.6
+go 1.26.9
 
 require (
 	github.com/Masterminds/semver/v3 v3.5.0
