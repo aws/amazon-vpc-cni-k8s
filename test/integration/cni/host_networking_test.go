@@ -40,18 +40,6 @@ var err error
 
 var _ = Describe("test host networking", func() {
 
-	// For host networking tests, increase WARM_IP_TARGET to prevent long IPAMD warmup.
-	BeforeEach(func() {
-		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
-			"WARM_IP_TARGET": strconv.Itoa(maxIPPerInterface - 1),
-		})
-	})
-	AfterEach(func() {
-		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
-			"WARM_IP_TARGET": DEFAULT_WARM_IP_TARGET,
-		})
-	})
-
 	Context("when pods using IP from primary and secondary ENI are created", func() {
 		AfterEach(func() {
 			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
@@ -69,8 +57,9 @@ var _ = Describe("test host networking", func() {
 		It("should have correct host networking setup when running and cleaned up once terminated", func() {
 			// Launch enough pods so some pods end up using primary ENI IP and some using secondary
 			// ENI IP
+			replicas := common.AssertSpanningENIsPreconditions(f, primaryNode)
 			deployment := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
-				Replicas(maxIPPerInterface*2).
+				Replicas(replicas).
 				PodLabel(podLabelKey, podLabelVal).
 				NodeName(primaryNode.Name).
 				Build()
@@ -82,6 +71,9 @@ var _ = Describe("test host networking", func() {
 
 			By("getting the list of pods using IP from primary and secondary ENI")
 			interfaceTypeToPodList := common.GetPodsOnPrimaryAndSecondaryInterface(primaryNode, podLabelKey, podLabelVal, f)
+			if len(interfaceTypeToPodList.PodsOnPrimaryENI) == 0 || len(interfaceTypeToPodList.PodsOnSecondaryENI) == 0 {
+				common.DumpENIPlacement(f, primaryNode, interfaceTypeToPodList, replicas)
+			}
 
 			// Primary ENI and Secondary ENI IPs are handled differently when setting up
 			// the host networking rule hence this check
@@ -174,8 +166,9 @@ var _ = Describe("test host networking", func() {
 })
 
 func mtuValidationTest(usePodMTU bool, mtuVal int) {
+	replicas := common.AssertSpanningENIsPreconditions(f, primaryNode)
 	deployment := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
-		Replicas(maxIPPerInterface*2).
+		Replicas(replicas).
 		PodLabel(podLabelKey, podLabelVal).
 		NodeName(primaryNode.Name).
 		Build()
@@ -205,6 +198,9 @@ func mtuValidationTest(usePodMTU bool, mtuVal int) {
 	By("getting the list of pods using IP from primary and secondary ENI")
 	interfaceTypeToPodList :=
 		common.GetPodsOnPrimaryAndSecondaryInterface(primaryNode, podLabelKey, podLabelVal, f)
+	if len(interfaceTypeToPodList.PodsOnPrimaryENI) == 0 || len(interfaceTypeToPodList.PodsOnSecondaryENI) == 0 {
+		common.DumpENIPlacement(f, primaryNode, interfaceTypeToPodList, replicas)
+	}
 
 	By("generating the pod networking validation input to be passed to tester")
 	podNetworkingValidationInput := common.GetPodNetworkingValidationInput(interfaceTypeToPodList, vpcCIDRs)

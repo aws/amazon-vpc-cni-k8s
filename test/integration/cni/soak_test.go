@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
-	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/integration/common"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -113,23 +112,9 @@ var _ = Describe("SOAK Test pod networking", Ordered, func() {
 				Build()
 
 			By("Creating Pods on Primary and Secondary ENI on Primary and Secondary Node")
-			primaryNodeDeployment = manifest.
-				NewDefaultDeploymentBuilder().
-				Container(serverContainer).
-				Replicas(maxIPPerInterface*2). // X2 so Pods are created on secondary ENI too
-				NodeName(primaryNode.Name).
-				PodLabel("node", "primary").
-				Name("primary-node-server").
-				Build()
-
-			primaryNodeDeployment, err = f.K8sResourceManagers.
-				DeploymentManager().
-				CreateAndWaitTillDeploymentIsReady(primaryNodeDeployment, utils.DefaultDeploymentReadyTimeout)
-
-			Expect(err).ToNot(HaveOccurred())
-
-			interfaceToPodListOnPrimaryNode =
-				common.GetPodsOnPrimaryAndSecondaryInterface(primaryNode, "node", "primary", f)
+			interfaceToPodListOnPrimaryNode, primaryNodeDeployment =
+				common.CreateDeploymentSpanningENIs(f, primaryNode,
+					"primary-node-server", "node", "primary", serverContainer)
 
 			// At least two Pods should be placed on the Primary and Secondary Interface
 			// on the Primary and Secondary Node in order to test all possible scenarios
@@ -139,22 +124,9 @@ var _ = Describe("SOAK Test pod networking", Ordered, func() {
 			Expect(len(interfaceToPodListOnPrimaryNode.PodsOnSecondaryENI)).
 				Should(BeNumerically(">", 1))
 
-			secondaryNodeDeployment = manifest.
-				NewDefaultDeploymentBuilder().
-				Container(serverContainer).
-				Replicas(maxIPPerInterface*2). // X2 so Pods are created on secondary ENI too
-				NodeName(secondaryNode.Name).
-				PodLabel("node", "secondary").
-				Name("secondary-node-server").
-				Build()
-
-			secondaryNodeDeployment, err = f.K8sResourceManagers.
-				DeploymentManager().
-				CreateAndWaitTillDeploymentIsReady(secondaryNodeDeployment, utils.DefaultDeploymentReadyTimeout)
-			Expect(err).ToNot(HaveOccurred())
-
-			interfaceToPodListOnSecondaryNode =
-				common.GetPodsOnPrimaryAndSecondaryInterface(secondaryNode, "node", "secondary", f)
+			interfaceToPodListOnSecondaryNode, secondaryNodeDeployment =
+				common.CreateDeploymentSpanningENIs(f, secondaryNode,
+					"secondary-node-server", "node", "secondary", serverContainer)
 
 			Expect(len(interfaceToPodListOnSecondaryNode.PodsOnPrimaryENI)).
 				Should(BeNumerically(">", 1))
