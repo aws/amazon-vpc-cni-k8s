@@ -829,9 +829,12 @@ func (ds *DataStore) enisForAssignment() []*ENI {
 // used prefix" rule: AssignedIPAddressesInCidr counts only assigned addresses, so empty
 // prefixes sort last on their own. The CIDR string breaks ties so allocation is reproducible.
 //
-// This also contains the cooldown spillover: when every address in a prefix is still within
-// IP_COOLDOWN_PERIOD, getFreeIPv4AddrfromCidr errors and the caller falls through to the next
-// candidate, which under this ordering is the next-fullest prefix rather than an arbitrary one.
+// Ordering does not defeat IP_COOLDOWN_PERIOD. getFreeIPv4AddrfromCidr errors when a prefix
+// holds no address that is both unassigned and out of cooldown, and the caller then falls
+// through to the next candidate. A prefix that was recently full has no servable address, so
+// under churn faster than the cooldown window allocation lands on emptier prefixes that still
+// hold never-touched addresses - the opposite of packing. Reordering candidates cannot fix
+// that; only a shorter cooldown window can.
 //
 // With packing disabled the CIDRs come back in Go map order, i.e. randomized, which is the
 // behaviour every release so far has had.
