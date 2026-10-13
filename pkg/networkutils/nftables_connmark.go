@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"maps"
 	"math/bits"
 	"net"
 	"strings"
@@ -141,6 +142,17 @@ func (c *nftConnmark) Setup(exemptCIDRs []string) error {
 	if len(exemptCIDRs) == 0 {
 		return fmt.Errorf("exemptCIDRs cannot be empty")
 	}
+	desiredCIDRs := make(map[string]*net.IPNet, len(exemptCIDRs))
+	for _, cidrString := range exemptCIDRs {
+		_, cidr, err := net.ParseCIDR(cidrString)
+		if err != nil {
+			return fmt.Errorf("parse CIDR %s: %w", cidrString, err)
+		}
+		if cidr.IP.To4() == nil || len(cidr.Mask) != net.IPv4len {
+			return fmt.Errorf("CIDR %s is not an IPv4 network", cidrString)
+		}
+		desiredCIDRs[cidr.String()] = cidr
+	}
 	// nft add table ip aws-cni
 	table := c.nft.AddTable(&nftables.Table{
 		Family: nftables.TableFamilyIPv4,
@@ -163,7 +175,7 @@ func (c *nftConnmark) Setup(exemptCIDRs []string) error {
 	if err != nil {
 		return err
 	}
-	err = c.ensureConnmarkChainRules(table, connmarkChain, exemptCIDRs)
+	err = c.ensureConnmarkChainRules(table, connmarkChain, desiredCIDRs)
 	if err != nil {
 		log.Error(err.Error())
 		return err
@@ -340,25 +352,20 @@ func (c *nftConnmark) ensureBaseChainRules(table *nftables.Table, baseChain, tar
 
 // isFibLocalReturnRule checks for: fib daddr type local return
 func isFibLocalReturnRule(rule *nftables.Rule) bool {
-	hasFibAddrType := false
-	hasCmpLocal := false
-	hasReturn := false
-	for _, e := range rule.Exprs {
-		// FlagDADDR(flag) - Use destination address and ResultADDRTYPE(flag) - Store the address type (RTN_LOCAL, RTN_UNICAST, etc.)
-		if fib, ok := e.(*expr.Fib); ok && fib.FlagDADDR && fib.ResultADDRTYPE {
-			hasFibAddrType = true
-		}
-		if cmp, ok := e.(*expr.Cmp); ok && cmp.Op == expr.CmpOpEq && len(cmp.Data) == 4 && cmp.Register == 1 {
-			val := binaryutil.NativeEndian.Uint32(cmp.Data)
-			if val == rtnLocal {
-				hasCmpLocal = true
-			}
-		}
-		if v, ok := e.(*expr.Verdict); ok && v.Kind == expr.VerdictReturn {
-			hasReturn = true
-		}
+	if rule == nil || len(rule.Exprs) != 3 {
+		return false
 	}
-	return hasFibAddrType && hasCmpLocal && hasReturn
+	fib, ok := rule.Exprs[0].(*expr.Fib)
+	if !ok || fib == nil || *fib != (expr.Fib{Register: 1, FlagDADDR: true, ResultADDRTYPE: true}) {
+		return false
+	}
+	cmp, ok := rule.Exprs[1].(*expr.Cmp)
+	if !ok || cmp == nil || cmp.Op != expr.CmpOpEq || cmp.Register != 1 ||
+		!bytes.Equal(cmp.Data, binaryutil.NativeEndian.PutUint32(rtnLocal)) {
+		return false
+	}
+	v, ok := rule.Exprs[2].(*expr.Verdict)
+	return ok && v != nil && v.Kind == expr.VerdictReturn
 }
 
 // addFibLocalReturnRule inserts: nft insert rule ip aws-cni nat-prerouting fib daddr type local return
@@ -410,67 +417,52 @@ func (c *nftConnmark) ensureConnmarkChain(table *nftables.Table) (*nftables.Chai
 	}), nil
 }
 
-func (c *nftConnmark) ensureConnmarkChainRules(table *nftables.Table, chain *nftables.Chain, exemptCIDRs []string) error {
+// ensureConnmarkChainRules modifies desiredCIDRs. Callers must pass a fresh map.
+func (c *nftConnmark) ensureConnmarkChainRules(table *nftables.Table, chain *nftables.Chain, desiredCIDRs map[string]*net.IPNet) error {
 	rules, err := c.nft.GetRules(table, chain)
 	if err != nil {
 		return err
 	}
 
-	// Classify current rules
-	currentCIDRs := make(map[string]*nftables.Rule)
-	var setMarkRule *nftables.Rule
-	var unknownRules []*nftables.Rule
-
-	for _, r := range rules {
-		if cidr := extractCIDRFromRule(r); cidr != "" {
-			currentCIDRs[cidr] = r
-		} else if isSetMarkRule(r, c.mark) {
-			setMarkRule = r
+	var staleRules []*nftables.Rule
+	setMarkIndex, lastCIDRIndex := -1, -1
+	for index, rule := range rules {
+		if cidr := extractCIDRFromRule(rule); desiredCIDRs[cidr] != nil {
+			delete(desiredCIDRs, cidr)
+			lastCIDRIndex = index
+		} else if isSetMarkRule(rule, c.mark) {
+			if setMarkIndex != -1 {
+				staleRules = append(staleRules, rules[setMarkIndex])
+			}
+			setMarkIndex = index
 		} else {
-			unknownRules = append(unknownRules, r)
+			staleRules = append(staleRules, rule)
 		}
 	}
 
-	var errs []error
-	// Delete unknown rules
-	for _, r := range unknownRules {
-		if err := c.nft.DelRule(r); err != nil {
-			errs = append(errs, fmt.Errorf("delete unknown rule (handle %d): %w", r.Handle, err))
+	if setMarkIndex != -1 && setMarkIndex < lastCIDRIndex {
+		staleRules = append(staleRules, rules[setMarkIndex])
+	}
+
+	for _, rule := range staleRules {
+		if err := c.nft.DelRule(rule); err != nil {
+			return fmt.Errorf("delete stale rule (handle %d): %w", rule.Handle, err)
 		}
 	}
 
-	desiredCIDRs := make(map[string]bool)
-	for _, cidr := range exemptCIDRs {
-		desiredCIDRs[cidr] = true
+	// Insert missing CIDRs before the mark rule.
+	for cidr := range maps.Values(desiredCIDRs) {
+		c.insertCIDRReturnRule(table, chain, cidr)
 	}
 
-	// Delete stale CIDRs
-	for cidr, rule := range currentCIDRs {
-		if !desiredCIDRs[cidr] {
-			if err := c.nft.DelRule(rule); err != nil {
-				errs = append(errs, fmt.Errorf("delete stale CIDR %s (handle %d): %w", cidr, rule.Handle, err))
-			}
-		}
-	}
-
-	// Insert missing CIDRs (prepends - order doesn't matter for CIDR rules)
-	for cidrStr := range desiredCIDRs {
-		if _, exists := currentCIDRs[cidrStr]; !exists {
-			_, cidr, err := net.ParseCIDR(cidrStr)
-			if err != nil {
-				errs = append(errs, fmt.Errorf("parse CIDR %s: %w", cidrStr, err))
-				continue
-			}
-			c.insertCIDRReturnRule(table, chain, cidr)
-		}
-	}
-
-	// Ensure set-mark rule exists (AddRule appends to end)
-	if setMarkRule == nil {
+	if setMarkIndex == -1 {
 		c.addSetMarkRule(table, chain)
+	} else if setMarkIndex < lastCIDRIndex {
+		moved := *rules[setMarkIndex]
+		moved.Handle, moved.ID, moved.Position, moved.PositionID = 0, 0, 0, 0
+		c.nft.AddRule(&moved) // Preserve its counter when moving it to the end.
 	}
-
-	return errors.Join(errs...)
+	return nil
 }
 
 // Cleanup removes the entire nftables table: nft delete table ip aws-cni
@@ -595,28 +587,23 @@ func (c *nftConnmark) addRestoreRule(table *nftables.Table, chain *nftables.Chai
 }
 
 func isJumpRule(rule *nftables.Rule, targetChain, vethPrefix string) bool {
-	hasIFaceMatch := false
-	hasJump := false
-	hasCounter := false
-	hasMetaKeyIIFNAME := false
-
-	for _, e := range rule.Exprs {
-		if m, ok := e.(*expr.Meta); ok && m.Key == expr.MetaKeyIIFNAME && m.Register == 1 {
-			hasMetaKeyIIFNAME = true
-		}
-		if cmp, ok := e.(*expr.Cmp); ok &&
-			cmp.Op == expr.CmpOpEq && cmp.Register == 1 &&
-			bytes.Equal(cmp.Data, []byte(vethPrefix)) {
-			hasIFaceMatch = true
-		}
-		if _, ok := e.(*expr.Counter); ok {
-			hasCounter = true
-		}
-		if v, ok := e.(*expr.Verdict); ok && v.Kind == expr.VerdictJump && v.Chain == targetChain {
-			hasJump = true
-		}
+	if rule == nil || len(rule.Exprs) != 4 {
+		return false
 	}
-	return hasIFaceMatch && hasJump && hasCounter && hasMetaKeyIIFNAME
+	meta, ok := rule.Exprs[0].(*expr.Meta)
+	if !ok || meta == nil || meta.Key != expr.MetaKeyIIFNAME || meta.SourceRegister || meta.Register != 1 {
+		return false
+	}
+	cmp, ok := rule.Exprs[1].(*expr.Cmp)
+	if !ok || cmp == nil || cmp.Op != expr.CmpOpEq || cmp.Register != 1 ||
+		!bytes.Equal(cmp.Data, []byte(vethPrefix)) {
+		return false
+	}
+	if counter, ok := rule.Exprs[2].(*expr.Counter); !ok || counter == nil {
+		return false
+	}
+	v, ok := rule.Exprs[3].(*expr.Verdict)
+	return ok && v != nil && v.Kind == expr.VerdictJump && v.Chain == targetChain
 }
 
 // classifyRestoreRule recognises one of the two rules that restores a single
@@ -675,45 +662,35 @@ func classifyRestoreRule(rule *nftables.Rule, mark uint32) (uint32, bool, bool) 
 //
 //	counter ip daddr <cidr> return
 func extractCIDRFromRule(rule *nftables.Rule) string {
-	var ip net.IP
-	var mask net.IPMask
-	hasCounter := false
-	hasDstPayload := false
-	hasReturn := false
-
-	for _, e := range rule.Exprs {
-		if _, ok := e.(*expr.Counter); ok {
-			hasCounter = true
-		}
-		if p, ok := e.(*expr.Payload); ok &&
-			p.Base == expr.PayloadBaseNetworkHeader &&
-			p.Offset == 16 && p.Len == 4 &&
-			p.DestRegister == 1 {
-			hasDstPayload = true
-		}
-		if v, ok := e.(*expr.Verdict); ok && v.Kind == expr.VerdictReturn {
-			hasReturn = true
-		}
-		// Bitwise must read and write register 1 (the same register Payload
-		// loaded the dst IP into, and that Cmp will read), with Len 4 (IPv4
-		// address width) and zero Xor — i.e. plain AND with the netmask.
-		if bw, ok := e.(*expr.Bitwise); ok &&
-			bw.SourceRegister == 1 && bw.DestRegister == 1 &&
-			bw.Len == 4 && len(bw.Mask) == 4 &&
-			bytes.Equal(bw.Xor, []byte{0, 0, 0, 0}) {
-			mask = net.IPMask(bw.Mask)
-		}
-		if cmp, ok := e.(*expr.Cmp); ok &&
-			cmp.Op == expr.CmpOpEq && cmp.Register == 1 && len(cmp.Data) == 4 {
-			ip = net.IP(cmp.Data)
-		}
-	}
-
-	if ip == nil || mask == nil || !hasCounter || !hasDstPayload || !hasReturn {
+	if rule == nil || len(rule.Exprs) != 5 {
 		return ""
 	}
+	if counter, ok := rule.Exprs[0].(*expr.Counter); !ok || counter == nil {
+		return ""
+	}
+	payload, ok := rule.Exprs[1].(*expr.Payload)
+	if !ok || payload == nil || payload.OperationType != expr.PayloadLoad ||
+		payload.Base != expr.PayloadBaseNetworkHeader || payload.Offset != 16 || payload.Len != 4 ||
+		payload.DestRegister != 1 {
+		return ""
+	}
+	bw, ok := rule.Exprs[2].(*expr.Bitwise)
+	if !ok || bw == nil || bw.SourceRegister != 1 || bw.DestRegister != 1 || bw.Len != 4 ||
+		len(bw.Mask) != 4 || !bytes.Equal(bw.Xor, []byte{0, 0, 0, 0}) {
+		return ""
+	}
+	cmp, ok := rule.Exprs[3].(*expr.Cmp)
+	if !ok || cmp == nil || cmp.Op != expr.CmpOpEq || cmp.Register != 1 || len(cmp.Data) != 4 {
+		return ""
+	}
+	v, ok := rule.Exprs[4].(*expr.Verdict)
+	if !ok || v == nil || v.Kind != expr.VerdictReturn {
+		return ""
+	}
+
+	ip, mask := net.IP(cmp.Data), net.IPMask(bw.Mask)
 	ones, bits := mask.Size()
-	if bits != 32 {
+	if bits != 32 || !bytes.Equal(ip, ip.Mask(mask)) {
 		return ""
 	}
 	return fmt.Sprintf("%s/%d", ip.String(), ones)
@@ -723,35 +700,24 @@ func extractCIDRFromRule(rule *nftables.Rule) string {
 //
 //	counter ct mark set ct mark | <mark>
 func isSetMarkRule(rule *nftables.Rule, mark uint32) bool {
-	hasCounter := false
-	hasCtLoad := false
-	hasBitwise := false
-	hasCtStore := false
-	markBytes := binaryutil.NativeEndian.PutUint32(mark)
-	maskBytes := binaryutil.NativeEndian.PutUint32(^mark)
-
-	for _, e := range rule.Exprs {
-		if _, ok := e.(*expr.Counter); ok {
-			hasCounter = true
-		}
-		// Ct load: ct mark → reg 1 (SourceRegister=false ⇒ Register is dest).
-		// Ct store: reg 1 → ct mark (SourceRegister=true ⇒ Register is src).
-		if ct, ok := e.(*expr.Ct); ok && ct.Key == expr.CtKeyMARK && ct.Register == 1 {
-			if ct.SourceRegister {
-				hasCtStore = true
-			} else {
-				hasCtLoad = true
-			}
-		}
-		// ct mark | mark uses Mask=^mark, Xor=mark (OR via bitwise identity:
-		// (x & ~m) ^ m == x | m). Pipeline runs reg 1 → reg 1 with Len 4.
-		if bw, ok := e.(*expr.Bitwise); ok &&
-			bw.SourceRegister == 1 && bw.DestRegister == 1 && bw.Len == 4 &&
-			bytes.Equal(bw.Xor, markBytes) && bytes.Equal(bw.Mask, maskBytes) {
-			hasBitwise = true
-		}
+	if rule == nil || len(rule.Exprs) != 4 {
+		return false
 	}
-	return hasCtLoad && hasBitwise && hasCtStore && hasCounter
+	if counter, ok := rule.Exprs[0].(*expr.Counter); !ok || counter == nil {
+		return false
+	}
+	load, ok := rule.Exprs[1].(*expr.Ct)
+	if !ok || load == nil || load.Key != expr.CtKeyMARK || load.SourceRegister || load.Register != 1 {
+		return false
+	}
+	bw, ok := rule.Exprs[2].(*expr.Bitwise)
+	if !ok || bw == nil || bw.SourceRegister != 1 || bw.DestRegister != 1 || bw.Len != 4 ||
+		!bytes.Equal(bw.Mask, binaryutil.NativeEndian.PutUint32(^mark)) ||
+		!bytes.Equal(bw.Xor, binaryutil.NativeEndian.PutUint32(mark)) {
+		return false
+	}
+	store, ok := rule.Exprs[3].(*expr.Ct)
+	return ok && store != nil && store.Key == expr.CtKeyMARK && store.SourceRegister && store.Register == 1
 }
 
 // addSetMarkRule adds: nft add rule ip aws-cni snat-mark counter ct mark set ct mark | 0x80
