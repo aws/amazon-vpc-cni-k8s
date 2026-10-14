@@ -16,7 +16,6 @@ package metrics_helper
 import (
 	"context"
 	"fmt"
-	"math"
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
@@ -31,64 +30,94 @@ import (
 	v1 "k8s.io/api/apps/v1"
 )
 
+// metricPublishPeriod matches cni-metrics-helper's publish interval
+// (METRIC_UPDATE_INTERVAL, default 30s, published every 2x that). CloudWatch
+// also keeps sub-minute resolution for only 3 hours, so a 60s period lets a
+// finished run be replayed later for diagnosis.
+const metricPublishPeriod = 60
+
+// sumAddReqCount returns the total number of CNI ADD requests cni-metrics-helper
+// published in [from, to), and how many datapoints the window held.
+//
+// cni-metrics-helper publishes addReqCount as a per-interval delta rather than a
+// running total: it scrapes ipamd every METRIC_UPDATE_INTERVAL seconds and
+// publishes the deltas it collected. The samples cover disjoint intervals, so
+// summing them reconstructs the ADD request count over the window regardless of
+// how the requests were distributed in time.
+func sumAddReqCount(from time.Time, to time.Time) (float64, int, error) {
+	out, err := f.CloudServices.CloudWatch().GetMetricStatistics(context.TODO(),
+		&cloudwatch.GetMetricStatisticsInput{
+			Dimensions: []cloudwatchtypes.Dimension{
+				{
+					Name:  aws.String("CLUSTER_ID"),
+					Value: aws.String(ngName),
+				},
+			},
+			MetricName: aws.String("addReqCount"),
+			Namespace:  aws.String("Kubernetes"),
+			Period:     aws.Int32(int32(metricPublishPeriod)),
+			StartTime:  aws.Time(from),
+			EndTime:    aws.Time(to),
+			Statistics: []cloudwatchtypes.Statistic{cloudwatchtypes.StatisticSum},
+		})
+	if err != nil {
+		return 0, 0, err
+	}
+
+	var total float64
+	for _, dp := range out.Datapoints {
+		if dp.Sum != nil {
+			total += *dp.Sum
+		}
+	}
+	return total, len(out.Datapoints), nil
+}
+
 var _ = Describe("test cni-metrics-helper publishes metrics", func() {
 
 	Context("when a metric is updated", func() {
 		It("the updated metric is published to CW", func() {
+			replicas := nodePodCapacity / 2
+
 			// Create a new deployment to verify addReqCount is updated. Half the
 			// node's allocatable pod capacity always fits alongside existing pods.
 			var deployment *v1.Deployment
 			deployment = manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
-				Replicas(nodePodCapacity / 2).
+				Replicas(replicas).
 				NodeName(nodeName).
 				Build()
 
 			By("creating parking pods on the targeted node group")
+			// Recorded before the create call: CreateAndWaitTillDeploymentIsReady
+			// returns only once every pod is Ready, by which point every ADD
+			// request has already been served.
+			createdAt := time.Now()
 			deployment, err = f.K8sResourceManagers.DeploymentManager().
 				CreateAndWaitTillDeploymentIsReady(deployment, utils.DefaultDeploymentReadyTimeout)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("waiting for the metrics helper to publish new metrics")
-			time.Sleep(time.Minute * 3)
+			// Each pod costs exactly one CNI ADD request, so the published deltas
+			// must account for the whole deployment. Unrelated pod churn and pod
+			// retries can only add to the sum, never subtract from it, so the
+			// bound is one-sided. The window starts at the publish period
+			// containing the create call so no ADD request falls outside it.
+			//
+			// Polled rather than read once after a fixed sleep: the deltas land one
+			// publish interval after the pods get their IPs, and a single read
+			// either happens to be late enough or reports a short count and fails.
+			By("verifying cni-metrics-helper published one addReqCount per pod")
+			Eventually(func(g Gomega) {
+				total, count, err := sumAddReqCount(
+					createdAt.Truncate(metricPublishPeriod*time.Second), time.Now())
+				g.Expect(err).ToNot(HaveOccurred())
+				_, _ = fmt.Fprintf(GinkgoWriter,
+					"addReqCount total=%v over %d datapoint(s), expected >= %d\n",
+					total, count, replicas)
 
-			getMetricStatisticsInput := &cloudwatch.GetMetricStatisticsInput{
-				Dimensions: []cloudwatchtypes.Dimension{
-					{
-						Name:  aws.String("CLUSTER_ID"),
-						Value: aws.String(ngName),
-					},
-				},
-				MetricName: aws.String("addReqCount"),
-				Namespace:  aws.String("Kubernetes"),
-				Period:     aws.Int32(int32(30)),
-				// Start time should sync with when this test started
-				StartTime:  aws.Time(time.Now().Add(time.Duration(-10) * time.Minute)),
-				EndTime:    aws.Time(time.Now()),
-				Statistics: []cloudwatchtypes.Statistic{cloudwatchtypes.StatisticMaximum},
-			}
-			getMetricOutput, err := f.CloudServices.CloudWatch().GetMetricStatistics(context.TODO(), getMetricStatisticsInput)
-			Expect(err).ToNot(HaveOccurred())
-
-			dataPoints := getMetricOutput.Datapoints
-			_, _ = fmt.Fprintf(GinkgoWriter, "data points: %+v", dataPoints)
-
-			By("validating at least 2 metrics are published to CloudWatch")
-			Expect(len(dataPoints)).Should(BeNumerically(">=", 2))
-
-			// Verify that the addReqCount counts increased to account for the new deployment creation
-			addReqCountIncreased := false
-			var lastVal = *dataPoints[0].Maximum
-			// Note that datapoints may not be in order by timestamp, but any delta is enough to prove that metrics were published.
-			for _, dp := range dataPoints {
-				if math.Abs(*dp.Maximum-lastVal) > 0 {
-					addReqCountIncreased = true
-					break
-				}
-				lastVal = *dp.Maximum
-			}
-
-			By("validating the addReqCount increased on the node after a deployment is created")
-			Expect(addReqCountIncreased).To(BeTrue())
+				g.Expect(count).ToNot(BeZero(), "cni-metrics-helper published no datapoints")
+				g.Expect(total).To(BeNumerically(">=", float64(replicas)),
+					"cni-metrics-helper accounted for %v of %d ADD requests", total, replicas)
+			}).WithTimeout(8 * time.Minute).WithPolling(30 * time.Second).Should(Succeed())
 		})
 	})
 })
