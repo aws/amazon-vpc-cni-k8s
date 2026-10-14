@@ -567,6 +567,10 @@ Setting ENABLE_PREFIX_DELEGATION to true will not increase the density of branch
 
 Please refer to [VPC CNI Feature Matrix](https://github.com/aws/amazon-vpc-cni-k8s#vpc-cni-feature-matrix) section below for additional information around using Prefix delegation with Custom Networking and Security Groups Per Pod features.
 
+**Pod IP allocation is packing-aware (v1.24.0+).** A (/28) prefix can only be returned to the VPC once all 16 of its addresses are unassigned. When several prefixes on a node have free addresses, allocation prefers the prefix that already holds the most pods, breaking ties on the prefix itself so the choice is reproducible. New pods therefore fill gaps in prefixes that are already in use instead of opening prefixes that are still empty, which leaves empty prefixes available for the existing release path to reclaim. The same ordering is applied to ENIs, so a less-used ENI is only drawn from once the fuller ones are exhausted. Before v1.24.0 the prefix was whichever one Go map iteration reached first, so pod churn tended to spread a shrinking pod population across every attached prefix until none could be released.
+
+This affects only which already-attached prefix a new pod draws from — no pod is moved, evicted or renumbered, no running pod's IP changes, and no additional EC2 API calls are made. It prevents further fragmentation but does not repair a node that is already fragmented; existing partially used prefixes are only recovered by recycling the node. Note also that `IP_COOLDOWN_PERIOD` limits the effect: a prefix whose freed addresses are all still cooling cannot serve a new pod, so under pod churn faster than the cooldown window allocation falls to emptier prefixes.
+
 **Note:** `ENABLE_PREFIX_DELEGATION` needs to be set to `true` when VPC CNI is configured to operate in IPv6 mode (supported in v1.10.0+). Prefix Delegation in IPv4 and IPv6 modes is supported on Nitro based Bare Metal instances as well from v1.11+. If you're using Prefix Delegation feature on Bare Metal instances, downgrading to an earlier version of VPC CNI from v1.11+ will be disruptive and not supported.
 
 #### `WARM_PREFIX_TARGET` (v1.9.0+)
@@ -771,32 +775,6 @@ A network card will be managed if at least one of the following conditions is me
 a. The network card does not have any devices attached to it
 b. The network card has an `efa` OR an `ena` device attached to it
 c. The network card has an `efa-only` AND an `ena` device attached to it
-
-#### `ENABLE_PREFIX_PACKING` (v1.24.0+)
-
-Type: Boolean as a String
-
-Default: `false`
-
-Applies only when `ENABLE_PREFIX_DELEGATION` is `true`; it is ignored in secondary IP mode.
-
-A (/28) prefix can only be returned to the VPC once all 16 of its addresses are unassigned. By
-default, when several prefixes on a node have free addresses, the prefix a new pod draws from is
-whichever one Go map iteration reaches first, which is randomized. Pod churn therefore tends to
-spread a shrinking pod population across every attached prefix, until none of them reaches zero
-assigned addresses and none can be released. A node can hold many prefixes while using only a
-fraction of their addresses, which matters in IP-constrained VPCs.
-
-Setting `ENABLE_PREFIX_PACKING` to `true` makes pod IP allocation prefer the prefix that already
-holds the most pods, breaking ties on the prefix itself so that allocation is reproducible. Pods
-fill the gaps in prefixes that are already in use instead of opening prefixes that are still
-empty, leaving empty prefixes for the existing release path to reclaim. The same ordering is
-applied to ENIs, so a less-used ENI is only drawn from once the fuller ones are exhausted.
-
-This changes only which already-attached prefix a new pod draws from. No pod is moved, evicted,
-or renumbered, no running pod's IP changes, and no additional EC2 API calls are made. It prevents
-further fragmentation but does not repair a node that is already fragmented; existing partially
-used prefixes are only recovered by recycling the node.
 
 ## Annotations
 

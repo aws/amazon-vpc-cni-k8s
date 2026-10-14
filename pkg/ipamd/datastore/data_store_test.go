@@ -2381,22 +2381,33 @@ func prefixOccupancy(ds *DataStore, eniID string) map[string]int {
 	return occupancy
 }
 
-func TestPrefixPackingFlag(t *testing.T) {
-	t.Run("off unless asked for", func(t *testing.T) {
+// Ordering applies in prefix delegation mode only. In secondary IP mode every CIDR is a single
+// /32, so fullest-first would sort all the assigned addresses ahead of the free ones and the
+// allocation loop would work through unservable candidates before reaching one it can use.
+func TestOrderingAppliesOnlyInPrefixDelegationMode(t *testing.T) {
+	prefixes := map[string]int{"10.0.1.0/28": 15, "10.0.2.0/28": 0}
+	newENI := func(t *testing.T) *ENI {
+		eni := &ENI{ID: "eni-1", AvailableIPv4Cidrs: make(map[string]*CidrInfo)}
+		for cidr, assigned := range prefixes {
+			eni.AvailableIPv4Cidrs[cidr] = newAssignedPrefix(t, cidr, assigned)
+		}
+		return eni
+	}
+
+	t.Run("ordered in prefix delegation mode", func(t *testing.T) {
 		ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
-		assert.False(t, ds.isPrefixPackingEnabled)
+		ordered := ds.cidrsForAssignment(newENI(t))
+		assert.Equal(t, "10.0.1.0/28", ordered[0].Cidr.String(), "fullest prefix must come first")
 	})
 
-	t.Run("on in prefix delegation mode", func(t *testing.T) {
-		t.Setenv(envEnablePrefixPacking, "true")
-		ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
-		assert.True(t, ds.isPrefixPackingEnabled)
-	})
-
-	t.Run("ignored in secondary IP mode", func(t *testing.T) {
-		t.Setenv(envEnablePrefixPacking, "true")
+	t.Run("left in map order in secondary IP mode", func(t *testing.T) {
 		ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
-		assert.False(t, ds.isPrefixPackingEnabled)
+		// Only the set is promised, not the order.
+		var got []string
+		for _, cidr := range ds.cidrsForAssignment(newENI(t)) {
+			got = append(got, cidr.Cidr.String())
+		}
+		assert.ElementsMatch(t, []string{"10.0.1.0/28", "10.0.2.0/28"}, got)
 	})
 }
 
@@ -2425,8 +2436,7 @@ func TestCidrsForAssignment(t *testing.T) {
 		return strs
 	}
 
-	t.Run("orders fullest first when packing", func(t *testing.T) {
-		t.Setenv(envEnablePrefixPacking, "true")
+	t.Run("orders fullest first", func(t *testing.T) {
 		ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
 
 		// Fullest first; the two nine-pod prefixes tie and break on the CIDR string; the empty
@@ -2436,10 +2446,10 @@ func TestCidrsForAssignment(t *testing.T) {
 			cidrStrings(ds.cidrsForAssignment(newENI(t))))
 	})
 
-	t.Run("returns every CIDR without packing", func(t *testing.T) {
+	t.Run("returns every CIDR", func(t *testing.T) {
 		ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
 
-		// Order is Go map order, so only the set is promised.
+		// Guards against the ordering dropping or duplicating a candidate.
 		assert.ElementsMatch(t,
 			[]string{"10.0.1.0/28", "10.0.2.0/28", "10.0.3.0/28", "10.0.4.0/28"},
 			cidrStrings(ds.cidrsForAssignment(newENI(t))))
@@ -2447,7 +2457,6 @@ func TestCidrsForAssignment(t *testing.T) {
 }
 
 func TestEnisForAssignmentOrdersFullestFirst(t *testing.T) {
-	t.Setenv(envEnablePrefixPacking, "true")
 	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
 
 	// eni-2 and eni-3 hold the same number of pods, so the device number decides between them.
@@ -2477,7 +2486,6 @@ func TestEnisForAssignmentOrdersFullestFirst(t *testing.T) {
 }
 
 func TestAssignPodIPv4AddressPacksPrefixes(t *testing.T) {
-	t.Setenv(envEnablePrefixPacking, "true")
 	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
 
 	err := ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0), "")
@@ -2512,7 +2520,6 @@ func TestAssignPodIPv4AddressRefillsPrefixAfterChurn(t *testing.T) {
 	// No cooldown, so a freed address is immediately reusable and the churn below does not
 	// have to wait IP_COOLDOWN_PERIOD out.
 	t.Setenv(envIPCooldownPeriod, "0")
-	t.Setenv(envEnablePrefixPacking, "true")
 	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
 
 	err := ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0), "")
