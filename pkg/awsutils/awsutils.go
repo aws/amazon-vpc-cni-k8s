@@ -1969,6 +1969,10 @@ func badENIID(errMsg string) string {
 // Returns the subset of IMDS-derived IPv4 addresses that EC2 DescribeNetworkInterfaces also reports for the ENI (EC2 is treated as the source of truth).
 func reconcileIPv4AddressesWithEC2(eniID string, imdsIPv4s, ec2IPv4s []ec2types.NetworkInterfacePrivateIpAddress) []ec2types.NetworkInterfacePrivateIpAddress {
 	if len(ec2IPv4s) == 0 {
+		// A zero-length EC2 response here is a transient/partial response. Keep the IMDS list rather
+		// than wiping the ENI (including its primary); the next reconcile with a healthy EC2 response
+		// corrects any stale entry.
+		log.Warnf("reconcileIPv4AddressesWithEC2: EC2 DescribeNetworkInterfaces returned no IPv4 addresses for ENI %s; keeping IMDS-reported addresses to avoid wiping the ENI (likely a transient/partial EC2 response)", eniID)
 		return imdsIPv4s
 	}
 	ec2IPv4Set := sets.NewString()
@@ -1984,7 +1988,7 @@ func reconcileIPv4AddressesWithEC2(eniID string, imdsIPv4s, ec2IPv4s []ec2types.
 			reconciled = append(reconciled, imdsIPv4)
 			continue
 		}
-		log.Debugf("reconcileIPv4AddressesWithEC2: dropping IPv4 address %s on ENI %s that IMDS reports but EC2 DescribeNetworkInterfaces does not, to prevent allocating a stale address", ip, eniID)
+		log.Warnf("reconcileIPv4AddressesWithEC2: dropping IPv4 address %s on ENI %s that IMDS reports but EC2 DescribeNetworkInterfaces does not, to prevent allocating a stale address", ip, eniID)
 	}
 	return reconciled
 }
@@ -2005,7 +2009,7 @@ func reconcileIPv4PrefixesWithEC2(eniID string, imdsPrefixes, ec2Prefixes []ec2t
 			reconciled = append(reconciled, imdsPrefix)
 			continue
 		}
-		log.Debugf("reconcileIPv4PrefixesWithEC2: dropping IPv4 prefix %s on ENI %s that IMDS reports but EC2 DescribeNetworkInterfaces does not, to prevent allocating a stale prefix", prefix, eniID)
+		log.Warnf("reconcileIPv4PrefixesWithEC2: dropping IPv4 prefix %s on ENI %s that IMDS reports but EC2 DescribeNetworkInterfaces does not, to prevent allocating a stale prefix", prefix, eniID)
 	}
 	return reconciled
 }
