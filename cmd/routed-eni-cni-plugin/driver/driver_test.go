@@ -3638,11 +3638,23 @@ func Test_createVethPairContext_runIPv6SysctlsNotSupported(t *testing.T) {
 	assert.NoError(t, createVethContext.run(hostNS))
 }
 
+const testSandboxID = "sandbox-1"
+
 func Test_linuxNetwork_setupVeth(t *testing.T) {
+	// Stamped for testSandboxID, so setupVeth may reclaim it.
 	hostVethWithIndex9 := &netlink.Veth{
 		LinkAttrs: netlink.LinkAttrs{
 			Name:  "eni8ea2c11fe35",
 			Index: 9,
+			Alias: hostVethAlias(testSandboxID),
+		},
+	}
+	// Stamped for a different sandbox.
+	hostVethOwnedByOtherSandbox := &netlink.Veth{
+		LinkAttrs: netlink.LinkAttrs{
+			Name:  "eni8ea2c11fe35",
+			Index: 9,
+			Alias: hostVethAlias("some-other-sandbox"),
 		},
 	}
 	type linkByNameCall struct {
@@ -3668,10 +3680,17 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 		err   error
 	}
 
+	type linkSetAliasCall struct {
+		link  netlink.Link
+		alias string
+		err   error
+	}
+
 	type fields struct {
 		linkByNameCalls    []linkByNameCall
 		linkDelCalls       []linkDelCall
 		linkSetupCalls     []linkSetupCall
+		linkSetAliasCalls  []linkSetAliasCall
 		withNetNSPathCalls []withNetNSPathCall
 		procSysSetCalls    []procSysSetCall
 	}
@@ -3681,6 +3700,7 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 		contVethName string
 		netnsPath    string
 		mtu          int
+		sandboxID    string
 	}
 	tests := []struct {
 		name    string
@@ -3738,11 +3758,18 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 						netNSPath: "/proc/42/ns/net",
 					},
 				},
+				linkSetAliasCalls: []linkSetAliasCall{
+					{
+						link:  hostVethWithIndex9,
+						alias: hostVethAlias(testSandboxID),
+					},
+				},
 			},
 			args: args{
 				hostVethName: "eni8ea2c11fe35",
 				contVethName: "eth0",
 				netnsPath:    "/proc/42/ns/net",
+				sandboxID:    testSandboxID,
 			},
 			want: hostVethWithIndex9,
 		},
@@ -3766,8 +3793,27 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 				hostVethName: "eni8ea2c11fe35",
 				contVethName: "eth0",
 				netnsPath:    "/proc/42/ns/net",
+				sandboxID:    testSandboxID,
 			},
 			wantErr: errors.New("failed to delete old hostVeth eni8ea2c11fe35: some error"),
+		},
+		{
+			name: "refuse to delete hostVeth owned by another sandbox",
+			fields: fields{
+				linkByNameCalls: []linkByNameCall{
+					{
+						linkName: "eni8ea2c11fe35",
+						link:     hostVethOwnedByOtherSandbox,
+					},
+				},
+			},
+			args: args{
+				hostVethName: "eni8ea2c11fe35",
+				contVethName: "eth0",
+				netnsPath:    "/proc/42/ns/net",
+				sandboxID:    testSandboxID,
+			},
+			wantErr: errors.New(`hostVeth eni8ea2c11fe35 is owned by sandbox "some-other-sandbox", refusing to delete it for sandbox "sandbox-1"`),
 		},
 		{
 			name: "failed to create veth pair",
@@ -3834,6 +3880,9 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 			for _, call := range tt.fields.linkSetupCalls {
 				netLink.EXPECT().LinkSetUp(call.link).Return(call.err)
 			}
+			for _, call := range tt.fields.linkSetAliasCalls {
+				netLink.EXPECT().LinkSetAlias(call.link, call.alias).Return(call.err)
+			}
 
 			ns := mock_nswrapper.NewMockNS(ctrl)
 			for _, call := range tt.fields.withNetNSPathCalls {
@@ -3851,7 +3900,7 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 				ns:      ns,
 				procSys: procSys,
 			}
-			got, err := n.setupVeth(tt.args.hostVethName, tt.args.contVethName, tt.args.netnsPath, nil, tt.args.mtu, testLogger, 0)
+			got, err := n.setupVeth(tt.args.hostVethName, tt.args.contVethName, tt.args.netnsPath, nil, tt.args.mtu, tt.args.sandboxID, testLogger, 0)
 			if tt.wantErr != nil {
 				assert.EqualError(t, err, tt.wantErr.Error())
 			} else {
@@ -5531,4 +5580,125 @@ func isUnicastMAC(mac string) bool {
 		return false
 	}
 	return addr[0]&0x1 == 0 && addr[0]&0x2 == 0x02
+}
+
+func Test_linuxNetwork_claimHostVethName(t *testing.T) {
+	const (
+		vethName  = "eni8ea2c11fe35"
+		netnsPath = "/proc/42/ns/net"
+		hostIndex = 9
+		peerIndex = 42
+	)
+	stamped := func(alias string) *netlink.Veth {
+		return &netlink.Veth{LinkAttrs: netlink.LinkAttrs{
+			Name: vethName, Index: hostIndex, ParentIndex: peerIndex, Alias: alias,
+		}}
+	}
+	// A veth created before the alias existed: no stamp, peer index set.
+	legacy := stamped("")
+
+	tests := []struct {
+		name string
+		// existing is the link already holding the name, nil if the name is free.
+		existing netlink.Link
+		// peer is what LinkByIndex returns inside netnsPath, nil for an error.
+		peer           netlink.Link
+		expectPeerCall bool
+		wantDelete     bool
+		wantErr        string
+	}{
+		{
+			name:     "name is free",
+			existing: nil,
+		},
+		{
+			name:       "alias matches this sandbox",
+			existing:   stamped(hostVethAlias(testSandboxID)),
+			wantDelete: true,
+		},
+		{
+			name:     "alias set for another sandbox",
+			existing: stamped(hostVethAlias("other")),
+			wantErr:  `hostVeth eni8ea2c11fe35 is owned by sandbox "other", refusing to delete it for sandbox "sandbox-1"`,
+		},
+		{
+			name:     "unstamped, peer is reciprocal in target netns",
+			existing: legacy,
+			// Points back at the host end, so this is our pair.
+			peer:           &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Index: peerIndex, ParentIndex: hostIndex}},
+			expectPeerCall: true,
+			wantDelete:     true,
+		},
+		{
+			name:           "unstamped, peer does not point back",
+			existing:       legacy,
+			peer:           &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Index: peerIndex, ParentIndex: 7}},
+			expectPeerCall: true,
+			wantErr:        "hostVeth eni8ea2c11fe35 already exists and its peer is not in netns /proc/42/ns/net, refusing to delete it",
+		},
+		{
+			name:           "unstamped, peer index absent from target netns",
+			existing:       legacy,
+			peer:           nil,
+			expectPeerCall: true,
+			wantErr:        "hostVeth eni8ea2c11fe35 already exists and its peer is not in netns /proc/42/ns/net, refusing to delete it",
+		},
+		{
+			name:           "unstamped, peer in netns is not a veth",
+			existing:       legacy,
+			peer:           &netlink.Dummy{LinkAttrs: netlink.LinkAttrs{Index: peerIndex, ParentIndex: hostIndex}},
+			expectPeerCall: true,
+			wantErr:        "hostVeth eni8ea2c11fe35 already exists and its peer is not in netns /proc/42/ns/net, refusing to delete it",
+		},
+		{
+			name:     "existing link is not a veth",
+			existing: &netlink.Dummy{LinkAttrs: netlink.LinkAttrs{Name: vethName, Index: hostIndex}},
+			wantErr:  "hostVeth eni8ea2c11fe35 already exists and its peer is not in netns /proc/42/ns/net, refusing to delete it",
+		},
+		{
+			name:     "unstamped veth reports no peer index",
+			existing: &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Name: vethName, Index: hostIndex}},
+			wantErr:  "unable to establish ownership of existing hostVeth eni8ea2c11fe35, refusing to delete it: existing link eni8ea2c11fe35 reports no veth peer index",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
+			nsMock := mock_nswrapper.NewMockNS(ctrl)
+
+			if tt.existing == nil {
+				netLink.EXPECT().LinkByName(vethName).Return(nil, errors.New("not exists"))
+			} else {
+				netLink.EXPECT().LinkByName(vethName).Return(tt.existing, nil)
+			}
+			if tt.expectPeerCall {
+				// Actually run the callback inside the mocked netns so that the
+				// peer lookup is exercised rather than skipped.
+				nsMock.EXPECT().WithNetNSPath(netnsPath, gomock.Any()).DoAndReturn(
+					func(_ string, toRun func(ns.NetNS) error) error {
+						return toRun(nil)
+					})
+				if tt.peer == nil {
+					netLink.EXPECT().LinkByIndex(peerIndex).Return(nil, errors.New("not found"))
+				} else {
+					netLink.EXPECT().LinkByIndex(peerIndex).Return(tt.peer, nil)
+				}
+			}
+			if tt.wantDelete {
+				netLink.EXPECT().LinkDel(tt.existing).Return(nil)
+			}
+
+			n := &linuxNetwork{netLink: netLink, ns: nsMock}
+			err := n.claimHostVethName(vethName, testSandboxID, netnsPath, testLogger)
+			if tt.wantErr != "" {
+				assert.EqualError(t, err, tt.wantErr)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }
