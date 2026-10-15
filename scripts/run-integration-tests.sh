@@ -8,6 +8,7 @@ INTEGRATION_TEST_DIR="$SCRIPT_DIR"/../test/integration
 source "$SCRIPT_DIR"/lib/common.sh
 source "$SCRIPT_DIR"/lib/aws.sh
 source "$SCRIPT_DIR"/lib/cluster.sh
+source "$SCRIPT_DIR"/lib/hyperpod.sh
 source "$SCRIPT_DIR"/lib/integration.sh
 source "$SCRIPT_DIR"/lib/k8s.sh
 source "$SCRIPT_DIR"/lib/performance_tests.sh
@@ -28,6 +29,24 @@ ARCH=$(go env GOARCH)
 : "${RUN_BOTTLEROCKET_TEST:=false}"
 : "${RUN_PERFORMANCE_TESTS:=false}"
 : "${KOPS_VERSION=v1.34.0-beta.1}"
+: "${RUN_HYPERPOD_TEST:=false}"
+: "${HYPERPOD_EKS_CLUSTER_NAME:=""}"
+: "${HYPERPOD_NG_LABEL_KEY:=sagemaker.amazonaws.com/instance-group-name}"
+: "${HYPERPOD_NG_LABEL_VAL:=""}"
+: "${HYPERPOD_TEST_FOCUS:=HYPERPOD}"
+# Set PROVISION_HYPERPOD=true to create (and with DEPROVISION=true delete) an EKS cluster and HyperPod cluster for the
+# test, see scripts/lib/hyperpod.sh. Otherwise the HyperPod test runs against an existing cluster and never provisions
+# or deletes it.
+: "${PROVISION_HYPERPOD:=false}"
+
+if [[ $RUN_HYPERPOD_TEST == true && $PROVISION_HYPERPOD != true ]]; then
+    if [[ -z $HYPERPOD_EKS_CLUSTER_NAME || -z $HYPERPOD_NG_LABEL_VAL ]]; then
+        echo "RUN_HYPERPOD_TEST requires HYPERPOD_EKS_CLUSTER_NAME and HYPERPOD_NG_LABEL_VAL (the HyperPod instance group to test), or PROVISION_HYPERPOD=true"
+        exit 1
+    fi
+    PROVISION=false
+    DEPROVISION=false
+fi
 
 if [[ -z $EKS_CLUSTER_VERSION || -z $K8S_VERSION ]]; then
     CLUSTER_INFO=$(eksctl utils describe-cluster-versions --region $AWS_DEFAULT_REGION)
@@ -80,6 +99,9 @@ TEST_CONFIG_DIR="$TEST_DIR/config"
 # Pass in CLUSTER_ID to reuse a test cluster
 : "${CLUSTER_ID:=$RANDOM}"
 CLUSTER_NAME=cni-test-$CLUSTER_ID
+if [[ $RUN_HYPERPOD_TEST == true && $PROVISION_HYPERPOD != true ]]; then
+    CLUSTER_NAME=$HYPERPOD_EKS_CLUSTER_NAME
+fi
 TEST_CLUSTER_DIR=${TEST_BASE_DIR}/cluster-$CLUSTER_NAME
 CLUSTER_MANAGE_LOG_PATH=$TEST_CLUSTER_DIR/cluster-manage.log
 : "${CLUSTER_CONFIG:=${TEST_CLUSTER_DIR}/${CLUSTER_NAME}.yaml}"
@@ -183,6 +205,8 @@ if [[ "$PROVISION" == true ]]; then
     START=$SECONDS
     if [[ "$RUN_KOPS_TEST" == true ]]; then
         up-kops-cluster
+    elif [[ "$RUN_HYPERPOD_TEST" == true ]]; then
+        up-hyperpod-cluster
     else
         up-test-cluster
     fi
@@ -205,6 +229,11 @@ fi
 
 echo "Using VPC_ID: $VPC_ID"
 
+if [[ $RUN_HYPERPOD_TEST == true ]]; then
+    aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_DEFAULT_REGION" --kubeconfig "$KUBECONFIG_PATH"
+    export KUBECONFIG=$KUBECONFIG_PATH
+fi
+
 echo "Using $BASE_CONFIG_PATH as a template"
 cp "$BASE_CONFIG_PATH" "$TEST_CONFIG_PATH"
 
@@ -218,13 +247,39 @@ sed -i'.bak' "s,:$MANIFEST_IMAGE_VERSION,:$TEST_IMAGE_VERSION," "$TEST_CONFIG_PA
 grep -r -q $TEST_IMAGE_VERSION $TEST_CONFIG_PATH
 sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init,$INIT_IMAGE_NAME," "$TEST_CONFIG_PATH"
 grep -r -q $INIT_IMAGE_NAME $TEST_CONFIG_PATH
+if [[ $RUN_HYPERPOD_TEST == true ]]; then
+    # The HyperPod tests run with subnet discovery disabled, so secondary ENIs are created in the node's subnet
+    sed -i'.bak' '/name: ENABLE_SUBNET_DISCOVERY/{n;s/value: "true"/value: "false"/}' "$TEST_CONFIG_PATH"
+    grep -A1 "name: ENABLE_SUBNET_DISCOVERY" "$TEST_CONFIG_PATH" | grep -q 'value: "false"'
+fi
 
 echo "*******************************************************************************"
 echo "Updating CNI to image $IMAGE_NAME:$TEST_IMAGE_VERSION"
 echo "Updating CNI-INIT to image $INIT_IMAGE_NAME:$TEST_IMAGE_VERSION"
 START=$SECONDS
-$KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
-check_ds_rollout "aws-node" "kube-system" "10m"
+if [[ $RUN_HYPERPOD_TEST == true && $PROVISION_HYPERPOD != true ]]; then
+    # Only swap the images on an existing HyperPod cluster: its aws-node configuration (e.g. the SageMaker endpoint)
+    # must be kept. A cluster provisioned for the test gets the manifest, since its add-on version may not match the
+    # image (e.g. the health probe address).
+    PREVIOUS_CNI_IMAGE=$($KUBECTL_PATH -n kube-system get ds aws-node -o jsonpath='{.spec.template.spec.containers[?(@.name=="aws-node")].image}')
+    PREVIOUS_INIT_IMAGE=$($KUBECTL_PATH -n kube-system get ds aws-node -o jsonpath='{.spec.template.spec.initContainers[?(@.name=="aws-vpc-cni-init")].image}')
+    echo "To restore the previous CNI images: $KUBECTL_PATH -n kube-system set image ds/aws-node aws-node=$PREVIOUS_CNI_IMAGE aws-vpc-cni-init=$PREVIOUS_INIT_IMAGE"
+    $KUBECTL_PATH -n kube-system set image ds/aws-node aws-node="$IMAGE_NAME:$TEST_IMAGE_VERSION" aws-vpc-cni-init="$INIT_IMAGE_NAME:$TEST_IMAGE_VERSION"
+    # The HyperPod tests run with subnet discovery disabled, so secondary ENIs are created in the node's subnet
+    $KUBECTL_PATH -n kube-system set env ds/aws-node -c aws-node ENABLE_SUBNET_DISCOVERY=false
+    if ! check_ds_rollout "aws-node" "kube-system" "20m"; then
+        # Show why the new aws-node pods are not ready before the error handler deletes the cluster
+        $KUBECTL_PATH -n kube-system get pods -l k8s-app=aws-node -o wide
+        for pod in $($KUBECTL_PATH -n kube-system get pods -l k8s-app=aws-node --no-headers | awk '$2 != "2/2" {print $1}'); do
+            $KUBECTL_PATH -n kube-system describe pod "$pod" | tail -20
+            $KUBECTL_PATH -n kube-system logs "$pod" -c aws-node --tail=50 || true
+        done
+        false
+    fi
+else
+    $KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
+    check_ds_rollout "aws-node" "kube-system" "10m"
+fi
 
 CNI_IMAGE_UPDATE_DURATION=$((SECONDS - START))
 echo "TIMELINE: Updating CNI image took $CNI_IMAGE_UPDATE_DURATION seconds."
@@ -235,12 +290,17 @@ if [[ $RUN_CNI_INTEGRATION_TESTS == true ]]; then
     echo "Running integration tests against current image"
     echo ""
     START=$SECONDS
-    focus="CANARY"
-    skip="STATIC_CANARY"
-    echo "Running ginkgo tests with focus: $focus"
-    (cd "$INTEGRATION_TEST_DIR/cni" && CGO_ENABLED=0 ginkgo --focus="$focus" --skip="$skip" -v --timeout 60m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
-    (cd "$INTEGRATION_TEST_DIR/ipamd" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 60m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
-    (cd "$INTEGRATION_TEST_DIR/custom-networking-sgpp" && CGO_ENABLED=0 ginkgo -v --timeout 60m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
+    if [[ $RUN_HYPERPOD_TEST == true ]]; then
+        echo "Running HyperPod ipamd tests with focus: $HYPERPOD_TEST_FOCUS"
+        (cd "$INTEGRATION_TEST_DIR/ipamd" && CGO_ENABLED=0 ginkgo --focus="$HYPERPOD_TEST_FOCUS" -v --timeout 240m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="$HYPERPOD_NG_LABEL_KEY" --ng-name-label-val="$HYPERPOD_NG_LABEL_VAL")
+    else
+        focus="CANARY"
+        skip="STATIC_CANARY"
+        echo "Running ginkgo tests with focus: $focus"
+        (cd "$INTEGRATION_TEST_DIR/cni" && CGO_ENABLED=0 ginkgo --focus="$focus" --skip="$skip" -v --timeout 60m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
+        (cd "$INTEGRATION_TEST_DIR/ipamd" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 60m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
+        (cd "$INTEGRATION_TEST_DIR/custom-networking-sgpp" && CGO_ENABLED=0 ginkgo -v --timeout 60m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
+    fi
     TEST_PASS=$?
     CURRENT_IMAGE_INTEGRATION_DURATION=$((SECONDS - START))
     echo "TIMELINE: Current image integration tests took $CURRENT_IMAGE_INTEGRATION_DURATION seconds."
