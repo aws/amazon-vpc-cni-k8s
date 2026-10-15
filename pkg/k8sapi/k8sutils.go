@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
@@ -94,12 +95,31 @@ func CreateKubeClientCache(restCfg *rest.Config, scheme *runtime.Scheme, filterM
 	return cache, nil
 }
 
+// setupStopContext creates the process-wide signal context. Tests may replace it.
+var setupStopContext = ctrl.SetupSignalHandler
+
+var (
+	kubeClientStopOnce sync.Once
+	kubeClientStopCtx  context.Context
+)
+
+// kubeClientStopContext returns a single process-wide context canceled on SIGINT/SIGTERM.
+// ctrl.SetupSignalHandler panics if called more than once ("close of closed channel").
+// CreateKubeClient can run twice: once at startup, and again from
+// IPAMContext.SetAPIServerConnectivity when the API server becomes available later.
+func kubeClientStopContext() context.Context {
+	kubeClientStopOnce.Do(func() {
+		kubeClientStopCtx = setupStopContext()
+	})
+	return kubeClientStopCtx
+}
+
 func StartKubeClientCache(cache cache.Cache) {
-	stopChan := ctrl.SetupSignalHandler()
+	stopCtx := kubeClientStopContext()
 	go func() {
-		cache.Start(stopChan)
+		cache.Start(stopCtx)
 	}()
-	cache.WaitForCacheSync(stopChan)
+	cache.WaitForCacheSync(stopCtx)
 }
 
 // CreateKubeClient creates a k8s client
