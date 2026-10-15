@@ -254,6 +254,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			RouteTable:        getRouteTableIdFromIpAllocationMetadata(ipAllocMetadata),
 			HostVethName:      hostVethName,
 			ContainerVethName: containerVethName,
+			SandboxID:         args.ContainerID,
 		})
 		// CNI stores the route table ID in the MAC field of the interface. The Route table ID is on the host side
 		// and is used during cleanup to remove the ip rules when IPAMD is not reachable.
