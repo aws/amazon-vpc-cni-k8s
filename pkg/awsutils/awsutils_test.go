@@ -502,6 +502,7 @@ func TestDescribeAllENIs(t *testing.T) {
 			},
 			Attachment: &ec2types.NetworkInterfaceAttachment{
 				NetworkCardIndex: aws.Int32(0),
+				Status:           ec2types.AttachmentStatusAttached,
 			},
 			NetworkInterfaceId: aws.String(primaryeniID),
 		}},
@@ -575,6 +576,7 @@ func TestDescribeAllENIsStaleIMDSAddressDropped(t *testing.T) {
 			Attachment: &ec2types.NetworkInterfaceAttachment{
 				NetworkCardIndex: aws.Int32(0),
 				DeviceIndex:      aws.Int32(0),
+				Status:           ec2types.AttachmentStatusAttached,
 			},
 			NetworkInterfaceId: aws.String(primaryeniID),
 			PrivateIpAddresses: []ec2types.NetworkInterfacePrivateIpAddress{
@@ -763,6 +765,7 @@ func TestDescribeAllENIsStaleIMDSAddressDroppedMultiENI(t *testing.T) {
 				Attachment: &ec2types.NetworkInterfaceAttachment{
 					NetworkCardIndex: aws.Int32(0),
 					DeviceIndex:      aws.Int32(0),
+					Status:           ec2types.AttachmentStatusAttached,
 				},
 				NetworkInterfaceId: aws.String(primaryeniID),
 				PrivateIpAddresses: []ec2types.NetworkInterfacePrivateIpAddress{
@@ -773,6 +776,7 @@ func TestDescribeAllENIsStaleIMDSAddressDroppedMultiENI(t *testing.T) {
 				Attachment: &ec2types.NetworkInterfaceAttachment{
 					NetworkCardIndex: aws.Int32(0),
 					DeviceIndex:      aws.Int32(1),
+					Status:           ec2types.AttachmentStatusAttached,
 				},
 				NetworkInterfaceId: aws.String(eni2ID),
 				PrivateIpAddresses: []ec2types.NetworkInterfacePrivateIpAddress{
@@ -810,6 +814,53 @@ func TestDescribeAllENIsStaleIMDSAddressDroppedMultiENI(t *testing.T) {
 	secondIPs := ipsForENI(eni2ID)
 	assert.Contains(t, secondIPs, eni2PrivateIP, "unaffected ENI's confirmed address must remain")
 	assert.NotContains(t, secondIPs, staleIP, "stale address must not leak onto the unaffected ENI")
+}
+
+// An ENI that IMDS still lists but whose EC2 attachment is not attached (e.g. detaching or
+// detached right after a reboot that interrupted ipamd's detach) is left out: ipamd must not
+// hand out its IPs.
+func TestDescribeAllENIsLeavesOutDetachingENIs(t *testing.T) {
+	for _, status := range []ec2types.AttachmentStatus{ec2types.AttachmentStatusAttaching, ec2types.AttachmentStatusDetaching, ec2types.AttachmentStatusDetached} {
+		ctrl, mockEC2 := setup(t)
+
+		mockMetadata := testMetadata(map[string]interface{}{
+			metadataMACPath:                                primaryMAC + " " + eni2MAC,
+			metadataMACPath + eni2MAC:                      imdsMACFields,
+			metadataMACPath + eni2MAC + metadataDeviceNum:  eni2Device,
+			metadataMACPath + eni2MAC + metadataInterface:  eni2ID,
+			metadataMACPath + eni2MAC + metadataSubnetCIDR: subnetCIDR,
+			metadataMACPath + eni2MAC + metadataSubnetID:   subnetID,
+			metadataMACPath + eni2MAC + metadataIPv4s:      eni2PrivateIP,
+		})
+		result := &ec2.DescribeNetworkInterfacesOutput{
+			NetworkInterfaces: []ec2types.NetworkInterface{
+				{
+					NetworkInterfaceId: aws.String(primaryeniID),
+					Attachment:         &ec2types.NetworkInterfaceAttachment{NetworkCardIndex: aws.Int32(0), DeviceIndex: aws.Int32(0), Status: ec2types.AttachmentStatusAttached},
+					TagSet:             []ec2types.Tag{{Key: aws.String("foo"), Value: aws.String("primary")}},
+				},
+				{
+					NetworkInterfaceId: aws.String(eni2ID),
+					Attachment:         &ec2types.NetworkInterfaceAttachment{NetworkCardIndex: aws.Int32(0), DeviceIndex: aws.Int32(1), Status: status},
+					TagSet:             []ec2types.Tag{{Key: aws.String("foo"), Value: aws.String("detaching")}},
+				},
+			},
+		}
+		mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
+		cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2, instanceType: "test"}
+		vpc.SetInstance("test", 4, 10, 0, []vpc.NetworkCard{{MaximumNetworkInterfaces: 4, NetworkCardIndex: 0}}, "nitro", false)
+
+		metaData, err := cache.DescribeAllENIs(context.Background())
+		assert.NoError(t, err, status)
+		var ids []string
+		for _, eni := range metaData.ENIMetadata {
+			ids = append(ids, eni.ENIID)
+		}
+		assert.Equal(t, []string{primaryeniID}, ids, "only the attached ENI is returned (%s)", status)
+		assert.Equal(t, map[string]TagMap{primaryeniID: {"foo": "primary"}}, metaData.TagMap, status)
+		assert.Equal(t, []string{primaryeniID}, metaData.ENIsByNetworkCard[0], status)
+		ctrl.Finish()
+	}
 }
 
 func TestAllocENI(t *testing.T) {
@@ -4145,6 +4196,7 @@ func TestDescribeAllENIsConnectionTracking(t *testing.T) {
 			Attachment: &ec2types.NetworkInterfaceAttachment{
 				DeviceIndex:      aws.Int32(0),
 				NetworkCardIndex: aws.Int32(0),
+				Status:           ec2types.AttachmentStatusAttached,
 			},
 			ConnectionTrackingConfiguration: &ec2types.ConnectionTrackingConfiguration{
 				TcpEstablishedTimeout: aws.Int32(350),
@@ -4178,6 +4230,7 @@ func TestDescribeAllENIsNoConnectionTracking(t *testing.T) {
 			Attachment: &ec2types.NetworkInterfaceAttachment{
 				DeviceIndex:      aws.Int32(0),
 				NetworkCardIndex: aws.Int32(0),
+				Status:           ec2types.AttachmentStatusAttached,
 			},
 		}},
 	}
