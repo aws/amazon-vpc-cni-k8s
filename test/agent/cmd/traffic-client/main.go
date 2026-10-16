@@ -66,7 +66,8 @@ func main() {
 
 	var failureList []input.Failure
 	for _, server := range serverList {
-		serverAddr := fmt.Sprintf("%s:%s", server, serverPort)
+		// Server IPs may be passed pre-bracketed for IPv6, strip them so JoinHostPort can re-add
+		serverAddr := net.JoinHostPort(strings.Trim(server, "[]"), serverPort)
 
 		// Get connection based on the server mode - tcp/udp
 		conn, failure := getConnection(serverAddr, connectionMode)
