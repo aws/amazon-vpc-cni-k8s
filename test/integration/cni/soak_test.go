@@ -61,9 +61,11 @@ var _ = Describe("SOAK Test pod networking", Ordered, func() {
 		serverPort = 2273
 
 		By("Authorize Security Group Ingress on EC2 instance.")
-		err = f.CloudServices.EC2().
-			AuthorizeSecurityGroupIngress(context.TODO(), instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0", false)
-		Expect(err).ToNot(HaveOccurred())
+		for _, cidr := range vpcCIDRs {
+			err = f.CloudServices.EC2().
+				AuthorizeSecurityGroupIngress(context.TODO(), instanceSecurityGroupID, protocol, serverPort, serverPort, cidr, false)
+			Expect(err).ToNot(HaveOccurred())
+		}
 
 		By("Authorize Security Group Egress on EC2 instance.")
 		err = f.CloudServices.EC2().
@@ -75,9 +77,11 @@ var _ = Describe("SOAK Test pod networking", Ordered, func() {
 		fmt.Println("Cleaning SOAK test")
 
 		By("Revoke Security Group Ingress.")
-		err = f.CloudServices.EC2().
-			RevokeSecurityGroupIngress(context.TODO(), instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0", false)
-		Expect(err).ToNot(HaveOccurred())
+		for _, cidr := range vpcCIDRs {
+			err = f.CloudServices.EC2().
+				RevokeSecurityGroupIngress(context.TODO(), instanceSecurityGroupID, protocol, serverPort, serverPort, cidr, false)
+			Expect(err).ToNot(HaveOccurred())
+		}
 
 		By("Revoke Security Group Egress.")
 		err = f.CloudServices.EC2().
