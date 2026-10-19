@@ -129,6 +129,9 @@ type APIs interface {
 	// TagENI Tags ENI with current tags to contain expected tags.
 	TagENI(ctx context.Context, eniID string, currentTags map[string]string) error
 
+	// SetDeleteOnTermination sets DeleteOnTermination on the ENI attachment
+	SetDeleteOnTermination(ctx context.Context, eniID string, attachmentID string) error
+
 	// GetAttachedENIs retrieves eni information from instance metadata service
 	GetAttachedENIs() (eniList []ENIMetadata, err error)
 
@@ -357,6 +360,8 @@ type DescribeAllENIsResult struct {
 	EFAENIs                 map[string]bool
 	EFAOnlyENIByNetworkCard []string
 	ENIsByNetworkCard       [][]string
+	// ENIsWithoutDeleteOnTermination maps ipamd-created ENI IDs missing DeleteOnTermination to attachment IDs
+	ENIsWithoutDeleteOnTermination map[string]string
 }
 
 // msSince returns milliseconds since start.
@@ -1056,7 +1061,21 @@ func (cache *EC2InstanceMetadataCache) AllocENI(ctx context.Context, sg []*strin
 		return "", errors.Wrap(err, fmt.Sprintf("AllocENI: error attaching ENI for network card %d", networkCard))
 	}
 
-	// Also change the ENI's attribute so that the ENI will be deleted when the instance is deleted.
+	err = cache.SetDeleteOnTermination(ctx, eniID, attachmentID)
+	if err != nil {
+		if freeErr := cache.FreeENI(ctx, eniID); freeErr != nil {
+			awsUtilsErrInc("ENICleanupUponModifyNetworkErr", freeErr)
+			log.Warnf("AllocENI: failed to clean up ENI %s after modify failure: %v", eniID, freeErr)
+		}
+		return "", errors.Wrap(err, "AllocENI: unable to change the ENI's attribute")
+	}
+
+	log.Infof("Successfully created and attached a new ENI %s to instance on network card %d", eniID, networkCard)
+	return eniID, nil
+}
+
+// SetDeleteOnTermination sets DeleteOnTermination on the ENI attachment
+func (cache *EC2InstanceMetadataCache) SetDeleteOnTermination(ctx context.Context, eniID string, attachmentID string) error {
 	attributeInput := &ec2.ModifyNetworkInterfaceAttributeInput{
 		Attachment: &ec2types.NetworkInterfaceAttachmentChanges{
 			AttachmentId:        aws.String(attachmentID),
@@ -1066,22 +1085,15 @@ func (cache *EC2InstanceMetadataCache) AllocENI(ctx context.Context, sg []*strin
 	}
 
 	start := time.Now()
-	_, err = cache.ec2SVC.ModifyNetworkInterfaceAttribute(ctx, attributeInput)
+	_, err := cache.ec2SVC.ModifyNetworkInterfaceAttribute(ctx, attributeInput)
 	prometheusmetrics.Ec2ApiReq.WithLabelValues("ModifyNetworkInterfaceAttribute").Inc()
 	prometheusmetrics.AwsAPILatency.WithLabelValues("ModifyNetworkInterfaceAttribute", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
 		checkAPIErrorAndBroadcastEvent(err, "ec2:ModifyNetworkInterfaceAttribute")
 		awsAPIErrInc("ModifyNetworkInterfaceAttribute", err)
 		prometheusmetrics.Ec2ApiErr.WithLabelValues("ModifyNetworkInterfaceAttribute").Inc()
-		err := cache.FreeENI(ctx, eniID)
-		if err != nil {
-			awsUtilsErrInc("ENICleanupUponModifyNetworkErr", err)
-		}
-		return "", errors.Wrap(err, "AllocENI: unable to change the ENI's attribute")
 	}
-
-	log.Infof("Successfully created and attached a new ENI %s to instance on network card %d", eniID, networkCard)
-	return eniID, nil
+	return err
 }
 
 // attachENI calls EC2 API to attach the ENI and returns the attachment id
@@ -1824,6 +1836,7 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs(ctx context.Context) (Des
 	var trunkENI string
 	efaENIs := make(map[string]bool, 0)
 	tagMap := make(map[string]TagMap, len(ec2Response.NetworkInterfaces))
+	enisWithoutDeleteOnTermination := make(map[string]string)
 
 	for _, ec2res := range ec2Response.NetworkInterfaces {
 		eniID := aws.ToString(ec2res.NetworkInterfaceId)
@@ -1838,6 +1851,8 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs(ctx context.Context) (Des
 				}
 				// Set Connection Tracking settings from Primary ENI
 				cache.setConnectionTrackingSettings(ec2res.ConnectionTrackingConfiguration)
+			} else if cache.needsDeleteOnTermination(attachment, ec2res.Description) {
+				enisWithoutDeleteOnTermination[eniID] = aws.ToString(attachment.AttachmentId)
 			}
 			enisByNetworkCard[int(aws.ToInt32(attachment.NetworkCardIndex))] = append(enisByNetworkCard[int(aws.ToInt32(attachment.NetworkCardIndex))], eniID)
 			// Network Card where EFA-only ENI is attached
@@ -1892,13 +1907,21 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs(ctx context.Context) (Des
 	}
 
 	return DescribeAllENIsResult{
-		ENIMetadata:             verifiedENIs,
-		TagMap:                  tagMap,
-		TrunkENI:                trunkENI,
-		EFAENIs:                 efaENIs,
-		EFAOnlyENIByNetworkCard: efaOnlyENIByNetworkCards,
-		ENIsByNetworkCard:       enisByNetworkCard,
+		ENIMetadata:                    verifiedENIs,
+		TagMap:                         tagMap,
+		TrunkENI:                       trunkENI,
+		EFAENIs:                        efaENIs,
+		EFAOnlyENIByNetworkCard:        efaOnlyENIByNetworkCards,
+		ENIsByNetworkCard:              enisByNetworkCard,
+		ENIsWithoutDeleteOnTermination: enisWithoutDeleteOnTermination,
 	}, nil
+}
+
+// needsDeleteOnTermination matches by description because TagENI also tags ENIs that ipamd adopted.
+func (cache *EC2InstanceMetadataCache) needsDeleteOnTermination(attachment *ec2types.NetworkInterfaceAttachment, description *string) bool {
+	return !aws.ToBool(attachment.DeleteOnTermination) && aws.ToString(attachment.AttachmentId) != "" &&
+		(attachment.Status == ec2types.AttachmentStatusAttached || attachment.Status == ec2types.AttachmentStatusAttaching) &&
+		aws.ToString(description) == eniDescriptionPrefix+cache.instanceID
 }
 
 // convertTagsToSDKTags converts tags in stringMap format to AWS SDK format

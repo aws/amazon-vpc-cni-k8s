@@ -533,6 +533,9 @@ func (c *IPAMContext) nodeInit(ctx context.Context) error {
 			if err := c.awsClient.TagENI(ctx, eni.ENIID, metadataResult.TagMap[eni.ENIID]); err != nil {
 				return errors.Wrapf(err, "ipamd init: failed to tag managed ENI %v", eni.ENIID)
 			}
+			if attachmentID, ok := metadataResult.ENIsWithoutDeleteOnTermination[eni.ENIID]; ok {
+				c.setDeleteOnTermination(ctx, eni.ENIID, attachmentID)
+			}
 		}
 
 		// Retry ENI sync
@@ -1290,6 +1293,17 @@ func (c *IPAMContext) tryAssignPrefixes(ctx context.Context, networkCard int) (i
 	return false, nil
 }
 
+// setDeleteOnTermination covers an ipamd restart between AllocENI attaching an ENI and setting DeleteOnTermination.
+func (c *IPAMContext) setDeleteOnTermination(ctx context.Context, eniID string, attachmentID string) {
+	log.Infof("Setting DeleteOnTermination on ENI %s", eniID)
+	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if err := c.awsClient.SetDeleteOnTermination(reqCtx, eniID, attachmentID); err != nil {
+		log.Warnf("Failed to set DeleteOnTermination on ENI %s: %v", eniID, err)
+		ipamdErrInc("setDeleteOnTerminationErr")
+	}
+}
+
 // setupENI does following:
 // 1) get route table ID for the ENI
 // 2) add ENI to datastore
@@ -1704,6 +1718,9 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 					log.Errorf("IP pool reconcile: failed to tag managed ENI %v: %v", attachedENI.ENIID, err)
 					ipamdErrInc("eniReconcileAdd")
 					continue
+				}
+				if attachmentID, ok := metadataResult.ENIsWithoutDeleteOnTermination[attachedENI.ENIID]; ok {
+					c.setDeleteOnTermination(ctx, attachedENI.ENIID, attachmentID)
 				}
 			}
 

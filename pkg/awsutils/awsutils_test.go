@@ -870,6 +870,61 @@ func TestAllocENI(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestAllocENIModifyAttributeFailure(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	mockMetadata := testMetadata(nil)
+
+	ipAddressCount := int32(100)
+	subnetResult := &ec2.DescribeSubnetsOutput{
+		Subnets: []ec2types.Subnet{{
+			AvailableIpAddressCount: &ipAddressCount,
+			SubnetId:                aws.String(subnetID),
+			Tags: []ec2types.Tag{
+				{
+					Key:   aws.String("kubernetes.io/role/cni"),
+					Value: aws.String("1"),
+				},
+			},
+		}},
+	}
+	mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any(), gomock.Any()).Return(subnetResult, nil)
+
+	cureniID := eniID
+	eni := ec2.CreateNetworkInterfaceOutput{NetworkInterface: &ec2types.NetworkInterface{NetworkInterfaceId: &cureniID}}
+	mockEC2.EXPECT().CreateNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(&eni, nil)
+
+	deviceNum := int32(0)
+	result := &ec2.DescribeInstancesOutput{
+		Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: []ec2types.InstanceNetworkInterface{
+			{Attachment: &ec2types.InstanceNetworkInterfaceAttachment{DeviceIndex: &deviceNum}},
+		}}}}},
+	}
+	mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
+	attachmentID := eniAttachID
+	mockEC2.EXPECT().AttachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(&ec2.AttachNetworkInterfaceOutput{AttachmentId: &attachmentID}, nil)
+	mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("modify failed"))
+
+	describeResult := &ec2.DescribeNetworkInterfacesOutput{
+		NetworkInterfaces: []ec2types.NetworkInterface{{Attachment: &ec2types.NetworkInterfaceAttachment{AttachmentId: &attachmentID}}},
+	}
+	mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any(), gomock.Any(), gomock.Any()).Return(describeResult, nil)
+	mockEC2.EXPECT().DetachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+	mockEC2.EXPECT().DeleteNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+
+	cache := &EC2InstanceMetadataCache{
+		ec2SVC:             mockEC2,
+		imds:               TypedIMDS{mockMetadata},
+		instanceType:       "c5n.18xlarge",
+		useSubnetDiscovery: true,
+	}
+
+	id, err := cache.AllocENI(context.Background(), nil, "", 5, 0)
+	assert.ErrorContains(t, err, "modify failed")
+	assert.Empty(t, id)
+}
+
 func TestParseHyperPodProviderID(t *testing.T) {
 	cases := []struct {
 		name        string
@@ -4264,4 +4319,111 @@ func TestAllocIPv6PrefixesNonRetryable(t *testing.T) {
 	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
 	_, err := cache.allocIPv6Prefixes(context.Background(), eniID, time.Millisecond)
 	assert.Error(t, err)
+}
+
+func TestDescribeAllENIsReportsENIsWithoutDeleteOnTermination(t *testing.T) {
+	const attachmentID = "eni-attach-12341234"
+	ipamdDescription := aws.String(eniDescriptionPrefix + instanceID)
+
+	testCases := []struct {
+		name                string
+		primaryDOT          bool
+		secondaryDOT        bool
+		secondaryAttachID   *string
+		secondaryStatus     ec2types.AttachmentStatus
+		secondaryDesc       *string
+		expectWithoutDOTENI bool
+	}{
+		{"secondary created by ipamd without DeleteOnTermination is reported", true, false, aws.String(attachmentID), ec2types.AttachmentStatusAttached, ipamdDescription, true},
+		{"secondary already set is not reported", true, true, aws.String(attachmentID), ec2types.AttachmentStatusAttached, ipamdDescription, false},
+		{"secondary created for another instance is not reported", true, false, aws.String(attachmentID), ec2types.AttachmentStatusAttached, aws.String(eniDescriptionPrefix + "i-0000000000000000"), false},
+		{"user-attached secondary is not reported", true, false, aws.String(attachmentID), ec2types.AttachmentStatusAttached, aws.String("user eni"), false},
+		{"secondary without description is not reported", true, false, aws.String(attachmentID), ec2types.AttachmentStatusAttached, nil, false},
+		{"secondary without attachment id is not reported", true, false, nil, ec2types.AttachmentStatusAttached, ipamdDescription, false},
+		{"secondary still attaching is reported", true, false, aws.String(attachmentID), ec2types.AttachmentStatusAttaching, ipamdDescription, true},
+		{"secondary detaching is not reported", true, false, aws.String(attachmentID), ec2types.AttachmentStatusDetaching, ipamdDescription, false},
+		{"primary without DeleteOnTermination is not reported", false, true, aws.String(attachmentID), ec2types.AttachmentStatusAttached, ipamdDescription, false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl, mockEC2 := setup(t)
+			defer ctrl.Finish()
+
+			mockMetadata := testMetadata(map[string]interface{}{
+				metadataMACPath:                                primaryMAC + " " + eni2MAC,
+				metadataMACPath + eni2MAC:                      imdsMACFields,
+				metadataMACPath + eni2MAC + metadataDeviceNum:  eni2Device,
+				metadataMACPath + eni2MAC + metadataInterface:  eni2ID,
+				metadataMACPath + eni2MAC + metadataSubnetCIDR: subnetCIDR,
+				metadataMACPath + eni2MAC + metadataSubnetID:   subnetID,
+				metadataMACPath + eni2MAC + metadataIPv4s:      eni2PrivateIP,
+			})
+			result := &ec2.DescribeNetworkInterfacesOutput{
+				NetworkInterfaces: []ec2types.NetworkInterface{
+					{
+						Attachment: &ec2types.NetworkInterfaceAttachment{
+							AttachmentId:        aws.String("eni-attach-primary"),
+							NetworkCardIndex:    aws.Int32(0),
+							DeviceIndex:         aws.Int32(0),
+							DeleteOnTermination: aws.Bool(tc.primaryDOT),
+							Status:              ec2types.AttachmentStatusAttached,
+						},
+						Description:        ipamdDescription,
+						NetworkInterfaceId: aws.String(primaryeniID),
+						PrivateIpAddresses: []ec2types.NetworkInterfacePrivateIpAddress{
+							{Primary: aws.Bool(true), PrivateIpAddress: aws.String(eni1PrivateIP)},
+						},
+					},
+					{
+						Attachment: &ec2types.NetworkInterfaceAttachment{
+							AttachmentId:        tc.secondaryAttachID,
+							NetworkCardIndex:    aws.Int32(0),
+							DeviceIndex:         aws.Int32(1),
+							DeleteOnTermination: aws.Bool(tc.secondaryDOT),
+							Status:              tc.secondaryStatus,
+						},
+						Description:        tc.secondaryDesc,
+						NetworkInterfaceId: aws.String(eni2ID),
+						PrivateIpAddresses: []ec2types.NetworkInterfacePrivateIpAddress{
+							{Primary: aws.Bool(true), PrivateIpAddress: aws.String(eni2PrivateIP)},
+						},
+						TagSet: []ec2types.Tag{{Key: aws.String(eniNodeTagKey), Value: aws.String(instanceID)}},
+					},
+				},
+			}
+
+			// DescribeAllENIs is polled, so it must not modify ENIs.
+			mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
+
+			cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2, instanceType: "test", instanceID: instanceID}
+			vpc.SetInstance("test", 4, 10, 0, []vpc.NetworkCard{{MaximumNetworkInterfaces: 4, NetworkCardIndex: 0}}, "nitro", false)
+
+			metaData, err := cache.DescribeAllENIs(context.Background())
+			assert.NoError(t, err)
+			assert.Len(t, metaData.ENIMetadata, 2)
+			if tc.expectWithoutDOTENI {
+				assert.Equal(t, map[string]string{eni2ID: attachmentID}, metaData.ENIsWithoutDeleteOnTermination)
+			} else {
+				assert.Empty(t, metaData.ENIsWithoutDeleteOnTermination)
+			}
+		})
+	}
+}
+
+func TestSetDeleteOnTermination(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	expected := &ec2.ModifyNetworkInterfaceAttributeInput{
+		Attachment: &ec2types.NetworkInterfaceAttachmentChanges{
+			AttachmentId:        aws.String(eniAttachID),
+			DeleteOnTermination: aws.Bool(true),
+		},
+		NetworkInterfaceId: aws.String(eniID),
+	}
+	mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), expected, gomock.Any()).Return(nil, nil)
+
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
+	assert.NoError(t, cache.SetDeleteOnTermination(context.Background(), eniID, eniAttachID))
 }
