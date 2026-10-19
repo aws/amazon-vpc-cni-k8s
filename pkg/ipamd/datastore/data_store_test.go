@@ -2345,3 +2345,333 @@ func TestDataStore_FindFreeableCidrs(t *testing.T) {
 	cidrs := ds.FindFreeableCidrs(eniID)
 	assert.Len(t, cidrs, 1)
 }
+
+// newAssignedPrefix returns a /28 whose first assignedCount addresses are held by pods, which is
+// the shape the assignment path leaves behind.
+func newAssignedPrefix(t *testing.T, cidrStr string, assignedCount int) *CidrInfo {
+	t.Helper()
+
+	_, ipnet, err := net.ParseCIDR(cidrStr)
+	assert.NoError(t, err)
+
+	cidr := &CidrInfo{
+		Cidr:          *ipnet,
+		IPAddresses:   make(map[string]*AddressInfo),
+		IsPrefix:      true,
+		AddressFamily: "4",
+	}
+	ip := ipnet.IP.Mask(ipnet.Mask)
+	for i := 0; i < assignedCount; i++ {
+		addr := ip.String()
+		cidr.IPAddresses[addr] = &AddressInfo{
+			Address: addr,
+			IPAMKey: IPAMKey{NetworkName: "net0", ContainerID: fmt.Sprintf("%s-sandbox-%d", cidrStr, i), IfName: "eth0"},
+		}
+		getNextIPAddr(ip)
+	}
+	return cidr
+}
+
+// prefixOccupancy maps each of an ENI's IPv4 CIDRs to the number of addresses it has assigned.
+func prefixOccupancy(ds *DataStore, eniID string) map[string]int {
+	occupancy := make(map[string]int)
+	for cidrStr, cidr := range ds.eniPool[eniID].AvailableIPv4Cidrs {
+		occupancy[cidrStr] = cidr.AssignedIPAddressesInCidr()
+	}
+	return occupancy
+}
+
+// addPrefixes gives an ENI one /28 per entry, with that entry's addresses already held by pods.
+//
+// It sets an exact number of assigned addresses per prefix, which assigning pods cannot do,
+// since where a pod
+// lands is the thing under test. The cost is that it bypasses AddIPv4CidrToStore and so leaves
+// ds.total at zero, which is why it is confined to the candidate ordering tests. Tests that
+// call AssignPodIPv4Address build their prefixes through AddIPv4CidrToStore instead, so the
+// datastore's own accounting stays consistent and is checked.
+func addPrefixes(t *testing.T, ds *DataStore, eniID string, prefixes map[string]int) {
+	t.Helper()
+
+	for cidr, assigned := range prefixes {
+		ds.eniPool[eniID].AvailableIPv4Cidrs[cidr] = newAssignedPrefix(t, cidr, assigned)
+	}
+}
+
+// addENIWithPrefixes attaches an ENI through the public API and gives it empty prefixes, so the
+// datastore's total/assigned accounting stays correct.
+func addENIWithPrefixes(t *testing.T, ds *DataStore, eniID string, device int, prefixes ...string) {
+	t.Helper()
+
+	assert.NoError(t, ds.AddENI(eniID, device, device == 1, false, false,
+		networkutils.CalculateRouteTableId(device, 0), ""))
+	for _, prefix := range prefixes {
+		addPrefixToStore(t, ds, eniID, prefix)
+	}
+}
+
+func addPrefixToStore(t *testing.T, ds *DataStore, eniID, prefix string) {
+	t.Helper()
+
+	_, ipnet, err := net.ParseCIDR(prefix)
+	assert.NoError(t, err)
+	assert.NoError(t, ds.AddIPv4CidrToStore(eniID, *ipnet, true))
+}
+
+// assignPods adds n pods, each with a distinct sandbox ID derived from namePrefix.
+func assignPods(t *testing.T, ds *DataStore, namePrefix string, n int) {
+	t.Helper()
+
+	for i := 0; i < n; i++ {
+		_, _, _, err := ds.AssignPodIPv4Address(
+			IPAMKey{"net0", fmt.Sprintf("%s-%d", namePrefix, i), "eth0"}, IPAMMetadata{})
+		assert.NoError(t, err)
+	}
+}
+
+// candidateNames renders the assignment order as "<ENI ID>/<CIDR>" entries.
+func candidateNames(candidates []assignmentCandidate) []string {
+	var names []string
+	for _, candidate := range candidates {
+		names = append(names, candidate.eni.ID+"/"+candidate.cidr.Cidr.String())
+	}
+	return names
+}
+
+// Ordering applies in prefix delegation mode only. In secondary IP mode every CIDR is a single
+// /32, so fullest-first would sort all the assigned addresses ahead of the free ones and the
+// allocation loop would work through unservable candidates before reaching one it can use.
+func TestOrderingAppliesOnlyInPrefixDelegationMode(t *testing.T) {
+	newDataStore := func(t *testing.T, isPDEnabled bool) *DataStore {
+		ds := NewDataStore(Testlog, NullCheckpoint{}, isPDEnabled, defaultNetworkCard)
+		assert.NoError(t, ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0), ""))
+		addPrefixes(t, ds, "eni-1", map[string]int{"10.0.1.0/28": 15, "10.0.2.0/28": 0})
+		return ds
+	}
+
+	t.Run("ordered in prefix delegation mode", func(t *testing.T) {
+		ordered := newDataStore(t, true).candidatesForAssignment()
+		assert.Equal(t, "10.0.1.0/28", ordered[0].cidr.Cidr.String(), "fullest prefix must come first")
+		assert.True(t, ordered[0].canServe, "ranking keys must be filled in")
+		assert.Equal(t, 15, ordered[0].cidrAssigned)
+	})
+
+	t.Run("left in map order in secondary IP mode", func(t *testing.T) {
+		candidates := newDataStore(t, false).candidatesForAssignment()
+
+		// Map order cannot be asserted directly, so this checks the thing that produces it: the
+		// ranking keys are left unset, which only happens when the sort was skipped. Without
+		// this, dropping the isPDEnabled guard would turn the default mode's allocation into
+		// O(assigned) wasted attempts per pod add with every test still passing.
+		assert.ElementsMatch(t, []string{"eni-1/10.0.1.0/28", "eni-1/10.0.2.0/28"},
+			candidateNames(candidates))
+		for _, candidate := range candidates {
+			assert.False(t, candidate.canServe, "ranking must not run in secondary IP mode")
+			assert.Zero(t, candidate.cidrAssigned, "ranking must not run in secondary IP mode")
+			assert.Zero(t, candidate.eniAssigned, "ranking must not run in secondary IP mode")
+		}
+	})
+}
+
+func TestCandidatesForAssignment(t *testing.T) {
+	// eni-1 holds 49 pods, eni-2 holds 24, and eni-3 holds none. 10.0.9.0/28 on eni-1 is full.
+	allCandidates := []string{
+		"eni-1/10.0.1.0/28", "eni-1/10.0.2.0/28", "eni-1/10.0.3.0/28", "eni-1/10.0.4.0/28",
+		"eni-1/10.0.9.0/28", "eni-2/10.0.5.0/28", "eni-2/10.0.6.0/28", "eni-2/10.0.7.0/28",
+		"eni-3/10.0.8.0/28",
+	}
+	newDataStore := func(t *testing.T) *DataStore {
+		ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
+		enis := map[string]map[string]int{
+			"eni-1": {"10.0.3.0/28": 0, "10.0.4.0/28": 9, "10.0.1.0/28": 15, "10.0.2.0/28": 9, "10.0.9.0/28": 16},
+			"eni-2": {"10.0.5.0/28": 9, "10.0.6.0/28": 15, "10.0.7.0/28": 0},
+			"eni-3": {"10.0.8.0/28": 0},
+		}
+		for i, eniID := range []string{"eni-1", "eni-2", "eni-3"} {
+			device := i + 1
+			assert.NoError(t, ds.AddENI(eniID, device, device == 1, false, false,
+				networkutils.CalculateRouteTableId(device, 0), ""))
+			addPrefixes(t, ds, eniID, enis[eniID])
+		}
+		return ds
+	}
+
+	t.Run("orders fullest servable prefix first", func(t *testing.T) {
+		// How full the prefix is decides, across ENIs, so the two 15-pod prefixes come first. Equally
+		// full prefixes break on the ENI holding more pods, then on the CIDR string. Empty
+		// prefixes sort behind them, since they are the only ones that can still be returned to
+		// EC2, and among those the emptiest ENI comes last so it stays detachable. The full
+		// prefix sorts dead last despite holding the most pods: it cannot serve anybody.
+		assert.Equal(t, []string{
+			"eni-1/10.0.1.0/28", "eni-2/10.0.6.0/28",
+			"eni-1/10.0.2.0/28", "eni-1/10.0.4.0/28", "eni-2/10.0.5.0/28",
+			"eni-1/10.0.3.0/28", "eni-2/10.0.7.0/28", "eni-3/10.0.8.0/28",
+			"eni-1/10.0.9.0/28",
+		}, candidateNames(newDataStore(t).candidatesForAssignment()))
+	})
+
+	t.Run("orders equally full prefixes by device number", func(t *testing.T) {
+		// The ENIs hold the same number of pods in equally full prefixes, so only the device
+		// number separates them. The CIDR strings run the other way, so falling through to them
+		// would put eni-b first.
+		ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
+		for _, eni := range []struct {
+			id     string
+			device int
+			prefix string
+		}{{"eni-a", 2, "10.0.20.0/28"}, {"eni-b", 3, "10.0.10.0/28"}} {
+			assert.NoError(t, ds.AddENI(eni.id, eni.device, false, false, false,
+				networkutils.CalculateRouteTableId(eni.device, 0), ""))
+			addPrefixes(t, ds, eni.id, map[string]int{eni.prefix: 5})
+		}
+
+		assert.Equal(t, []string{"eni-a/10.0.20.0/28", "eni-b/10.0.10.0/28"},
+			candidateNames(ds.candidatesForAssignment()))
+	})
+
+	t.Run("returns every CIDR", func(t *testing.T) {
+		// Guards against the ordering dropping or duplicating a candidate.
+		assert.ElementsMatch(t, allCandidates,
+			candidateNames(newDataStore(t).candidatesForAssignment()))
+	})
+
+	t.Run("skips ENIs excluded from pod IP allocation", func(t *testing.T) {
+		ds := newDataStore(t)
+		ds.eniPool["eni-2"].IsExcludedForPodIPs = true
+
+		// Asserting the full remaining set, so dropping every candidate cannot pass.
+		var want []string
+		for _, name := range allCandidates {
+			if !strings.HasPrefix(name, "eni-2/") {
+				want = append(want, name)
+			}
+		}
+		assert.ElementsMatch(t, want, candidateNames(ds.candidatesForAssignment()))
+	})
+}
+
+// A partly used prefix is used before an empty one, even when the empty one sits on the ENI
+// holding more pods. The partly used prefix is on an ENI that already holds pods, so nothing
+// new is taken out of use. One pod in the empty prefix would hold all 16 of its addresses.
+func TestAssignPodIPv4AddressPrefersPartlyUsedPrefixOnEmptierENI(t *testing.T) {
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
+
+	// Build the state through the assign path, so the datastore's accounting stays correct:
+	// fill eni-1's only prefix, then 5 pods land on eni-2 because nothing else can serve them.
+	addENIWithPrefixes(t, ds, "eni-1", 1, "10.0.1.0/28")
+	assignPods(t, ds, "filler", 16)
+	addENIWithPrefixes(t, ds, "eni-2", 2, "10.0.3.0/28")
+	assignPods(t, ds, "sandbox", 5)
+	// Only now does eni-1 get an empty prefix, leaving it with more pods than eni-2.
+	addPrefixToStore(t, ds, "eni-1", "10.0.2.0/28")
+	assert.Equal(t, map[string]int{"10.0.1.0/28": 16, "10.0.2.0/28": 0}, prefixOccupancy(ds, "eni-1"))
+	assert.Equal(t, map[string]int{"10.0.3.0/28": 5}, prefixOccupancy(ds, "eni-2"))
+
+	_, deviceNumber, _, err := ds.AssignPodIPv4Address(IPAMKey{"net0", "new-sandbox", "eth0"}, IPAMMetadata{})
+	assert.NoError(t, err)
+
+	assert.Equal(t, 2, deviceNumber)
+	assert.Equal(t, map[string]int{"10.0.1.0/28": 16, "10.0.2.0/28": 0}, prefixOccupancy(ds, "eni-1"))
+	assert.Equal(t, map[string]int{"10.0.3.0/28": 6}, prefixOccupancy(ds, "eni-2"))
+
+	// The empty prefix stays reclaimable, and the accounting adds up.
+	freeable := ds.FreeablePrefixes("eni-1")
+	assert.Len(t, freeable, 1)
+	assert.Equal(t, "10.0.2.0/28", freeable[0].String())
+	assert.Equal(t, DataStoreStats{TotalIPs: 48, AssignedIPs: 22, TotalPrefixes: 3}, *ds.GetIPStats("4"))
+}
+
+// A new prefix has to be opened once no partly used prefix has room. It is opened on the ENI
+// holding the most pods, so the ENI with fewer pods keeps fewer prefixes in use.
+func TestAssignPodIPv4AddressOpensNewPrefixOnFullestENI(t *testing.T) {
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
+
+	// Fill one prefix on eni-1 and two on eni-2, each in turn the only one that can serve.
+	addENIWithPrefixes(t, ds, "eni-1", 1, "10.0.1.0/28")
+	assignPods(t, ds, "a", 16)
+	addENIWithPrefixes(t, ds, "eni-2", 2, "10.0.3.0/28")
+	assignPods(t, ds, "b", 16)
+	addPrefixToStore(t, ds, "eni-2", "10.0.4.0/28")
+	assignPods(t, ds, "c", 16)
+	// Both ENIs now get an empty prefix. Nothing is partly used, so the next pod has to open
+	// one. eni-2 holds 32 pods against eni-1's 16, and it has the higher device number, so the
+	// pod count is what decides.
+	addPrefixToStore(t, ds, "eni-1", "10.0.2.0/28")
+	addPrefixToStore(t, ds, "eni-2", "10.0.5.0/28")
+
+	_, deviceNumber, _, err := ds.AssignPodIPv4Address(IPAMKey{"net0", "new-sandbox", "eth0"}, IPAMMetadata{})
+	assert.NoError(t, err)
+
+	assert.Equal(t, 2, deviceNumber)
+	assert.Equal(t, map[string]int{"10.0.1.0/28": 16, "10.0.2.0/28": 0}, prefixOccupancy(ds, "eni-1"))
+	assert.Equal(t, map[string]int{"10.0.3.0/28": 16, "10.0.4.0/28": 16, "10.0.5.0/28": 1},
+		prefixOccupancy(ds, "eni-2"))
+	assert.Equal(t, DataStoreStats{TotalIPs: 80, AssignedIPs: 49, TotalPrefixes: 5}, *ds.GetIPStats("4"))
+}
+
+func TestAssignPodIPv4AddressPacksPrefixes(t *testing.T) {
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
+
+	err := ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0), "")
+	assert.NoError(t, err)
+	for _, prefix := range []string{"10.0.1.0/28", "10.0.2.0/28", "10.0.3.0/28"} {
+		_, ipnet, err := net.ParseCIDR(prefix)
+		assert.NoError(t, err)
+		assert.NoError(t, ds.AddIPv4CidrToStore("eni-1", *ipnet, true))
+	}
+
+	// 20 pods fit in two of the three /28s. All three start empty, so the tiebreak decides the
+	// order and 10.0.1.0/28 is filled before 10.0.2.0/28 is opened at all.
+	for i := 0; i < 20; i++ {
+		_, _, _, err := ds.AssignPodIPv4Address(IPAMKey{"net0", fmt.Sprintf("sandbox-%d", i), "eth0"}, IPAMMetadata{})
+		assert.NoError(t, err)
+	}
+
+	assert.Equal(t, map[string]int{
+		"10.0.1.0/28": 16,
+		"10.0.2.0/28": 4,
+		"10.0.3.0/28": 0,
+	}, prefixOccupancy(ds, "eni-1"))
+
+	// The prefix nothing was drawn from stays reclaimable by the existing release path.
+	assert.Equal(t, 1, ds.GetFreePrefixes())
+	freeable := ds.FreeablePrefixes("eni-1")
+	assert.Len(t, freeable, 1)
+	assert.Equal(t, "10.0.3.0/28", freeable[0].String())
+}
+
+func TestAssignPodIPv4AddressRefillsPrefixAfterChurn(t *testing.T) {
+	// No cooldown, so a freed address is immediately reusable and the churn below does not
+	// have to wait IP_COOLDOWN_PERIOD out.
+	t.Setenv(envIPCooldownPeriod, "0")
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
+
+	err := ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0), "")
+	assert.NoError(t, err)
+	for _, prefix := range []string{"10.0.1.0/28", "10.0.2.0/28"} {
+		_, ipnet, err := net.ParseCIDR(prefix)
+		assert.NoError(t, err)
+		assert.NoError(t, ds.AddIPv4CidrToStore("eni-1", *ipnet, true))
+	}
+
+	for i := 0; i < 16; i++ {
+		_, _, _, err := ds.AssignPodIPv4Address(IPAMKey{"net0", fmt.Sprintf("sandbox-%d", i), "eth0"}, IPAMMetadata{})
+		assert.NoError(t, err)
+	}
+	assert.Equal(t, map[string]int{"10.0.1.0/28": 16, "10.0.2.0/28": 0}, prefixOccupancy(ds, "eni-1"))
+
+	// Churn: three pods go away and three replacements arrive. The replacements must refill the
+	// holes they left rather than open the clean prefix, where one pod would hold all 16 addresses.
+	for i := 0; i < 3; i++ {
+		_, _, _, _, _, err := ds.UnassignPodIPAddress(IPAMKey{"net0", fmt.Sprintf("sandbox-%d", i), "eth0"})
+		assert.NoError(t, err)
+	}
+	assert.Equal(t, map[string]int{"10.0.1.0/28": 13, "10.0.2.0/28": 0}, prefixOccupancy(ds, "eni-1"))
+
+	for i := 0; i < 3; i++ {
+		_, _, _, err := ds.AssignPodIPv4Address(IPAMKey{"net0", fmt.Sprintf("replacement-%d", i), "eth0"}, IPAMMetadata{})
+		assert.NoError(t, err)
+	}
+
+	assert.Equal(t, map[string]int{"10.0.1.0/28": 16, "10.0.2.0/28": 0}, prefixOccupancy(ds, "eni-1"))
+	assert.Equal(t, 1, ds.GetFreePrefixes())
+}
