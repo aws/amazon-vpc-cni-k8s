@@ -3657,6 +3657,13 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 			Alias: hostVethAlias("some-other-sandbox"),
 		},
 	}
+	// No ownership stamp, as when setupVeth runs without a sandbox ID.
+	hostVethUnstamped := &netlink.Veth{
+		LinkAttrs: netlink.LinkAttrs{
+			Name:  "eni8ea2c11fe35",
+			Index: 9,
+		},
+	}
 	type linkByNameCall struct {
 		linkName string
 		link     netlink.Link
@@ -3727,13 +3734,50 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 						netNSPath: "/proc/42/ns/net",
 					},
 				},
+				linkSetAliasCalls: []linkSetAliasCall{
+					{
+						link:  hostVethWithIndex9,
+						alias: hostVethAlias(testSandboxID),
+					},
+				},
 			},
 			args: args{
 				hostVethName: "eni8ea2c11fe35",
 				contVethName: "eth0",
 				netnsPath:    "/proc/42/ns/net",
+				sandboxID:    testSandboxID,
 			},
 			want: hostVethWithIndex9,
+		},
+		{
+			// Without a sandbox ID there is nothing to stamp, so LinkSetAlias must
+			// not be called at all. No linkSetAliasCalls are registered below, so
+			// gomock fails this case if setupVeth tries to stamp anyway.
+			name: "successfully setup veth - empty sandboxID leaves the link unstamped",
+			fields: fields{
+				linkByNameCalls: []linkByNameCall{
+					{
+						linkName: "eni8ea2c11fe35",
+						err:      errors.New("not exists"),
+					},
+					{
+						linkName: "eni8ea2c11fe35",
+						link:     hostVethUnstamped,
+					},
+				},
+				withNetNSPathCalls: []withNetNSPathCall{
+					{
+						netNSPath: "/proc/42/ns/net",
+					},
+				},
+			},
+			args: args{
+				hostVethName: "eni8ea2c11fe35",
+				contVethName: "eth0",
+				netnsPath:    "/proc/42/ns/net",
+				sandboxID:    "",
+			},
+			want: hostVethUnstamped,
 		},
 		{
 			name: "successfully setup veth - old hostVeth exists",
@@ -5604,8 +5648,12 @@ func Test_linuxNetwork_claimHostVethName(t *testing.T) {
 		// peer is what LinkByIndex returns inside netnsPath, nil for an error.
 		peer           netlink.Link
 		expectPeerCall bool
-		wantDelete     bool
-		wantErr        string
+		// noSandboxID calls claimHostVethName with an empty sandbox ID. Nothing
+		// can be stamped or matched by stamp in that case, so ownership has to be
+		// established from the veth peer or not at all.
+		noSandboxID bool
+		wantDelete  bool
+		wantErr     string
 	}{
 		{
 			name:     "name is free",
@@ -5660,6 +5708,24 @@ func Test_linuxNetwork_claimHostVethName(t *testing.T) {
 			existing: &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Name: vethName, Index: hostIndex}},
 			wantErr:  "unable to establish ownership of existing hostVeth eni8ea2c11fe35, refusing to delete it: existing link eni8ea2c11fe35 reports no veth peer index",
 		},
+		{
+			// An empty sandbox ID can never match a stamp, so even a link carrying
+			// what would otherwise be our own alias is refused rather than deleted.
+			name:        "no sandbox ID, refuses a link stamped by any sandbox",
+			existing:    stamped(hostVethAlias(testSandboxID)),
+			noSandboxID: true,
+			wantErr:     `hostVeth eni8ea2c11fe35 is owned by sandbox "sandbox-1", refusing to delete it for sandbox ""`,
+		},
+		{
+			// The upgrade path when no sandbox ID is available: the stamp cannot
+			// help, so the reciprocal peer is the only evidence of ownership.
+			name:           "no sandbox ID, reclaims an unstamped link whose peer is reciprocal",
+			existing:       legacy,
+			peer:           &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Index: peerIndex, ParentIndex: hostIndex}},
+			expectPeerCall: true,
+			noSandboxID:    true,
+			wantDelete:     true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -5692,8 +5758,13 @@ func Test_linuxNetwork_claimHostVethName(t *testing.T) {
 				netLink.EXPECT().LinkDel(tt.existing).Return(nil)
 			}
 
+			sandboxID := testSandboxID
+			if tt.noSandboxID {
+				sandboxID = ""
+			}
+
 			n := &linuxNetwork{netLink: netLink, ns: nsMock}
-			err := n.claimHostVethName(vethName, testSandboxID, netnsPath, testLogger)
+			err := n.claimHostVethName(vethName, sandboxID, netnsPath, testLogger)
 			if tt.wantErr != "" {
 				assert.EqualError(t, err, tt.wantErr)
 			} else {
