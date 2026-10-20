@@ -148,7 +148,8 @@ const (
 	retryLinkByMacInterval = 3 * time.Second
 )
 
-var log = logger.Get()
+// log is resolved lazily to not build a logger (on the ipamd default log path) at package-init time.
+var log = logger.Lazy()
 
 // NetworkAPIs defines the host level and the ENI level network related operations
 type NetworkAPIs interface {
