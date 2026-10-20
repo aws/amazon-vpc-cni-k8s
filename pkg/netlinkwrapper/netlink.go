@@ -31,6 +31,10 @@ var log = logger.Lazy()
 type NetLink interface {
 	// LinkByName gets a link object given the device name
 	LinkByName(name string) (netlink.Link, error)
+	// LinkByIndex gets a link object given the device index
+	LinkByIndex(index int) (netlink.Link, error)
+	// LinkSetAlias is equivalent to `ip link set dev $link alias $alias`
+	LinkSetAlias(link netlink.Link, alias string) error
 	// LinkSetNsFd is equivalent to `ip link set $link netns $ns`
 	LinkSetNsFd(link netlink.Link, fd int) error
 	// ParseAddr parses an address string
@@ -207,6 +211,14 @@ func (*netLink) RuleList(family int) ([]netlink.Rule, error) {
 		return err
 	})
 	return rules, err
+}
+
+func (*netLink) LinkByIndex(index int) (netlink.Link, error) {
+	return netlink.LinkByIndex(index)
+}
+
+func (*netLink) LinkSetAlias(link netlink.Link, alias string) error {
+	return netlink.LinkSetAlias(link, alias)
 }
 
 func (*netLink) LinkSetMTU(link netlink.Link, mtu int) error {

@@ -393,6 +393,7 @@ func TestCmdAddForMultiNICAttachment(t *testing.T) {
 			RouteTable:        devNum + 1,
 			HostVethName:      "eni" + podHash,
 			ContainerVethName: ifName,
+			SandboxID:         containerID,
 		},
 		{
 			IPAddress: &net.IPNet{
@@ -403,6 +404,7 @@ func TestCmdAddForMultiNICAttachment(t *testing.T) {
 			RouteTable:        (MAX_ENI * (NetworkCards - 1)) + devNum + 1,
 			HostVethName:      "enice799470a46",
 			ContainerVethName: "mNicIf1",
+			SandboxID:         containerID,
 		},
 	}
 	mocksNetwork.EXPECT().SetupPodNetwork(vethMetadata, cmdArgs.Netns, gomock.Any(), gomock.Any()).Return(nil)
