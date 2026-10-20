@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -47,6 +48,25 @@ func TestGenerateJSONPlusBandwidthAndTuning(t *testing.T) {
 	_ = os.Setenv(envDisablePodV6, "true")
 	err := generateJSON(awsConflist, devNull, getPrimaryIPMock)
 	assert.NoError(t, err)
+}
+
+// Validate that DISABLE_HOST_VETH_MAC_UNIQUENESS_CHECK reaches the aws-cni plugin config, also when plugins are chained
+func TestGenerateJSONDisableHostVethMACUniquenessCheck(t *testing.T) {
+	for _, chained := range []bool{false, true} {
+		_ = os.Setenv(envDisableHostVethMACUniquenessCheck, "true")
+		_ = os.Setenv(envEnBandwidthPlugin, strconv.FormatBool(chained))
+		defer os.Unsetenv(envDisableHostVethMACUniquenessCheck)
+		defer os.Unsetenv(envEnBandwidthPlugin)
+		out, err := os.CreateTemp("", "conflist")
+		assert.NoError(t, err)
+		defer os.Remove(out.Name())
+		assert.NoError(t, generateJSON(awsConflist, out.Name(), getPrimaryIPMock))
+		data, err := os.ReadFile(out.Name())
+		assert.NoError(t, err)
+		var conflist NetConfList
+		assert.NoError(t, json.Unmarshal(data, &conflist))
+		assert.Equal(t, "true", conflist.Plugins[0].DisableHostVethMACUniquenessCheck, "chained=%v", chained)
+	}
 }
 
 // Validate setting environment POD_MTU/AWS_VPC_ENI_MTU, takes effect for egress-cni plugin

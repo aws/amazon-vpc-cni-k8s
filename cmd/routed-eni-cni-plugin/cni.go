@@ -76,6 +76,25 @@ type NetConf struct {
 
 	PluginLogLevel string        `json:"pluginLogLevel"`
 	RuntimeConfig  RuntimeConfig `json:"runtimeConfig"`
+
+	// DisableHostVethMACUniquenessCheck is "true" when the host-side veth MAC
+	// is a plain random draw instead of being checked against the node's
+	// links (DISABLE_HOST_VETH_MAC_UNIQUENESS_CHECK). Empty means "false".
+	DisableHostVethMACUniquenessCheck string `json:"disableHostVethMACUniquenessCheck"`
+
+	// skipHostVethMACCheck is DisableHostVethMACUniquenessCheck parsed by LoadNetConf.
+	skipHostVethMACCheck bool
+}
+
+func parseBoolSetting(name string, value string) (bool, error) {
+	if value == "" {
+		return false, nil
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, errors.Wrapf(err, "conf.%s must be a boolean, got %q", name, value)
+	}
+	return parsed, nil
 }
 
 type RuntimeConfig struct {
@@ -133,6 +152,11 @@ func LoadNetConf(bytes []byte) (*NetConf, logger.Logger, error) {
 	if len(conf.VethPrefix) > 4 {
 		return nil, nil, errors.New("conf.VethPrefix can be at most 4 characters long")
 	}
+	skipHostVethMACCheck, err := parseBoolSetting("disableHostVethMACUniquenessCheck", conf.DisableHostVethMACUniquenessCheck)
+	if err != nil {
+		return nil, nil, err
+	}
+	conf.skipHostVethMACCheck = skipHostVethMACCheck
 	return &conf, log, nil
 }
 
@@ -279,13 +303,13 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	if r.PodVlanId != 0 {
 		// SGP Pods will always get a single IP address, so it is safe to access the first element of vethMetadata
 		err = driverClient.SetupBranchENIPodNetwork(vethMetadata[0], args.Netns, int(r.PodVlanId), r.PodENIMAC,
-			r.PodENISubnetGW, int(r.ParentIfIndex), mtu, conf.PodSGEnforcingMode, log)
+			r.PodENISubnetGW, int(r.ParentIfIndex), mtu, conf.PodSGEnforcingMode, conf.skipHostVethMACCheck, log)
 		// For branch ENI mode, the pod VLAN ID is packed in Interface.Mac
 		// CNI currently uses dummyInterface to identify if a Pod is a SGP or a regular pod.
 		// To stop using dummy interface here, we have to let IPAMD store the SGP containers in a file, so the identification of such containers becomes easier during deletion flow and won't require API server call
 		dummyInterface = &current.Interface{Name: dummyInterfaceName, Mac: fmt.Sprint(r.PodVlanId)}
 	} else {
-		err = driverClient.SetupPodNetwork(vethMetadata, args.Netns, mtu, log)
+		err = driverClient.SetupPodNetwork(vethMetadata, args.Netns, mtu, conf.skipHostVethMACCheck, log)
 		// For non-branch ENI, the pod VLAN ID value of 0 is packed in Interface.Mac, while the interface device number is packed in Interface.Sandbox
 		// The use of this dummy interface can be removed for regular pods once we move to v1.20+ as CNI now stores the route table ID in the Mac field of the container interface.
 		// This is kept for supporting downgrade to v1.19 and below.

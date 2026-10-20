@@ -123,7 +123,7 @@ func TestCmdAdd(t *testing.T) {
 	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAllocationMetadata: addrs, NetworkPolicyMode: "none"}
 	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
 
-	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), gomock.Any()).Return(nil)
+	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil).Times(1)
 
@@ -168,7 +168,7 @@ func TestCmdAddWithNPenabled(t *testing.T) {
 	enforceNpReply := &rpc.EnforceNpReply{Success: true}
 	mockNP.EXPECT().EnforceNpToPod(gomock.Any(), gomock.Any()).Return(enforceNpReply, nil)
 
-	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), gomock.Any()).Return(nil)
+	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil)
 
@@ -213,7 +213,7 @@ func TestCmdAddWithNPenabledWithErr(t *testing.T) {
 	enforceNpReply := &rpc.EnforceNpReply{Success: false}
 	mockNP.EXPECT().EnforceNpToPod(gomock.Any(), gomock.Any()).Return(enforceNpReply, errors.New("Error on EnforceNpReply"))
 
-	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), gomock.Any()).Return(nil)
+	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 	err := add(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
 	assert.Error(t, err)
@@ -279,7 +279,7 @@ func TestCmdAddErrSetupPodNetwork(t *testing.T) {
 	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAllocationMetadata: addrs, NetworkPolicyMode: "none"}
 	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
 
-	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), gomock.Any()).Return(errors.New("error on SetupPodNetwork"))
+	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), gomock.Any(), gomock.Any()).Return(errors.New("error on SetupPodNetwork"))
 
 	// when SetupPodNetwork fails, expect to return IP back to datastore
 	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPAllocationMetadata: addrs}
@@ -318,7 +318,7 @@ func TestCmdAddWithNetworkPolicyModeUnset(t *testing.T) {
 	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAllocationMetadata: addrs, NetworkPolicyMode: ""}
 	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
 
-	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), gomock.Any()).Return(nil)
+	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil).Times(1)
 
@@ -405,7 +405,7 @@ func TestCmdAddForMultiNICAttachment(t *testing.T) {
 			ContainerVethName: "mNicIf1",
 		},
 	}
-	mocksNetwork.EXPECT().SetupPodNetwork(vethMetadata, cmdArgs.Netns, gomock.Any(), gomock.Any()).Return(nil)
+	mocksNetwork.EXPECT().SetupPodNetwork(vethMetadata, cmdArgs.Netns, gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil).Times(1)
 
@@ -737,7 +737,7 @@ func TestCmdAddForPodENINetwork(t *testing.T) {
 	mockNP.EXPECT().EnforceNpToPod(gomock.Any(), gomock.Any()).Return(enforceNpReply, nil)
 
 	mocksNetwork.EXPECT().SetupBranchENIPodNetwork(gomock.Any(), cmdArgs.Netns, 1, "eniHardwareAddr",
-		"10.0.0.1", 2, gomock.Any(), sgpp.EnforcingModeStrict, gomock.Any()).Return(nil)
+		"10.0.0.1", 2, gomock.Any(), sgpp.EnforcingModeStrict, gomock.Any(), gomock.Any()).Return(nil)
 
 	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil)
 
@@ -1896,5 +1896,27 @@ func TestCmdDelErrLoadNetConf(t *testing.T) {
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), "del cmd: error loading config from args")
 		})
+	}
+}
+
+func TestLoadNetConfDisableHostVethMACUniquenessCheck(t *testing.T) {
+	for _, tt := range []struct {
+		value   string
+		want    bool
+		wantErr bool
+	}{
+		{value: "", want: false},
+		{value: "false", want: false},
+		{value: "true", want: true},
+		{value: "yes", wantErr: true},
+	} {
+		raw := []byte(`{"cniVersion":"0.4.0","name":"aws-cni","type":"aws-cni","vethPrefix":"eni","mtu":"9001","disableHostVethMACUniquenessCheck":"` + tt.value + `"}`)
+		conf, _, err := LoadNetConf(raw)
+		if tt.wantErr {
+			assert.Error(t, err, "value %q", tt.value)
+			continue
+		}
+		assert.NoError(t, err, "value %q", tt.value)
+		assert.Equal(t, tt.want, conf.skipHostVethMACCheck, "value %q", tt.value)
 	}
 }
