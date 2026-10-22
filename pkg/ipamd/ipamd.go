@@ -251,6 +251,7 @@ type IPAMContext struct {
 	maxPods                   int // maximum number of pods that can be scheduled on the node
 	networkPolicyMode         string
 	enableMultiNICSupport     bool
+	vethPrefix                string
 	withApiServer             bool
 }
 
@@ -429,6 +430,7 @@ func New(ctx context.Context, k8sClient client.Client, withApiServer bool) (*IPA
 	c.enableManageUntaggedMode = enableManageUntaggedMode()
 	c.enablePodIPAnnotation = EnablePodIPAnnotation()
 	c.enableMultiNICSupport = enableMultiNICSupport()
+	c.vethPrefix = networkutils.GetVethPrefixName()
 	c.networkPolicyMode, err = getNetworkPolicyMode()
 	if err != nil {
 		return nil, err

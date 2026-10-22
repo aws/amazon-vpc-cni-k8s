@@ -200,7 +200,7 @@ const (
 
 // New creates a linuxNetwork object
 func New() (NetworkAPIs, error) {
-	connmark, err := NewConnmark(getVethPrefixName(), getConnmark())
+	connmark, err := NewConnmark(GetVethPrefixName(), getConnmark())
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect iptables mode vpc-cni is using: %w", err)
 	}
@@ -214,7 +214,7 @@ func New() (NetworkAPIs, error) {
 		nodePortSupportEnabled: nodePortSupportEnabled(),
 		mainENIMark:            getConnmark(),
 		mtu:                    GetEthernetMTU(),
-		vethPrefix:             getVethPrefixName(),
+		vethPrefix:             GetVethPrefixName(),
 		podSGEnforcingMode:     sgpp.LoadEnforcingModeFromEnv(),
 
 		netLink: netlinkwrapper.NewNetLink(),
@@ -774,7 +774,7 @@ func GetConfigForDebug() map[string]interface{} {
 		envExternalSNAT:         useExternalSNAT(),
 		envExternalServiceCIDRs: parseCIDRString(envExternalServiceCIDRs),
 		envMTU:                  GetEthernetMTU(),
-		envVethPrefix:           getVethPrefixName(),
+		envVethPrefix:           GetVethPrefixName(),
 		envNodePortSupport:      nodePortSupportEnabled(),
 		envRandomizeSNAT:        typeOfSNAT(),
 	}
@@ -1324,8 +1324,8 @@ func GetPodMTU(podMTU string) int {
 	return mtu
 }
 
-// getVethPrefixName gets the name prefix of the veth devices based on the AWS_VPC_K8S_CNI_VETHPREFIX environment variable
-func getVethPrefixName() string {
+// GetVethPrefixName gets the name prefix of the veth devices based on the AWS_VPC_K8S_CNI_VETHPREFIX environment variable
+func GetVethPrefixName() string {
 	if envVal, found := os.LookupEnv(envVethPrefix); found {
 		return envVal
 	}

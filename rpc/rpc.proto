@@ -112,4 +112,5 @@ message NetworkPolicyAgentConfigReply {
   string NodeIPv6 = 4;
   string InstanceID = 5;
   string Region = 6;
+  string VethPrefix = 7;
 }
