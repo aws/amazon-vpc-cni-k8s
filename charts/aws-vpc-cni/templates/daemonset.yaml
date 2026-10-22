@@ -8,6 +8,9 @@ metadata:
 spec:
   updateStrategy:
 {{ toYaml .Values.updateStrategy | indent 4 }}
+{{- if .Values.minReadySeconds }}
+  minReadySeconds: {{ .Values.minReadySeconds | int }}
+{{- end }}
   selector:
     matchLabels:
 {{- if .Values.originalMatchLabels }}

@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -30,6 +31,9 @@ import (
 	batchV1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
 )
+
+// Port on which the metric server listens
+const metricServerPort = "8080"
 
 // TrafficTest is used to execute a traffic test for TCP/UDP traffic
 type TrafficTest struct {
@@ -174,12 +178,8 @@ func (t *TrafficTest) TestTraffic() (successRate float64, err error) {
 		fmt.Fprintln(GinkgoWriter, "successfully validated the client pod list")
 	}
 
-	metricServerIP := metricServerPod.Status.PodIP
-	if t.IsV6Enabled {
-		metricServerIP = fmt.Sprintf("[%s]", metricServerPod.Status.PodIP)
-	}
 	// Get the aggregated response from the metric server for calculating the connection success rate
-	testInputs, err := t.getTestStatusFromMetricServer(metricServerIP)
+	testInputs, err := t.getTestStatusFromMetricServer(metricServerPod.Status.PodIP)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get test status from metric server: %v", err)
 	}
@@ -224,8 +224,8 @@ func (t *TrafficTest) startTrafficClient(serverAddList string, metricServerIP st
 			fmt.Sprintf("-server-list-csv=%s", serverAddList),
 			fmt.Sprintf("-server-port=%d", t.ServerPort),
 			fmt.Sprintf("-server-listen-mode=%s", t.ServerProtocol),
-			fmt.Sprintf("-metric-aggregator-addr=http://%s:8080/submit/metric"+
-				"/connectivity", metricServerIP),
+			fmt.Sprintf("-metric-aggregator-addr=http://%s/submit/metric"+
+				"/connectivity", net.JoinHostPort(metricServerIP, metricServerPort)),
 		}).
 		Build()
 
@@ -257,7 +257,7 @@ func (t *TrafficTest) getTestStatusFromMetricServer(metricPodIP string) ([]input
 	getMetricContainer := manifest.NewCurlContainer(t.Framework.Options.TestImageRegistry).
 		Name("get-metric-container").
 		Command([]string{"curl"}).
-		Args([]string{fmt.Sprintf("http://%s:8080/get/metric/connectivity", metricPodIP), "--silent"}).
+		Args([]string{fmt.Sprintf("http://%s/get/metric/connectivity", net.JoinHostPort(metricPodIP, metricServerPort)), "--silent"}).
 		Build()
 
 	getMetricPod := manifest.NewDefaultPodBuilder().

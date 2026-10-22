@@ -45,12 +45,17 @@ type Logger interface {
 	WithFields(keyValues Fields) Logger
 }
 
-// Get returns an default instance of the zap logger
+// Get returns the current logger instance, building the default one on first
+// use if nothing has been configured yet.
+//
+// Construction no longer emits a log line (see issue #3893): writing at build
+// time made lumberjack create the log file eagerly, which fails on a read-only
+// root (Bottlerocket) when short-lived CNI plugin binaries inherit the ipamd
+// default log path. The first write must come from real log calls only.
 func Get() Logger {
 	if log == nil {
 		logConfig := LoadLogConfig()
 		log = New(logConfig)
-		log.Info("Initialized new logger as an existing instance was not found")
 	}
 	return log
 }
@@ -58,6 +63,38 @@ func Get() Logger {
 // New logger initializes logger
 func New(inputLogConfig *Configuration) Logger {
 	log = inputLogConfig.newZapLogger()
-	log.Info("Constructed new logger instance")
 	return log
 }
+
+// Returns a Logger proxy that resolves the underlying logger via Get() on
+// every call instead of capturing it eagerly.
+func Lazy() Logger {
+	return &lazyLogger{}
+}
+
+// lazyLogger is a stateless proxy. Each method resolves the active logger with
+// Get() at call time and forwards to it, so no logger is constructed until a
+// log method is actually invoked.
+type lazyLogger struct{}
+
+func (l *lazyLogger) Debugf(format string, args ...interface{}) { Get().Debugf(format, args...) }
+
+func (l *lazyLogger) Debug(msg string) { Get().Debug(msg) }
+
+func (l *lazyLogger) Infof(format string, args ...interface{}) { Get().Infof(format, args...) }
+
+func (l *lazyLogger) Info(msg string) { Get().Info(msg) }
+
+func (l *lazyLogger) Warnf(format string, args ...interface{}) { Get().Warnf(format, args...) }
+
+func (l *lazyLogger) Warn(msg string) { Get().Warn(msg) }
+
+func (l *lazyLogger) Errorf(format string, args ...interface{}) { Get().Errorf(format, args...) }
+
+func (l *lazyLogger) Error(msg string) { Get().Error(msg) }
+
+func (l *lazyLogger) Fatalf(format string, args ...interface{}) { Get().Fatalf(format, args...) }
+
+func (l *lazyLogger) Panicf(format string, args ...interface{}) { Get().Panicf(format, args...) }
+
+func (l *lazyLogger) WithFields(keyValues Fields) Logger { return Get().WithFields(keyValues) }

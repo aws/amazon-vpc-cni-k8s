@@ -17738,6 +17738,79 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		HypervisorType: "nitro",
 		IsBareMetal:    false,
 	},
+	"trn3.48xlarge": {
+		ENILimit:                2,
+		IPv4Limit:               50,
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+			{
+				MaximumNetworkInterfaces: 2,
+				NetworkCardIndex:         0,
+			},
+			{
+				MaximumNetworkInterfaces: 2,
+				NetworkCardIndex:         1,
+			},
+			{
+				MaximumNetworkInterfaces: 2,
+				NetworkCardIndex:         2,
+			},
+			{
+				MaximumNetworkInterfaces: 2,
+				NetworkCardIndex:         3,
+			},
+			{
+				MaximumNetworkInterfaces: 2,
+				NetworkCardIndex:         4,
+			},
+			{
+				MaximumNetworkInterfaces: 2,
+				NetworkCardIndex:         5,
+			},
+			{
+				MaximumNetworkInterfaces: 2,
+				NetworkCardIndex:         6,
+			},
+			{
+				MaximumNetworkInterfaces: 2,
+				NetworkCardIndex:         7,
+			},
+			{
+				MaximumNetworkInterfaces: 2,
+				NetworkCardIndex:         8,
+			},
+			{
+				MaximumNetworkInterfaces: 2,
+				NetworkCardIndex:         9,
+			},
+			{
+				MaximumNetworkInterfaces: 2,
+				NetworkCardIndex:         10,
+			},
+			{
+				MaximumNetworkInterfaces: 2,
+				NetworkCardIndex:         11,
+			},
+			{
+				MaximumNetworkInterfaces: 2,
+				NetworkCardIndex:         12,
+			},
+			{
+				MaximumNetworkInterfaces: 2,
+				NetworkCardIndex:         13,
+			},
+			{
+				MaximumNetworkInterfaces: 2,
+				NetworkCardIndex:         14,
+			},
+			{
+				MaximumNetworkInterfaces: 2,
+				NetworkCardIndex:         15,
+			},
+		},
+		HypervisorType: "nitro",
+		IsBareMetal:    false,
+	},
 	"u-12tb1.metal": {
 		ENILimit:                5,
 		IPv4Limit:               30,
