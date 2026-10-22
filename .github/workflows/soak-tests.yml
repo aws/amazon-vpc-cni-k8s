@@ -36,3 +36,5 @@ jobs:
           RUN_CNI_INTEGRATION_TESTS=false RUN_SOAK_TEST=true RUN_UBUNTU_TEST=true ./scripts/run-integration-tests.sh
         env:
           AWS_DEFAULT_REGION: us-west-2
+          # Enabled here because this runner has outbound internet access.
+          RUN_EXTERNAL_PROBE: "true"
