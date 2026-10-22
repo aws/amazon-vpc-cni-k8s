@@ -22,6 +22,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/agent"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
+	"github.com/aws/amazon-vpc-cni-k8s/test/integration/common"
 
 	"github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1beta1"
 	vpcControllerFW "github.com/aws/amazon-vpc-resource-controller-k8s/test/framework/manifest"
@@ -254,6 +255,7 @@ var _ = Describe("Custom Networking + Security Groups for Pods Test", func() {
 })
 
 func GetPodNetworkingValidationInput(podList v1.PodList) input.PodNetworkingValidationInput {
+	testConfig := common.CurrentSGPPTestConfig(f)
 	var ipFamily string
 	if isIPv4Cluster {
 		ipFamily = "IPv4"
@@ -262,7 +264,7 @@ func GetPodNetworkingValidationInput(podList v1.PodList) input.PodNetworkingVali
 	}
 	ip := input.PodNetworkingValidationInput{
 		IPFamily:    ipFamily,
-		VethPrefix:  "vlan",
+		VethPrefix:  testConfig.HostVethPrefix,
 		PodList:     []input.Pod{},
 		ValidateMTU: true,
 		MTU:         9001,
@@ -288,8 +290,10 @@ func GetPodNetworkingValidationInput(podList v1.PodList) input.PodNetworkingVali
 }
 
 func ValidateHostNetworking(testType TestType, podValidationInputString string) {
+	testConfig := common.CurrentSGPPTestConfig(f)
 	testerArgs := []string{fmt.Sprintf("-pod-networking-validation-input=%s",
-		podValidationInputString)}
+		podValidationInputString),
+		fmt.Sprintf("-pod-sg-enforcing-mode=%s", testConfig.EnforcingMode)}
 
 	if NetworkingSetupSucceeds == testType {
 		testerArgs = append(testerArgs, "-test-setup=true", "-test-ppsg=true")

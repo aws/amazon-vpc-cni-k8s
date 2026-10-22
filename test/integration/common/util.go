@@ -257,7 +257,7 @@ func AssertSpanningENIsPreconditions(f *framework.Framework, node coreV1.Node) i
 	netInfo := NetworkInfoForNode(f, node)
 	replicas, err := SpanningENIsReplicaCount(netInfo)
 	Expect(err).ToNot(HaveOccurred(), "instance type cannot support a spanning ENI deployment")
-	awsNodeEnv := getAWSNodeEnv(f)
+	awsNodeEnv := GetAWSNodeEnv(f)
 
 	Expect(parseBoolEnv(awsNodeEnv["ENABLE_PREFIX_DELEGATION"])).To(BeFalse(),
 		"prefix delegation is enabled: per-ENI capacity is prefix-based, so the "+
@@ -275,9 +275,9 @@ func AssertSpanningENIsPreconditions(f *framework.Framework, node coreV1.Node) i
 	return replicas
 }
 
-// getAWSNodeEnv reads the environment variables on the live aws-node container so
+// GetAWSNodeEnv reads the environment variables on the live aws-node container so
 // preconditions reflect the current node state, including mid-suite toggles.
-func getAWSNodeEnv(f *framework.Framework) map[string]string {
+func GetAWSNodeEnv(f *framework.Framework) map[string]string {
 	ds, err := f.K8sResourceManagers.DaemonSetManager().
 		GetDaemonSet(utils.AwsNodeNamespace, utils.AwsNodeName)
 	Expect(err).ToNot(HaveOccurred())
@@ -297,6 +297,15 @@ func getAWSNodeEnv(f *framework.Framework) map[string]string {
 	Expect(found).To(BeTrue(), "daemonset %s/%s has no %q container",
 		utils.AwsNodeNamespace, utils.AwsNodeName, utils.AwsNodeName)
 	return env
+}
+
+// CurrentSGPPTestConfig reads and validates the live aws-node SGPP configuration.
+func CurrentSGPPTestConfig(f *framework.Framework) SGPPTestConfig {
+	testConfig, err := ResolveSGPPTestConfig(GetAWSNodeEnv(f))
+	Expect(err).ToNot(HaveOccurred())
+	fmt.Fprintf(GinkgoWriter, "SGPP enforcing mode is %s; expected host veth prefix is %s\n",
+		testConfig.EnforcingMode, testConfig.HostVethPrefix)
+	return testConfig
 }
 
 func parseBoolEnv(val string) bool {
