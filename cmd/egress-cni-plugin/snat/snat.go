@@ -14,6 +14,7 @@
 package snat
 
 import (
+	"errors"
 	"net"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/iptableswrapper"
@@ -73,7 +74,16 @@ func Add(ipt iptableswrapper.IPTablesIface, nodeIP, src net.IP, multicastRange, 
 		_chain := rule[0]
 		if !existingChains[_chain] {
 			if err = ipt.NewChain("nat", _chain); err != nil {
-				return err
+				// A concurrent ADD may have created the chain after ListChains.
+				// Verify the resulting state instead of classifying error text.
+				createErr := err
+				exists, existsErr := ipt.ChainExists("nat", _chain)
+				if existsErr != nil {
+					return errors.Join(createErr, existsErr)
+				}
+				if !exists {
+					return createErr
+				}
 			}
 			existingChains[_chain] = true
 		}
