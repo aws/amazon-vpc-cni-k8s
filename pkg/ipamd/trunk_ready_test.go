@@ -117,13 +117,9 @@ func TestAddNetwork_PodENI_RejectedUntilTrunkIsConfigured(t *testing.T) {
 	pod := branchENIPod("sgp-pod-trunk-not-ready")
 	require.NoError(t, m.k8sClient.Create(context.TODO(), pod))
 
-	// The trunk's link exists and would resolve fine. Nothing but the readiness state can tell us
-	// the trunk is not configured yet, so allow these calls without requiring them.
-	m.awsutils.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{trunkENIMetadata()}, nil).AnyTimes()
-	m.network.EXPECT().GetLinkByMac(trunkMAC, gomock.Any()).Return(
-		&netlink.Device{LinkAttrs: netlink.LinkAttrs{Name: "eth1", Index: trunkLinkIndex}}, nil).AnyTimes()
-	m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return([]string{"10.10.0.0/16"}, nil).AnyTimes()
-	m.network.EXPECT().UseExternalSNAT().Return(true).AnyTimes()
+	// No netlink or IMDS expectations at all: the gate must reject this ADD before anything looks
+	// at the trunk's link. Any such call is an unexpected call and fails the test, which is a
+	// stronger statement than the AnyTimes() allowances that used to sit here and were never hit.
 
 	s := &server{version: "1.2.3", ipamContext: mockContext}
 	resp, err := s.AddNetwork(context.Background(), &pb.AddNetworkRequest{
@@ -267,9 +263,6 @@ func TestSetupENI_TrunkReadyFlagLifecycle(t *testing.T) {
 	})
 }
 
-// addTrunkToDatastore puts the trunk ENI in the datastore, which is what setupENI does before
-// it configures the link. The periodic reconciler cross-checks the datastore, so a test that
-// only sets the flag is not a realistic state.
 // trunkIsReady is how the tests ask the question AddNetwork asks: is there a trunk this process
 // has configured? There is deliberately no isReady() helper on the state any more - having one
 // let AddNetwork ask "is some trunk ready?" separately from "which trunk?", which is exactly the
@@ -279,6 +272,8 @@ func trunkIsReady(c *IPAMContext) bool {
 	return eniID != ""
 }
 
+// addTrunkToDatastore puts the trunk ENI in the datastore, which is what setupENI does before it
+// configures the link. A test that only sets the readiness state is not a realistic state.
 func addTrunkToDatastore(t *testing.T, c *IPAMContext) {
 	t.Helper()
 	require.NoError(t, c.dataStoreAccess.GetDataStore(defaultNetworkCard).AddENI(
@@ -642,4 +637,59 @@ func TestAddNetwork_PodENI_UsesTheConfiguredTrunksLink(t *testing.T) {
 			"attempt %d: the plugin must be given the CONFIGURED trunk's link index", attempt)
 		m.ctrl.Finish()
 	}
+}
+
+// TestReadyTrunkLinkIndex covers the resolver directly. It is the single source of the parent
+// link index handed to the CNI plugin, so each of its guards is worth pinning on its own rather
+// than relying on AddNetwork's gate to have rejected the request first: the two are defence in
+// depth, and a test that only drives them together cannot tell which one fired.
+func TestReadyTrunkLinkIndex(t *testing.T) {
+	t.Run("resolves the configured trunk's link from its MAC", func(t *testing.T) {
+		m := setup(t)
+		defer m.ctrl.Finish()
+
+		mockContext := trunkENIIPAMContext(m)
+		m.network.EXPECT().GetLinkByMac(trunkMAC, gomock.Any()).Return(
+			&netlink.Device{LinkAttrs: netlink.LinkAttrs{Name: "eth1", Index: trunkLinkIndex}}, nil)
+
+		idx, err := mockContext.readyTrunkLinkIndex(trunkENIid, trunkMAC)
+		assert.NoError(t, err)
+		assert.Equal(t, trunkLinkIndex, idx)
+	})
+
+	t.Run("refuses an empty ENI id", func(t *testing.T) {
+		m := setup(t)
+		defer m.ctrl.Finish()
+
+		mockContext := trunkENIIPAMContext(m)
+		// No GetLinkByMac expectation: it must not even try.
+		idx, err := mockContext.readyTrunkLinkIndex("", trunkMAC)
+		assert.Error(t, err)
+		assert.Equal(t, -1, idx, "a failed resolve must not return a usable link index")
+	})
+
+	t.Run("refuses an empty MAC", func(t *testing.T) {
+		m := setup(t)
+		defer m.ctrl.Finish()
+
+		mockContext := trunkENIIPAMContext(m)
+		// linkByMac("") matches any link whose hardware address is nil, so handing it an empty
+		// MAC could put a pod's VLAN on an arbitrary link. It must not be attempted at all.
+		idx, err := mockContext.readyTrunkLinkIndex(trunkENIid, "")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "no MAC recorded")
+		assert.Equal(t, -1, idx)
+	})
+
+	t.Run("propagates a link lookup failure without inventing an index", func(t *testing.T) {
+		m := setup(t)
+		defer m.ctrl.Finish()
+
+		mockContext := trunkENIIPAMContext(m)
+		m.network.EXPECT().GetLinkByMac(trunkMAC, gomock.Any()).Return(nil, errors.New("simulated lookup failure"))
+
+		idx, err := mockContext.readyTrunkLinkIndex(trunkENIid, trunkMAC)
+		assert.Error(t, err)
+		assert.Equal(t, -1, idx)
+	})
 }

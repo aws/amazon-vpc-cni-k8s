@@ -127,13 +127,13 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 				// configuring, and take both the decision and the link index from that one
 				// trunk - asking "is some trunk ready?" and then "which trunk does the datastore
 				// name?" separately is how a pod's VLAN ends up on an unconfigured link.
-				readyTrunkENI, _ := s.ipamContext.trunkENI.readyENI()
+				readyTrunkENI, readyTrunkMAC := s.ipamContext.trunkENI.readyENI()
 				if readyTrunkENI == "" {
 					log.Warnf("Send AddNetworkReply: trunk ENI not ready yet, cannot add a pod ENI for %s/%s", in.K8S_POD_NAMESPACE, in.K8S_POD_NAME)
 					podENIErrInc("trunkENINotReady")
 					return &failureResponse, nil
 				}
-				trunkENILinkIndex, err = s.ipamContext.readyTrunkLinkIndex()
+				trunkENILinkIndex, err = s.ipamContext.readyTrunkLinkIndex(readyTrunkENI, readyTrunkMAC)
 				if err != nil {
 					log.Warnf("Send AddNetworkReply: no link for configured trunk ENI %s, cannot add a pod ENI: %v", readyTrunkENI, err)
 					podENIErrInc("trunkENILinkIndex")
