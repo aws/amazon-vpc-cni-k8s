@@ -20,6 +20,8 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vishvananda/netlink"
@@ -30,6 +32,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	pb "github.com/aws/amazon-vpc-cni-k8s/rpc"
+	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
 )
 
 const (
@@ -101,6 +104,9 @@ func TestAddNetwork_PodENI_RejectedUntilTrunkIsConfigured(t *testing.T) {
 	m := setup(t)
 	defer m.ctrl.Finish()
 
+	// Fresh counter, so the assertions below are about this ADD only.
+	prometheusmetrics.PodENIErr.Reset()
+
 	mockContext := trunkENIIPAMContext(m)
 	require.NoError(t, mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).AddENI(
 		trunkENIid, trunkDevice, false, true /* isTrunk */, false,
@@ -133,6 +139,13 @@ func TestAddNetwork_PodENI_RejectedUntilTrunkIsConfigured(t *testing.T) {
 	assert.NoError(t, err)
 	assert.False(t, resp.Success, "pod ENI ADD must be rejected while the trunk ENI is not configured")
 	assert.Zero(t, resp.PodVlanId, "no VLAN may be handed to the plugin before the trunk is configured")
+	// Assert WHICH rejection, not just that one happened. The link resolution a few lines later
+	// would also reject this ADD, so a test that only checked Success could not tell the gate
+	// from its backstop, and deleting the gate would leave the suite green.
+	assert.Equal(t, float64(1), testutil.ToFloat64(prometheusmetrics.PodENIErr.With(prometheus.Labels{"fn": "trunkENINotReady"})),
+		"the ADD must be rejected by the readiness gate specifically")
+	assert.Zero(t, testutil.ToFloat64(prometheusmetrics.PodENIErr.With(prometheus.Labels{"fn": "trunkENILinkIndex"})),
+		"and not by the link resolution, which would mean the gate did not fire")
 }
 
 // TestAddNetwork_PodENI_AcceptedOnceTrunkIsReady is the other half of the gate: the same
@@ -182,7 +195,7 @@ func TestSetupENI_TrunkReadyFlagLifecycle(t *testing.T) {
 		defer m.ctrl.Finish()
 
 		mockContext := trunkENIIPAMContext(m)
-		assert.False(t, mockContext.trunkENI.isReady(), "must start out not ready")
+		assert.False(t, trunkIsReady(mockContext), "must start out not ready")
 
 		m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
 		m.network.EXPECT().GetRouteTableNumberForENI(defaultNetworkCard, gomock.Any(), trunkDevice, mockContext.maxENI, false).Return(trunkDevice+1, false, nil)
@@ -190,7 +203,7 @@ func TestSetupENI_TrunkReadyFlagLifecycle(t *testing.T) {
 
 		err := mockContext.setupENI(context.Background(), trunkENIid, trunkENIMetadata(), true /* isTrunkENI */, false)
 		assert.NoError(t, err)
-		assert.True(t, mockContext.trunkENI.isReady())
+		assert.True(t, trunkIsReady(mockContext))
 		assert.Equal(t, trunkMAC, mockContext.trunkENI.mac)
 	})
 
@@ -209,7 +222,7 @@ func TestSetupENI_TrunkReadyFlagLifecycle(t *testing.T) {
 
 		err := mockContext.setupENI(context.Background(), trunkENIid, trunkENIMetadata(), true /* isTrunkENI */, false)
 		assert.Error(t, err)
-		assert.False(t, mockContext.trunkENI.isReady(), "a failed trunk setup must not leave the gate open")
+		assert.False(t, trunkIsReady(mockContext), "a failed trunk setup must not leave the gate open")
 		assert.Empty(t, mockContext.trunkENI.mac)
 		// And the trunk is no longer in the datastore either, so GetTrunkENI agrees.
 		assert.Empty(t, mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).GetTrunkENI())
@@ -233,7 +246,7 @@ func TestSetupENI_TrunkReadyFlagLifecycle(t *testing.T) {
 
 		err := mockContext.setupENI(context.Background(), primaryENIid, primaryAsTrunk, true /* isTrunkENI */, false)
 		assert.NoError(t, err)
-		assert.True(t, mockContext.trunkENI.isReady(), "a primary-ENI trunk must not leave the gate shut forever")
+		assert.True(t, trunkIsReady(mockContext), "a primary-ENI trunk must not leave the gate shut forever")
 		assert.Equal(t, trunkMAC, mockContext.trunkENI.mac)
 	})
 
@@ -250,13 +263,22 @@ func TestSetupENI_TrunkReadyFlagLifecycle(t *testing.T) {
 
 		err := mockContext.setupENI(context.Background(), secENIid, secENI, false, false)
 		assert.NoError(t, err)
-		assert.False(t, mockContext.trunkENI.isReady())
+		assert.False(t, trunkIsReady(mockContext))
 	})
 }
 
 // addTrunkToDatastore puts the trunk ENI in the datastore, which is what setupENI does before
 // it configures the link. The periodic reconciler cross-checks the datastore, so a test that
 // only sets the flag is not a realistic state.
+// trunkIsReady is how the tests ask the question AddNetwork asks: is there a trunk this process
+// has configured? There is deliberately no isReady() helper on the state any more - having one
+// let AddNetwork ask "is some trunk ready?" separately from "which trunk?", which is exactly the
+// split that let a pod's VLAN be built on an unconfigured trunk.
+func trunkIsReady(c *IPAMContext) bool {
+	eniID, _ := c.trunkENI.readyENI()
+	return eniID != ""
+}
+
 func addTrunkToDatastore(t *testing.T, c *IPAMContext) {
 	t.Helper()
 	require.NoError(t, c.dataStoreAccess.GetDataStore(defaultNetworkCard).AddENI(
@@ -266,7 +288,8 @@ func addTrunkToDatastore(t *testing.T, c *IPAMContext) {
 
 // TestReconcileVlanMTU_IPAMD covers the periodic reconciler's wiring: it is a no-op until a
 // trunk is ready, it resolves the trunk link from the MAC recorded at setup time without any EC2
-// or IMDS call, and it gives up on a trunk whose link has disappeared.
+// or IMDS call, and - deliberately - it never clears readiness itself, however long the link
+// stays missing.
 func TestReconcileVlanMTU_IPAMD(t *testing.T) {
 	t.Run("no-op while no trunk is ready", func(t *testing.T) {
 		m := setup(t)
@@ -279,7 +302,7 @@ func TestReconcileVlanMTU_IPAMD(t *testing.T) {
 		addTrunkToDatastore(t, mockContext)
 		mockContext.reconcileVlanMTU()
 
-		assert.False(t, mockContext.trunkENI.isReady(), "the reconciler must never arm the gate itself")
+		assert.False(t, trunkIsReady(mockContext), "the reconciler must never arm the gate itself")
 	})
 
 	t.Run("reconciles the VLANs under the configured trunk", func(t *testing.T) {
@@ -295,7 +318,7 @@ func TestReconcileVlanMTU_IPAMD(t *testing.T) {
 		m.network.EXPECT().ReconcileVlanMTUForTrunk(trunkLinkIndex).Return(2, nil)
 
 		mockContext.reconcileVlanMTU()
-		assert.True(t, mockContext.trunkENI.isReady(), "a healthy pass must not disturb the state")
+		assert.True(t, trunkIsReady(mockContext), "a healthy pass must not disturb the state")
 	})
 
 	t.Run("a single trunk link lookup failure does not reject pods", func(t *testing.T) {
@@ -309,7 +332,7 @@ func TestReconcileVlanMTU_IPAMD(t *testing.T) {
 		m.network.EXPECT().GetLinkByMac(trunkMAC, gomock.Any()).Return(nil, errors.New("simulated lookup failure"))
 
 		mockContext.reconcileVlanMTU()
-		assert.True(t, mockContext.trunkENI.isReady(), "one transient netlink failure must not close the gate")
+		assert.True(t, trunkIsReady(mockContext), "one transient netlink failure must not close the gate")
 		assert.Equal(t, 1, mockContext.trunkLinkMissingTicks)
 	})
 
@@ -325,6 +348,7 @@ func TestReconcileVlanMTU_IPAMD(t *testing.T) {
 		mockContext.trunkENI.markReady(trunkENIid, trunkMAC)
 
 		const ticks = 25 // past the log rate limit, so the quiet path is exercised too
+		prometheusmetrics.IpamdErr.Reset()
 		m.network.EXPECT().GetLinkByMac(trunkMAC, gomock.Any()).
 			Return(nil, errors.New("simulated lookup failure")).Times(ticks)
 
@@ -332,10 +356,16 @@ func TestReconcileVlanMTU_IPAMD(t *testing.T) {
 			mockContext.reconcileVlanMTU()
 		}
 
-		assert.True(t, mockContext.trunkENI.isReady(),
+		assert.True(t, trunkIsReady(mockContext),
 			"a netlink lookup failure must never cost the node its trunk readiness")
 		assert.Equal(t, ticks, mockContext.trunkLinkMissingTicks)
 		assert.Equal(t, trunkENIid, mockContext.trunkLinkMissingENI)
+		// Every failure must be counted even though only one log line in twenty is emitted. On an
+		// IPv6 node this counter is the only always-on signal that the trunk's link is gone, so an
+		// alarm sized to the 30s loop has to see one increment per tick.
+		assert.Equal(t, float64(ticks),
+			testutil.ToFloat64(prometheusmetrics.IpamdErr.With(prometheus.Labels{"fn": "vlanMTUReconcileTrunkLink"})),
+			"the error counter must tick once per failed check, not once per log line")
 	})
 
 	// The counter is about a particular trunk. If it were not, a replacement trunk would inherit
@@ -363,7 +393,7 @@ func TestReconcileVlanMTU_IPAMD(t *testing.T) {
 
 		assert.Equal(t, 1, mockContext.trunkLinkMissingTicks, "the count must restart for the new trunk")
 		assert.Equal(t, newTrunkENIid, mockContext.trunkLinkMissingENI)
-		assert.True(t, mockContext.trunkENI.isReady())
+		assert.True(t, trunkIsReady(mockContext))
 	})
 
 	t.Run("a recovered lookup resets the failure counter", func(t *testing.T) {
@@ -383,7 +413,7 @@ func TestReconcileVlanMTU_IPAMD(t *testing.T) {
 		mockContext.reconcileVlanMTU()
 
 		assert.Zero(t, mockContext.trunkLinkMissingTicks)
-		assert.True(t, mockContext.trunkENI.isReady())
+		assert.True(t, trunkIsReady(mockContext))
 	})
 }
 
@@ -405,7 +435,7 @@ func TestNodeIPPoolReconcile_TrunkSweepClearsReadyFlag(t *testing.T) {
 	require.NoError(t, ds.AddENI(trunkENIid, trunkDevice, false, true, false,
 		networkutils.CalculateRouteTableId(trunkDevice, defaultNetworkCard), ""))
 	mockContext.trunkENI.markReady(trunkENIid, trunkMAC)
-	require.True(t, mockContext.trunkENI.isReady())
+	require.True(t, trunkIsReady(mockContext))
 	require.Equal(t, trunkENIid, ds.GetTrunkENI())
 
 	// IMDS now reports the primary ENI and a brand new secondary one. The trunk is gone.
@@ -436,7 +466,7 @@ func TestNodeIPPoolReconcile_TrunkSweepClearsReadyFlag(t *testing.T) {
 	mockContext.nodeIPPoolReconcile(ctx, 0)
 
 	assert.Empty(t, ds.GetTrunkENI(), "the detached trunk must be swept out of the datastore")
-	assert.False(t, mockContext.trunkENI.isReady(), "a swept trunk must clear the readiness flag")
+	assert.False(t, trunkIsReady(mockContext), "a swept trunk must clear the readiness flag")
 	assert.Empty(t, mockContext.trunkENI.mac)
 }
 
@@ -497,7 +527,7 @@ func TestNodeIPPoolReconcile_TrunkReplacementKeepsNewTrunkReady(t *testing.T) {
 
 		mockContext.nodeIPPoolReconcile(ctx, 0)
 
-		require.True(t, mockContext.trunkENI.isReady(),
+		require.True(t, trunkIsReady(mockContext),
 			"attempt %d: the newly configured trunk must still be ready after the old one is swept", attempt)
 		eniID, mac := mockContext.trunkENI.readyENI()
 		require.Equal(t, trunkENIid, eniID, "attempt %d: readiness must be held for the NEW trunk", attempt)
@@ -525,7 +555,7 @@ func TestSetupENI_SecondTrunkFailureKeepsFirstTrunkReady(t *testing.T) {
 	err := mockContext.setupENI(context.Background(), failing.ENIID, failing, true /* isTrunkENI */, false)
 	assert.Error(t, err)
 
-	assert.True(t, mockContext.trunkENI.isReady(), "the healthy trunk's readiness must survive another trunk's failure")
+	assert.True(t, trunkIsReady(mockContext), "the healthy trunk's readiness must survive another trunk's failure")
 	eniID, _ := mockContext.trunkENI.readyENI()
 	assert.Equal(t, healthyTrunkENIid, eniID)
 }
@@ -549,14 +579,14 @@ func TestSetupENI_TrunkNotReadyUntilSetupENINetworkReturns(t *testing.T) {
 			// window - and the gate must still be shut.
 			assert.Equal(t, md.ENIID, mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).GetTrunkENI(),
 				"the trunk should already be in the datastore here, otherwise this test proves nothing")
-			assert.False(t, mockContext.trunkENI.isReady(),
+			assert.False(t, trunkIsReady(mockContext),
 				"readiness must not be announced before the trunk's link is configured")
 			return nil
 		})
 
 	err := mockContext.setupENI(context.Background(), md.ENIID, md, true /* isTrunkENI */, false)
 	assert.NoError(t, err)
-	assert.True(t, mockContext.trunkENI.isReady())
+	assert.True(t, trunkIsReady(mockContext))
 }
 
 // TestAddNetwork_PodENI_UsesTheConfiguredTrunksLink is the regression test for the unkeyed gate

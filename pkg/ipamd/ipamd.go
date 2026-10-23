@@ -334,13 +334,6 @@ func (t *trunkENIState) markNotReadyIf(eniID string) bool {
 	return true
 }
 
-// isReady reports whether the trunk ENI's host network has been configured.
-func (t *trunkENIState) isReady() bool {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return t.ready
-}
-
 // ready returns the configured trunk ENI's id and MAC together, or two empty strings when no
 // trunk is ready. One read under one lock, so a caller can never mix a stale id with a fresh MAC.
 func (t *trunkENIState) readyENI() (eniID, mac string) {
@@ -973,11 +966,14 @@ func (c *IPAMContext) reconcileVlanMTU() {
 			c.trunkLinkMissingTicks = 0
 		}
 		c.trunkLinkMissingTicks++
+		// Count every failure. Only the log is rate limited: on an IPv6 node, where the reconcile
+		// sweep never runs, this counter is the one always-on signal that a trunk's link is gone,
+		// and an alarm sized to the 30s loop would never fire if it only ticked once in twenty.
+		ipamdErrInc("vlanMTUReconcileTrunkLink")
 		if c.trunkLinkMissingTicks == 1 || c.trunkLinkMissingTicks%trunkLinkMissingLogEvery == 0 {
 			log.Warnf("VLAN MTU reconcile: no link found for configured trunk ENI %s with MAC %s "+
 				"(%d consecutive checks); not touching its VLANs until the link is back: %v",
 				trunkENI, trunkMAC, c.trunkLinkMissingTicks, err)
-			ipamdErrInc("vlanMTUReconcileTrunkLink")
 		} else {
 			log.Debugf("VLAN MTU reconcile: still no link for trunk ENI %s (%d consecutive checks)",
 				trunkENI, c.trunkLinkMissingTicks)
@@ -2590,6 +2586,12 @@ func (c *IPAMContext) readyTrunkLinkIndex() (int, error) {
 	trunkENI, trunkMAC := c.trunkENI.readyENI()
 	if trunkENI == "" {
 		return -1, errors.New("no configured trunk ENI")
+	}
+	if trunkMAC == "" {
+		// linkByMac("") would match any link whose hardware address is nil. Not reachable today,
+		// since readiness is only ever set with the MAC from ENI metadata, but the consequence of
+		// being wrong here is a pod VLAN built on an arbitrary link.
+		return -1, errors.Errorf("configured trunk ENI %s has no MAC recorded", trunkENI)
 	}
 	retryLinkByMacInterval := 100 * time.Millisecond
 	link, err := c.networkClient.GetLinkByMac(trunkMAC, retryLinkByMacInterval)
