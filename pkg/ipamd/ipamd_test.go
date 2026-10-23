@@ -4585,19 +4585,27 @@ func TestHasRoomForEniHyperPodNonDefaultNetworkCard(t *testing.T) {
 
 // TestMarkUnmanagedNetworkCardsHyperPod verifies that HyperPod nodes only manage network card 0, even with
 // ENABLE_MULTI_NIC set.
-func TestMarkUnmanagedNetworkCardsHyperPod(t *testing.T) {
+// TestInitHyperPodDisablesMultiNIC verifies that HyperPod nodes, where SageMaker only attaches ENIs to network card 0,
+// turn off multi-NIC support for every reader of enableMultiNICSupport and only manage network card 0.
+func TestInitHyperPodDisablesMultiNIC(t *testing.T) {
 	m := setup(t)
 	defer m.ctrl.Finish()
+	m.awsutils.EXPECT().InitHyperPodFromProviderID(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	m.awsutils.EXPECT().SetUnmanagedNetworkCards(gomock.Any()).AnyTimes()
 	m.awsutils.EXPECT().IsUnmanagedENI(gomock.Any()).Return(false).AnyTimes()
-
-	c := hyperPodTestContext(m, 2, 3)
-	c.enableMultiNICSupport = true
 	efaOnly := make([]string, 3)
 	enisByCard := [][]string{{"eni-0"}, {"eni-1"}, {"eni-2"}}
 
+	c := hyperPodTestContext(m, 2, 3)
+	c.enableMultiNICSupport = true
+	assert.NoError(t, c.initHyperPod(context.Background(), "aws:///us-west-2a/i-0abc123def4567890"))
+	assert.True(t, c.enableMultiNICSupport)
 	assert.Equal(t, []bool{false, false, false}, c.markUnmanagedNetworkCards(efaOnly, enisByCard))
 
 	m.isHyperPod = true
+	c = hyperPodTestContext(m, 2, 3)
+	c.enableMultiNICSupport = true
+	assert.NoError(t, c.initHyperPod(context.Background(), "aws:///us-west-2a/sagemaker/cluster/hyperpod-abc-i-0abc123def4567890"))
+	assert.False(t, c.enableMultiNICSupport)
 	assert.Equal(t, []bool{false, true, true}, c.markUnmanagedNetworkCards(efaOnly, enisByCard))
 }

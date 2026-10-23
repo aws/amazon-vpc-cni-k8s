@@ -295,18 +295,26 @@ func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap) {
 	c.awsClient.SetUnmanagedENIs(unmanagedENIlist)
 }
 
+// initHyperPod enables SageMaker attach delegation on HyperPod nodes. SageMaker can only attach ENIs to network card 0
+// there, so multi-NIC support is disabled for everything that reads enableMultiNICSupport.
+func (c *IPAMContext) initHyperPod(ctx context.Context, providerID string) error {
+	if err := c.awsClient.InitHyperPodFromProviderID(ctx, providerID); err != nil {
+		return err
+	}
+	if c.awsClient.IsHyperPod() && c.enableMultiNICSupport {
+		log.Warnf("%s is not supported on HyperPod nodes, only network card %d will be managed", envEnableMultiNICSupport, DefaultNetworkCardIndex)
+		c.enableMultiNICSupport = false
+	}
+	return nil
+}
+
 // setUnmanagedNetworkCards will mark the Network Cards which are not managed by CNI
 // When ENABLE_MULTI_NIC is false, all Network Cards > 0 are marked as unmanaged
 // When ENABLE_MULTI_NIC is true, Network Cards which ONLY includes an EFA-only device are marked as unmanaged.
 // If there is a ENA device on a Network Card along with EFA-only device, CNI manages the Network Card but excludes the EFA-only device
 func (c *IPAMContext) markUnmanagedNetworkCards(efaOnlyENINetworkCards []string, enisByNetworkCard [][]string) []bool {
 	skipNetworkCards := make([]bool, c.numNetworkCards)
-	// SageMaker can only attach ENIs to network card 0 on HyperPod nodes, so treat multi-NIC as disabled
-	isHyperPod := c.awsClient.IsHyperPod()
-	if isHyperPod && c.enableMultiNICSupport {
-		log.Warnf("%s is not supported on HyperPod nodes, only network card %d will be managed", envEnableMultiNICSupport, DefaultNetworkCardIndex)
-	}
-	if !c.enableMultiNICSupport || isHyperPod {
+	if !c.enableMultiNICSupport {
 		skipNetworkCards = lo.Times(c.numNetworkCards, func(i int) bool {
 			return true
 		})
@@ -512,8 +520,8 @@ func (c *IPAMContext) nodeInit(ctx context.Context) error {
 			c.maxPods = int(maxPods)
 		}
 		// On HyperPod nodes the ENI attach is delegated to SageMaker; error out so startup retries.
-		// Must run before markUnmanagedNetworkCards, which restricts HyperPod nodes to network card 0.
-		if err := c.awsClient.InitHyperPodFromProviderID(ctx, node.Spec.ProviderID); err != nil {
+		// Must run before markUnmanagedNetworkCards, since HyperPod nodes only manage network card 0.
+		if err := c.initHyperPod(ctx, node.Spec.ProviderID); err != nil {
 			return err
 		}
 	} else {
@@ -2918,7 +2926,7 @@ func (c *IPAMContext) SetAPIServerConnectivity(connected bool) {
 				log.Infof("Updated maxPods from %d to %d based on node capacity", oldMaxPods, c.maxPods)
 			}
 			// Re-run HyperPod detection, which is skipped when IPAMD starts without API server connectivity.
-			if err := c.awsClient.InitHyperPodFromProviderID(ctx, node.Spec.ProviderID); err != nil {
+			if err := c.initHyperPod(ctx, node.Spec.ProviderID); err != nil {
 				log.Errorf("Failed to init HyperPod delegation after API server became available: %v", err)
 			}
 		}
