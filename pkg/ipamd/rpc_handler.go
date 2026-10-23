@@ -122,19 +122,20 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 				}
 				// The trunk becomes visible to GetTrunkENI as soon as it is added to the
 				// datastore, which happens before its link is configured. A VLAN built on a
-				// half-configured trunk inherits the trunk's boot-time MTU, and the kernel
-				// never raises it again. Fail the ADD instead; kubelet retries the sandbox.
-				if !s.ipamContext.trunkENI.isReady() {
+				// half-configured trunk inherits the trunk's boot-time MTU, and the kernel never
+				// raises it again. So serve this pod only off a trunk ipamd has finished
+				// configuring, and take both the decision and the link index from that one
+				// trunk - asking "is some trunk ready?" and then "which trunk does the datastore
+				// name?" separately is how a pod's VLAN ends up on an unconfigured link.
+				readyTrunkENI, _ := s.ipamContext.trunkENI.readyENI()
+				if readyTrunkENI == "" {
 					log.Warnf("Send AddNetworkReply: trunk ENI not ready yet, cannot add a pod ENI for %s/%s", in.K8S_POD_NAMESPACE, in.K8S_POD_NAME)
 					podENIErrInc("trunkENINotReady")
 					return &failureResponse, nil
 				}
-				// Resolve the link index from the trunk whose readiness was just checked, not
-				// from whichever trunk the datastore happens to name: handing the plugin a
-				// different trunk's index is how a pod's VLAN ends up on an unconfigured link.
 				trunkENILinkIndex, err = s.ipamContext.readyTrunkLinkIndex()
 				if err != nil {
-					log.Warnf("Send AddNetworkReply: no link for the configured trunk ENI, cannot add a pod ENI: %v", err)
+					log.Warnf("Send AddNetworkReply: no link for configured trunk ENI %s, cannot add a pod ENI: %v", readyTrunkENI, err)
 					podENIErrInc("trunkENILinkIndex")
 					return &failureResponse, nil
 				}
