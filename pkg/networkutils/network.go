@@ -170,6 +170,9 @@ type NetworkAPIs interface {
 	GetLinkByMac(mac string, retryInterval time.Duration) (netlink.Link, error)
 	DeleteRulesBySrc(eniIP string, v6enabled bool) error
 	GetRouteTableNumberForENI(networkCard int, eniIP string, deviceNumber int, maxENIsPerNetworkCard int, isV6 bool) (int, bool, error)
+	// ReconcileVlanMTUForTrunk raises the MTU of every VLAN link parented on the trunk ENI
+	// to the trunk's current MTU. It returns the number of VLAN links it raised.
+	ReconcileVlanMTUForTrunk(trunkLinkIndex int) (int, error)
 }
 
 type linuxNetwork struct {
@@ -1103,7 +1106,80 @@ func setupENINetwork(eniIP string, eniMac string, networkCard int, eniSubnetCIDR
 		log.Debugf("setupENINetwork: skipping rule for Primary IP of ENI %s, conditions IsTrunkENI: %t, RuleExists: %t", eniIP, isTrunkENI, isRuleConfigured)
 	}
 
+	// The trunk's MTU was just (re)programmed above. The kernel lowers a VLAN link when its
+	// parent's MTU drops, but it never raises one again, so any branch ENI VLAN built while the
+	// trunk was still at the boot-time MTU stays stuck low forever. Raise them back here, as
+	// close as possible to the LinkSetMTU that created the gap. A failure here is logged and
+	// not fatal: the trunk itself is correctly configured and the periodic reconciler retries.
+	if isTrunkENI {
+		if healed, err := reconcileVlanMTU(netLink, linkIndex); err != nil {
+			log.Warnf("setupENINetwork: failed to reconcile VLAN MTUs under trunk link %d: %v", linkIndex, err)
+		} else if healed > 0 {
+			log.Infof("setupENINetwork: raised the MTU of %d VLAN link(s) under trunk link %d", healed, linkIndex)
+		}
+	}
+
 	return nil
+}
+
+// ReconcileVlanMTUForTrunk raises the MTU of every VLAN link parented on the given trunk link
+// index to the trunk's current MTU, and returns how many links it raised.
+func (n *linuxNetwork) ReconcileVlanMTUForTrunk(trunkLinkIndex int) (int, error) {
+	return reconcileVlanMTU(n.netLink, trunkLinkIndex)
+}
+
+// reconcileVlanMTU brings the branch ENI VLAN links parented on trunkLinkIndex back up to the
+// trunk's MTU.
+//
+// The target is deliberately the trunk's *current* MTU rather than any configured value:
+//
+//   - a VLAN can never carry more than its parent (the kernel rejects it with ERANGE), so the
+//     trunk MTU is the ceiling;
+//   - a VLAN at the trunk MTU is the healthy state the CNI plugin already produces when the
+//     trunk is configured before the pod is added, and it is safe for any pod MTU below it;
+//   - the trunk's own MTU is left alone. Reasserting it would turn an external MTU change into
+//     a fight between ipamd and whoever made that change.
+//
+// VLANs at or above the target are left untouched, so this never lowers a link: the kernel
+// already does that for us when the parent drops.
+func reconcileVlanMTU(netLink netlinkwrapper.NetLink, trunkLinkIndex int) (int, error) {
+	links, err := netLink.LinkList()
+	if err != nil {
+		return 0, errors.Wrap(err, "reconcileVlanMTU: failed to list links")
+	}
+
+	targetMTU := 0
+	for _, link := range links {
+		if link.Attrs().Index == trunkLinkIndex {
+			targetMTU = link.Attrs().MTU
+			break
+		}
+	}
+	if targetMTU <= 0 {
+		return 0, errors.Errorf("reconcileVlanMTU: trunk link index %d not found", trunkLinkIndex)
+	}
+
+	healed := 0
+	var lastErr error
+	for _, link := range links {
+		vlan, isVlan := link.(*netlink.Vlan)
+		if !isVlan || vlan.ParentIndex != trunkLinkIndex {
+			continue
+		}
+		if vlan.MTU >= targetMTU {
+			continue
+		}
+		log.Infof("reconcileVlanMTU: raising MTU of VLAN link %s from %d to the trunk MTU %d", vlan.Name, vlan.MTU, targetMTU)
+		if err := netLink.LinkSetMTU(vlan, targetMTU); err != nil {
+			// Keep going: one unhappy VLAN must not hide the others.
+			lastErr = errors.Wrapf(err, "reconcileVlanMTU: failed to set MTU %d on VLAN link %s", targetMTU, vlan.Name)
+			log.Errorf("%v", lastErr)
+			continue
+		}
+		healed++
+	}
+
+	return healed, lastErr
 }
 
 func getRouteTableNumberForENI(networkCard int, eniIP string, mask int, deviceNumber int, maxENIsPerNetworkCard int, isV6 bool, netLink netlinkwrapper.NetLink) (int, bool, error) {
