@@ -213,6 +213,28 @@ func TestSetupENI_TrunkReadyFlagLifecycle(t *testing.T) {
 		assert.Empty(t, mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).GetTrunkENI())
 	})
 
+	// Defensive branch: a trunk ENI is always a secondary attachment, so this should be
+	// unreachable. If it ever is reached, staying silent would reject every SGP pod on the node
+	// forever, which is strictly worse than the bug being fixed.
+	t.Run("set for a trunk that is somehow also the primary ENI", func(t *testing.T) {
+		m := setup(t)
+		defer m.ctrl.Finish()
+
+		mockContext := trunkENIIPAMContext(m)
+		primaryAsTrunk := trunkENIMetadata()
+		primaryAsTrunk.ENIID = primaryENIid
+
+		m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
+		m.network.EXPECT().GetRouteTableNumberForENI(defaultNetworkCard, gomock.Any(), trunkDevice, mockContext.maxENI, false).Return(trunkDevice+1, false, nil)
+		// No SetupENINetwork expectation: setupENI skips it for the primary ENI, because ipamd
+		// configures the primary link in SetupHostNetwork instead.
+
+		err := mockContext.setupENI(context.Background(), primaryENIid, primaryAsTrunk, true /* isTrunkENI */, false)
+		assert.NoError(t, err)
+		assert.True(t, mockContext.trunkENI.isReady(), "a primary-ENI trunk must not leave the gate shut forever")
+		assert.Equal(t, trunkMAC, mockContext.trunkENI.readyMAC())
+	})
+
 	t.Run("not set for a plain secondary ENI", func(t *testing.T) {
 		m := setup(t)
 		defer m.ctrl.Finish()
@@ -230,9 +252,19 @@ func TestSetupENI_TrunkReadyFlagLifecycle(t *testing.T) {
 	})
 }
 
+// addTrunkToDatastore puts the trunk ENI in the datastore, which is what setupENI does before
+// it configures the link. The periodic reconciler cross-checks the datastore, so a test that
+// only sets the flag is not a realistic state.
+func addTrunkToDatastore(t *testing.T, c *IPAMContext) {
+	t.Helper()
+	require.NoError(t, c.dataStoreAccess.GetDataStore(defaultNetworkCard).AddENI(
+		trunkENIid, trunkDevice, false, true, false,
+		networkutils.CalculateRouteTableId(trunkDevice, defaultNetworkCard), ""))
+}
+
 // TestReconcileVlanMTU_IPAMD covers the periodic reconciler's wiring: it is a no-op until the
-// trunk is ready, and otherwise resolves the trunk link from the MAC recorded at setup time
-// without any EC2 or IMDS call.
+// trunk is ready, it resolves the trunk link from the MAC recorded at setup time without any
+// EC2 or IMDS call, and it keeps the readiness flag consistent with the datastore.
 func TestReconcileVlanMTU_IPAMD(t *testing.T) {
 	t.Run("no-op while the trunk is not ready", func(t *testing.T) {
 		m := setup(t)
@@ -248,6 +280,7 @@ func TestReconcileVlanMTU_IPAMD(t *testing.T) {
 		defer m.ctrl.Finish()
 
 		mockContext := trunkENIIPAMContext(m)
+		addTrunkToDatastore(t, mockContext)
 		mockContext.trunkENI.markReady(trunkMAC)
 
 		m.network.EXPECT().GetLinkByMac(trunkMAC, gomock.Any()).Return(
@@ -262,11 +295,48 @@ func TestReconcileVlanMTU_IPAMD(t *testing.T) {
 		defer m.ctrl.Finish()
 
 		mockContext := trunkENIIPAMContext(m)
+		addTrunkToDatastore(t, mockContext)
 		mockContext.trunkENI.markReady(trunkMAC)
 
 		m.network.EXPECT().GetLinkByMac(trunkMAC, gomock.Any()).Return(nil, errors.New("simulated lookup failure"))
 
 		mockContext.reconcileVlanMTU()
+	})
+
+	// This is the IPv6 hole: nodeIPPoolReconcile, which owns the sweep that clears the flag, is
+	// never reached on an IPv6 node, so the reconciler has to notice a departed trunk itself.
+	// Without this, an IPv6 node whose trunk detached keeps a stale-ready flag and warns about a
+	// dead MAC on every tick for the life of the process.
+	t.Run("clears a stale ready flag when the trunk has left the datastore", func(t *testing.T) {
+		m := setup(t)
+		defer m.ctrl.Finish()
+
+		mockContext := trunkENIIPAMContext(m)
+		mockContext.trunkENI.markReady(trunkMAC) // ready, but no trunk in the datastore
+		require.True(t, mockContext.trunkENI.isReady())
+
+		// No GetLinkByMac expectation: looking up the dead MAC would fail the test.
+		mockContext.reconcileVlanMTU()
+
+		assert.False(t, mockContext.trunkENI.isReady())
+		assert.Empty(t, mockContext.trunkENI.readyMAC())
+	})
+
+	// The mirror image, and a node-wide SGP outage if it ever happens: the trunk is in the
+	// datastore but this process never finished configuring it, which means setupENI's
+	// compensating RemoveENIFromDataStore failed. Nothing re-runs setupENI for an ENI already in
+	// the datastore, so the reconciler's job here is to make the outage loud rather than silent.
+	t.Run("does not touch netlink, and does not self-arm, when the trunk was never configured", func(t *testing.T) {
+		m := setup(t)
+		defer m.ctrl.Finish()
+
+		mockContext := trunkENIIPAMContext(m)
+		addTrunkToDatastore(t, mockContext) // in the datastore, flag never set
+
+		// No GetLinkByMac and no ReconcileVlanMTUForTrunk: we must not touch a link we never set up.
+		mockContext.reconcileVlanMTU()
+
+		assert.False(t, mockContext.trunkENI.isReady(), "the reconciler must never arm the gate itself")
 	})
 }
 
