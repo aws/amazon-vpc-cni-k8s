@@ -144,7 +144,7 @@ func TestAddNetwork_PodENI_AcceptedOnceTrunkIsReady(t *testing.T) {
 	require.NoError(t, mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).AddENI(
 		trunkENIid, trunkDevice, false, true /* isTrunk */, false,
 		networkutils.CalculateRouteTableId(trunkDevice, defaultNetworkCard), ""))
-	mockContext.trunkENI.markReady(trunkMAC)
+	mockContext.trunkENI.markReady(trunkENIid, trunkMAC)
 
 	pod := branchENIPod("sgp-pod-trunk-ready")
 	require.NoError(t, m.k8sClient.Create(context.TODO(), pod))
@@ -189,7 +189,7 @@ func TestSetupENI_TrunkReadyFlagLifecycle(t *testing.T) {
 		err := mockContext.setupENI(context.Background(), trunkENIid, trunkENIMetadata(), true /* isTrunkENI */, false)
 		assert.NoError(t, err)
 		assert.True(t, mockContext.trunkENI.isReady())
-		assert.Equal(t, trunkMAC, mockContext.trunkENI.readyMAC())
+		assert.Equal(t, trunkMAC, mockContext.trunkENI.mac)
 	})
 
 	t.Run("cleared when the trunk's network setup fails", func(t *testing.T) {
@@ -198,7 +198,7 @@ func TestSetupENI_TrunkReadyFlagLifecycle(t *testing.T) {
 
 		mockContext := trunkENIIPAMContext(m)
 		// Pretend an earlier attempt had succeeded, so we can see the flag being cleared.
-		mockContext.trunkENI.markReady(trunkMAC)
+		mockContext.trunkENI.markReady(trunkENIid, trunkMAC)
 
 		m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
 		m.network.EXPECT().GetRouteTableNumberForENI(defaultNetworkCard, gomock.Any(), trunkDevice, mockContext.maxENI, false).Return(trunkDevice+1, false, nil)
@@ -208,7 +208,7 @@ func TestSetupENI_TrunkReadyFlagLifecycle(t *testing.T) {
 		err := mockContext.setupENI(context.Background(), trunkENIid, trunkENIMetadata(), true /* isTrunkENI */, false)
 		assert.Error(t, err)
 		assert.False(t, mockContext.trunkENI.isReady(), "a failed trunk setup must not leave the gate open")
-		assert.Empty(t, mockContext.trunkENI.readyMAC())
+		assert.Empty(t, mockContext.trunkENI.mac)
 		// And the trunk is no longer in the datastore either, so GetTrunkENI agrees.
 		assert.Empty(t, mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).GetTrunkENI())
 	})
@@ -232,7 +232,7 @@ func TestSetupENI_TrunkReadyFlagLifecycle(t *testing.T) {
 		err := mockContext.setupENI(context.Background(), primaryENIid, primaryAsTrunk, true /* isTrunkENI */, false)
 		assert.NoError(t, err)
 		assert.True(t, mockContext.trunkENI.isReady(), "a primary-ENI trunk must not leave the gate shut forever")
-		assert.Equal(t, trunkMAC, mockContext.trunkENI.readyMAC())
+		assert.Equal(t, trunkMAC, mockContext.trunkENI.mac)
 	})
 
 	t.Run("not set for a plain secondary ENI", func(t *testing.T) {
@@ -262,17 +262,22 @@ func addTrunkToDatastore(t *testing.T, c *IPAMContext) {
 		networkutils.CalculateRouteTableId(trunkDevice, defaultNetworkCard), ""))
 }
 
-// TestReconcileVlanMTU_IPAMD covers the periodic reconciler's wiring: it is a no-op until the
-// trunk is ready, it resolves the trunk link from the MAC recorded at setup time without any
-// EC2 or IMDS call, and it keeps the readiness flag consistent with the datastore.
+// TestReconcileVlanMTU_IPAMD covers the periodic reconciler's wiring: it is a no-op until a
+// trunk is ready, it resolves the trunk link from the MAC recorded at setup time without any EC2
+// or IMDS call, and it gives up on a trunk whose link has disappeared.
 func TestReconcileVlanMTU_IPAMD(t *testing.T) {
-	t.Run("no-op while the trunk is not ready", func(t *testing.T) {
+	t.Run("no-op while no trunk is ready", func(t *testing.T) {
 		m := setup(t)
 		defer m.ctrl.Finish()
 
 		mockContext := trunkENIIPAMContext(m)
-		// No GetLinkByMac or ReconcileVlanMTUForTrunk expectation: any call fails the test.
+		// A trunk in the datastore is NOT enough: that is also the state in the middle of a
+		// normal trunk setup. No GetLinkByMac or ReconcileVlanMTUForTrunk expectation, so any
+		// netlink call here fails the test.
+		addTrunkToDatastore(t, mockContext)
 		mockContext.reconcileVlanMTU()
+
+		assert.False(t, mockContext.trunkENI.isReady(), "the reconciler must never arm the gate itself")
 	})
 
 	t.Run("reconciles the VLANs under the configured trunk", func(t *testing.T) {
@@ -281,62 +286,71 @@ func TestReconcileVlanMTU_IPAMD(t *testing.T) {
 
 		mockContext := trunkENIIPAMContext(m)
 		addTrunkToDatastore(t, mockContext)
-		mockContext.trunkENI.markReady(trunkMAC)
+		mockContext.trunkENI.markReady(trunkENIid, trunkMAC)
 
 		m.network.EXPECT().GetLinkByMac(trunkMAC, gomock.Any()).Return(
 			&netlink.Device{LinkAttrs: netlink.LinkAttrs{Name: "eth1", Index: trunkLinkIndex}}, nil)
 		m.network.EXPECT().ReconcileVlanMTUForTrunk(trunkLinkIndex).Return(2, nil)
 
 		mockContext.reconcileVlanMTU()
+		assert.True(t, mockContext.trunkENI.isReady(), "a healthy pass must not disturb the state")
 	})
 
-	t.Run("survives a trunk link lookup failure", func(t *testing.T) {
+	t.Run("a single trunk link lookup failure does not reject pods", func(t *testing.T) {
 		m := setup(t)
 		defer m.ctrl.Finish()
 
 		mockContext := trunkENIIPAMContext(m)
 		addTrunkToDatastore(t, mockContext)
-		mockContext.trunkENI.markReady(trunkMAC)
+		mockContext.trunkENI.markReady(trunkENIid, trunkMAC)
 
 		m.network.EXPECT().GetLinkByMac(trunkMAC, gomock.Any()).Return(nil, errors.New("simulated lookup failure"))
 
 		mockContext.reconcileVlanMTU()
+		assert.True(t, mockContext.trunkENI.isReady(), "one transient netlink failure must not close the gate")
+		assert.Equal(t, 1, mockContext.trunkLinkMissingTicks)
 	})
 
-	// This is the IPv6 hole: nodeIPPoolReconcile, which owns the sweep that clears the flag, is
+	// This is the IPv6 hole: nodeIPPoolReconcile owns the sweep that clears the state, and it is
 	// never reached on an IPv6 node, so the reconciler has to notice a departed trunk itself.
 	// Without this, an IPv6 node whose trunk detached keeps a stale-ready flag and warns about a
 	// dead MAC on every tick for the life of the process.
-	t.Run("clears a stale ready flag when the trunk has left the datastore", func(t *testing.T) {
+	t.Run("gives up on a trunk whose link stays missing", func(t *testing.T) {
 		m := setup(t)
 		defer m.ctrl.Finish()
 
 		mockContext := trunkENIIPAMContext(m)
-		mockContext.trunkENI.markReady(trunkMAC) // ready, but no trunk in the datastore
-		require.True(t, mockContext.trunkENI.isReady())
+		mockContext.trunkENI.markReady(trunkENIid, trunkMAC)
 
-		// No GetLinkByMac expectation: looking up the dead MAC would fail the test.
-		mockContext.reconcileVlanMTU()
+		m.network.EXPECT().GetLinkByMac(trunkMAC, gomock.Any()).
+			Return(nil, errors.New("simulated lookup failure")).Times(trunkLinkMissingTickThreshold)
 
-		assert.False(t, mockContext.trunkENI.isReady())
-		assert.Empty(t, mockContext.trunkENI.readyMAC())
+		for i := 0; i < trunkLinkMissingTickThreshold; i++ {
+			mockContext.reconcileVlanMTU()
+		}
+
+		assert.False(t, mockContext.trunkENI.isReady(), "a trunk with no link must stop serving pod ADDs")
+		assert.Zero(t, mockContext.trunkLinkMissingTicks)
 	})
 
-	// The mirror image, and a node-wide SGP outage if it ever happens: the trunk is in the
-	// datastore but this process never finished configuring it, which means setupENI's
-	// compensating RemoveENIFromDataStore failed. Nothing re-runs setupENI for an ENI already in
-	// the datastore, so the reconciler's job here is to make the outage loud rather than silent.
-	t.Run("does not touch netlink, and does not self-arm, when the trunk was never configured", func(t *testing.T) {
+	t.Run("a recovered lookup resets the give-up counter", func(t *testing.T) {
 		m := setup(t)
 		defer m.ctrl.Finish()
 
 		mockContext := trunkENIIPAMContext(m)
-		addTrunkToDatastore(t, mockContext) // in the datastore, flag never set
+		mockContext.trunkENI.markReady(trunkENIid, trunkMAC)
 
-		// No GetLinkByMac and no ReconcileVlanMTUForTrunk: we must not touch a link we never set up.
+		m.network.EXPECT().GetLinkByMac(trunkMAC, gomock.Any()).Return(nil, errors.New("blip"))
+		mockContext.reconcileVlanMTU()
+		require.Equal(t, 1, mockContext.trunkLinkMissingTicks)
+
+		m.network.EXPECT().GetLinkByMac(trunkMAC, gomock.Any()).Return(
+			&netlink.Device{LinkAttrs: netlink.LinkAttrs{Name: "eth1", Index: trunkLinkIndex}}, nil)
+		m.network.EXPECT().ReconcileVlanMTUForTrunk(trunkLinkIndex).Return(0, nil)
 		mockContext.reconcileVlanMTU()
 
-		assert.False(t, mockContext.trunkENI.isReady(), "the reconciler must never arm the gate itself")
+		assert.Zero(t, mockContext.trunkLinkMissingTicks)
+		assert.True(t, mockContext.trunkENI.isReady())
 	})
 }
 
@@ -357,7 +371,7 @@ func TestNodeIPPoolReconcile_TrunkSweepClearsReadyFlag(t *testing.T) {
 		networkutils.CalculateRouteTableId(primaryDevice, defaultNetworkCard), ""))
 	require.NoError(t, ds.AddENI(trunkENIid, trunkDevice, false, true, false,
 		networkutils.CalculateRouteTableId(trunkDevice, defaultNetworkCard), ""))
-	mockContext.trunkENI.markReady(trunkMAC)
+	mockContext.trunkENI.markReady(trunkENIid, trunkMAC)
 	require.True(t, mockContext.trunkENI.isReady())
 	require.Equal(t, trunkENIid, ds.GetTrunkENI())
 
@@ -390,5 +404,124 @@ func TestNodeIPPoolReconcile_TrunkSweepClearsReadyFlag(t *testing.T) {
 
 	assert.Empty(t, ds.GetTrunkENI(), "the detached trunk must be swept out of the datastore")
 	assert.False(t, mockContext.trunkENI.isReady(), "a swept trunk must clear the readiness flag")
-	assert.Empty(t, mockContext.trunkENI.readyMAC())
+	assert.Empty(t, mockContext.trunkENI.mac)
+}
+
+// TestNodeIPPoolReconcile_TrunkReplacementKeepsNewTrunkReady is the regression test for the
+// trunk-replacement case. When a trunk is replaced, one nodeIPPoolReconcile pass both adds and
+// configures the NEW trunk (add phase) and sweeps the OLD one out (sweep phase), so the datastore
+// briefly holds two trunks. Anything that works out "the" trunk by scanning the datastore - which
+// is what DataStore.GetTrunkENI does, returning whichever trunk a Go map iteration reaches first -
+// can name the new trunk while sweeping the old one, and disarm a trunk that is correctly
+// configured and already carrying pods. Nothing re-arms it, so every SGP pod ADD on the node is
+// rejected for the life of the process.
+func TestNodeIPPoolReconcile_TrunkReplacementKeepsNewTrunkReady(t *testing.T) {
+	const oldTrunkENIid = "eni-0000oldtrunk"
+	const newTrunkMAC = "12:ef:2a:98:e5:5e"
+
+	// Run it repeatedly: the failure mode depends on Go map iteration order, so a single pass
+	// can pass by luck even with the bug present.
+	for attempt := 0; attempt < 20; attempt++ {
+		m := setup(t)
+		ctx := context.Background()
+
+		mockContext := trunkENIIPAMContext(m)
+		ds := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard)
+		primaryENIMetadata := getPrimaryENIMetadata()
+
+		require.NoError(t, ds.AddENI(primaryENIid, primaryDevice, true, false, false,
+			networkutils.CalculateRouteTableId(primaryDevice, defaultNetworkCard), ""))
+		// The old trunk is in the datastore and is the one this process configured.
+		require.NoError(t, ds.AddENI(oldTrunkENIid, trunkDevice, false, true, false,
+			networkutils.CalculateRouteTableId(trunkDevice, defaultNetworkCard), ""))
+		mockContext.trunkENI.markReady(oldTrunkENIid, trunkMAC)
+
+		// IMDS now reports the primary ENI and a NEW trunk; the old trunk is gone.
+		newTrunk := trunkENIMetadata()
+		newTrunk.ENIID = trunkENIid
+		newTrunk.MAC = newTrunkMAC
+		attached := []awsutils.ENIMetadata{primaryENIMetadata, newTrunk}
+
+		m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
+		m.awsutils.EXPECT().IsUnmanagedENI(gomock.Any()).AnyTimes().Return(false)
+		m.awsutils.EXPECT().IsUnmanagedNIC(gomock.Any()).AnyTimes().Return(false)
+		m.awsutils.EXPECT().IsEfaOnlyENI(gomock.Any(), gomock.Any()).AnyTimes().Return(false)
+		m.awsutils.EXPECT().SetUnmanagedNetworkCards(gomock.Any()).AnyTimes()
+		m.awsutils.EXPECT().TagENI(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+		m.awsutils.EXPECT().GetIPv4sFromEC2(gomock.Any(), gomock.Any()).AnyTimes().Return(primaryENIMetadata.IPv4Addresses, nil)
+		m.awsutils.EXPECT().GetAttachedENIs().Return(attached, nil)
+		m.awsutils.EXPECT().DescribeAllENIs(gomock.Any()).Return(awsutils.DescribeAllENIsResult{
+			ENIMetadata:             attached,
+			TagMap:                  map[string]awsutils.TagMap{},
+			TrunkENI:                trunkENIid, // EC2 now reports the NEW trunk
+			EFAENIs:                 make(map[string]bool),
+			EFAOnlyENIByNetworkCard: []string{""},
+			ENIsByNetworkCard:       [][]string{defaultNetworkCard: {primaryENIid, trunkENIid}},
+		}, nil)
+		m.network.EXPECT().GetRouteTableNumberForENI(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(trunkDevice+1, false, nil)
+		// The new trunk's link is configured successfully, so it must end up ready.
+		m.network.EXPECT().SetupENINetwork(gomock.Any(), newTrunkMAC, gomock.Any(), gomock.Any(), gomock.Any(), true, gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+
+		mockContext.nodeIPPoolReconcile(ctx, 0)
+
+		require.True(t, mockContext.trunkENI.isReady(),
+			"attempt %d: the newly configured trunk must still be ready after the old one is swept", attempt)
+		eniID, mac := mockContext.trunkENI.readyENI()
+		require.Equal(t, trunkENIid, eniID, "attempt %d: readiness must be held for the NEW trunk", attempt)
+		require.Equal(t, newTrunkMAC, mac, "attempt %d: and with the NEW trunk's MAC", attempt)
+		m.ctrl.Finish()
+	}
+}
+
+// TestSetupENI_SecondTrunkFailureKeepsFirstTrunkReady: a failed setup of a second trunk must not
+// disarm the first one, which is still configured and still carrying pods.
+func TestSetupENI_SecondTrunkFailureKeepsFirstTrunkReady(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := trunkENIIPAMContext(m)
+	const healthyTrunkENIid = "eni-0000healthy"
+	mockContext.trunkENI.markReady(healthyTrunkENIid, trunkMAC)
+
+	failing := trunkENIMetadata() // a different ENI id
+	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
+	m.network.EXPECT().GetRouteTableNumberForENI(defaultNetworkCard, gomock.Any(), trunkDevice, mockContext.maxENI, false).Return(trunkDevice+1, false, nil)
+	m.network.EXPECT().SetupENINetwork(gomock.Any(), trunkMAC, defaultNetworkCard, secSubnet, maxENIPerNIC, true, gomock.Any(), gomock.Any()).
+		Return(errors.New("simulated trunk setup failure"))
+
+	err := mockContext.setupENI(context.Background(), failing.ENIID, failing, true /* isTrunkENI */, false)
+	assert.Error(t, err)
+
+	assert.True(t, mockContext.trunkENI.isReady(), "the healthy trunk's readiness must survive another trunk's failure")
+	eniID, _ := mockContext.trunkENI.readyENI()
+	assert.Equal(t, healthyTrunkENIid, eniID)
+}
+
+// TestSetupENI_TrunkNotReadyUntilSetupENINetworkReturns pins the invariant the whole gate rests
+// on: the trunk is published to the datastore before its link is configured, so readiness must
+// not be announced until SetupENINetwork has actually returned. Asserted from inside the mock,
+// because an assertion after setupENI returns cannot tell the two orderings apart.
+func TestSetupENI_TrunkNotReadyUntilSetupENINetworkReturns(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := trunkENIIPAMContext(m)
+	md := trunkENIMetadata()
+
+	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
+	m.network.EXPECT().GetRouteTableNumberForENI(defaultNetworkCard, gomock.Any(), trunkDevice, mockContext.maxENI, false).Return(trunkDevice+1, false, nil)
+	m.network.EXPECT().SetupENINetwork(gomock.Any(), trunkMAC, defaultNetworkCard, secSubnet, maxENIPerNIC, true, gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_, _ string, _ int, _ string, _ int, _ bool, _ int, _ bool) error {
+			// At this instant the trunk IS already in the datastore - that is the defect's
+			// window - and the gate must still be shut.
+			assert.Equal(t, md.ENIID, mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).GetTrunkENI(),
+				"the trunk should already be in the datastore here, otherwise this test proves nothing")
+			assert.False(t, mockContext.trunkENI.isReady(),
+				"readiness must not be announced before the trunk's link is configured")
+			return nil
+		})
+
+	err := mockContext.setupENI(context.Background(), md.ENIID, md, true /* isTrunkENI */, false)
+	assert.NoError(t, err)
+	assert.True(t, mockContext.trunkENI.isReady())
 }
