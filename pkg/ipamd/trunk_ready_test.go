@@ -676,7 +676,10 @@ func TestReadyTrunkLinkIndex(t *testing.T) {
 		// linkByMac("") matches any link whose hardware address is nil, so handing it an empty
 		// MAC could put a pod's VLAN on an arbitrary link. It must not be attempted at all.
 		idx, err := mockContext.readyTrunkLinkIndex(trunkENIid, "")
-		assert.Error(t, err)
+		// require, not assert: if a change ever makes this path succeed, err is nil and the
+		// Contains below would nil-deref, panicking out through gomock's Finish and aborting the
+		// whole package binary - so every later test would report nothing instead of its result.
+		require.Error(t, err)
 		assert.Contains(t, err.Error(), "no MAC recorded")
 		assert.Equal(t, -1, idx)
 	})
