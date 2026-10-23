@@ -1113,10 +1113,14 @@ func setupENINetwork(eniIP string, eniMac string, networkCard int, eniSubnetCIDR
 	// forever. Raise them back now that the trunk is fully configured.
 	//
 	// This sits at the end rather than next to the LinkSetMTU so that it only runs once the
-	// trunk is actually usable - address, routes and all. The cost is that an early return
-	// above skips the repair; that is deliberate, since a trunk whose routes failed is not a
-	// trunk whose VLANs we want to touch, and the periodic reconciler picks it up either way.
-	// A failure here is logged and not fatal for the same reason.
+	// trunk is actually usable - address, routes and all. The cost is that an early return above
+	// skips the repair, and skips it for good: ipamd removes a trunk whose setup failed from the
+	// datastore and only arms its reconciler for a trunk it configured, so the periodic pass
+	// will NOT pick this up. That is the right trade anyway - a trunk whose routes failed is not
+	// a trunk whose VLANs we want to touch, and ipamd rejects pod ENI requests until a trunk is
+	// configured - but it is worth being accurate about. A failure of the repair itself is
+	// logged and not fatal, because by then the trunk is correctly configured and the periodic
+	// pass genuinely does retry.
 	if isTrunkENI {
 		healed, err := reconcileVlanMTU(netLink, linkIndex)
 		if healed > 0 {

@@ -15,6 +15,7 @@ package ipamd
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -110,8 +111,8 @@ func TestAddNetwork_PodENI_RejectedUntilTrunkIsConfigured(t *testing.T) {
 	pod := branchENIPod("sgp-pod-trunk-not-ready")
 	require.NoError(t, m.k8sClient.Create(context.TODO(), pod))
 
-	// getTrunkLinkIndex would succeed: the link exists. Nothing but the readiness flag can tell
-	// us the trunk is not configured yet, so allow these calls without requiring them.
+	// The trunk's link exists and would resolve fine. Nothing but the readiness state can tell us
+	// the trunk is not configured yet, so allow these calls without requiring them.
 	m.awsutils.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{trunkENIMetadata()}, nil).AnyTimes()
 	m.network.EXPECT().GetLinkByMac(trunkMAC, gomock.Any()).Return(
 		&netlink.Device{LinkAttrs: netlink.LinkAttrs{Name: "eth1", Index: trunkLinkIndex}}, nil).AnyTimes()
@@ -149,7 +150,8 @@ func TestAddNetwork_PodENI_AcceptedOnceTrunkIsReady(t *testing.T) {
 	pod := branchENIPod("sgp-pod-trunk-ready")
 	require.NoError(t, m.k8sClient.Create(context.TODO(), pod))
 
-	m.awsutils.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{trunkENIMetadata()}, nil)
+	// No GetAttachedENIs expectation: the link index now comes from the MAC recorded at setup
+	// time, so a pod ADD costs no IMDS round trip.
 	m.network.EXPECT().GetLinkByMac(trunkMAC, gomock.Any()).Return(
 		&netlink.Device{LinkAttrs: netlink.LinkAttrs{Name: "eth1", Index: trunkLinkIndex}}, nil)
 	m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return([]string{"10.10.0.0/16"}, nil)
@@ -311,29 +313,60 @@ func TestReconcileVlanMTU_IPAMD(t *testing.T) {
 		assert.Equal(t, 1, mockContext.trunkLinkMissingTicks)
 	})
 
-	// This is the IPv6 hole: nodeIPPoolReconcile owns the sweep that clears the state, and it is
-	// never reached on an IPv6 node, so the reconciler has to notice a departed trunk itself.
-	// Without this, an IPv6 node whose trunk detached keeps a stale-ready flag and warns about a
-	// dead MAC on every tick for the life of the process.
-	t.Run("gives up on a trunk whose link stays missing", func(t *testing.T) {
+	// A trunk whose link cannot be found must NOT have its readiness cleared. Clearing it buys
+	// nothing - AddNetwork already fails for these pods when the link cannot be resolved - and
+	// costs a node-wide SGP outage, because nothing re-arms the state: the IPv4 reconcile mark
+	// phase skips any ENI already in the datastore, and IPv6 never re-runs setupENI at all.
+	t.Run("never clears readiness just because the link lookup keeps failing", func(t *testing.T) {
 		m := setup(t)
 		defer m.ctrl.Finish()
 
 		mockContext := trunkENIIPAMContext(m)
 		mockContext.trunkENI.markReady(trunkENIid, trunkMAC)
 
+		const ticks = 25 // past the log rate limit, so the quiet path is exercised too
 		m.network.EXPECT().GetLinkByMac(trunkMAC, gomock.Any()).
-			Return(nil, errors.New("simulated lookup failure")).Times(trunkLinkMissingTickThreshold)
+			Return(nil, errors.New("simulated lookup failure")).Times(ticks)
 
-		for i := 0; i < trunkLinkMissingTickThreshold; i++ {
+		for i := 0; i < ticks; i++ {
 			mockContext.reconcileVlanMTU()
 		}
 
-		assert.False(t, mockContext.trunkENI.isReady(), "a trunk with no link must stop serving pod ADDs")
-		assert.Zero(t, mockContext.trunkLinkMissingTicks)
+		assert.True(t, mockContext.trunkENI.isReady(),
+			"a netlink lookup failure must never cost the node its trunk readiness")
+		assert.Equal(t, ticks, mockContext.trunkLinkMissingTicks)
+		assert.Equal(t, trunkENIid, mockContext.trunkLinkMissingENI)
 	})
 
-	t.Run("a recovered lookup resets the give-up counter", func(t *testing.T) {
+	// The counter is about a particular trunk. If it were not, a replacement trunk would inherit
+	// its predecessor's failures - and nodeIPPoolReconcile's mark-before-sweep order means the
+	// identity changes without the state ever passing through empty.
+	t.Run("a replacement trunk does not inherit the previous trunk's failure count", func(t *testing.T) {
+		m := setup(t)
+		defer m.ctrl.Finish()
+
+		const newTrunkENIid = "eni-0000newtrunk"
+		const newTrunkMAC = "12:ef:2a:98:e5:5f"
+
+		mockContext := trunkENIIPAMContext(m)
+		mockContext.trunkENI.markReady(trunkENIid, trunkMAC)
+
+		m.network.EXPECT().GetLinkByMac(trunkMAC, gomock.Any()).Return(nil, errors.New("gone")).Times(2)
+		mockContext.reconcileVlanMTU()
+		mockContext.reconcileVlanMTU()
+		require.Equal(t, 2, mockContext.trunkLinkMissingTicks)
+
+		// A replacement trunk is configured, and its first lookup also fails.
+		mockContext.trunkENI.markReady(newTrunkENIid, newTrunkMAC)
+		m.network.EXPECT().GetLinkByMac(newTrunkMAC, gomock.Any()).Return(nil, errors.New("blip"))
+		mockContext.reconcileVlanMTU()
+
+		assert.Equal(t, 1, mockContext.trunkLinkMissingTicks, "the count must restart for the new trunk")
+		assert.Equal(t, newTrunkENIid, mockContext.trunkLinkMissingENI)
+		assert.True(t, mockContext.trunkENI.isReady())
+	})
+
+	t.Run("a recovered lookup resets the failure counter", func(t *testing.T) {
 		m := setup(t)
 		defer m.ctrl.Finish()
 
@@ -524,4 +557,59 @@ func TestSetupENI_TrunkNotReadyUntilSetupENINetworkReturns(t *testing.T) {
 	err := mockContext.setupENI(context.Background(), md.ENIID, md, true /* isTrunkENI */, false)
 	assert.NoError(t, err)
 	assert.True(t, mockContext.trunkENI.isReady())
+}
+
+// TestAddNetwork_PodENI_UsesTheConfiguredTrunksLink is the regression test for the unkeyed gate
+// read. Readiness used to be a yes/no question - "is some trunk ready?" - while the link index
+// handed to the plugin was resolved independently via DataStore.GetTrunkENI, a Go map scan. With
+// two trunks in the datastore, one configured and one not, those two answers could name different
+// ENIs: the ADD was admitted on the strength of the configured trunk and the plugin was handed
+// the unconfigured one's link index, so the pod's VLAN was built on a trunk still at its
+// boot-time MTU. That is the exact defect this change exists to prevent.
+func TestAddNetwork_PodENI_UsesTheConfiguredTrunksLink(t *testing.T) {
+	const configuredTrunk = "eni-0000configured"
+	const configuredMAC = "12:ef:2a:98:e5:60"
+	const configuredLinkIndex = 11
+	const unconfiguredTrunk = "eni-0000unconfigured"
+
+	// Repeat: with the unkeyed read the failure depended on map iteration order.
+	for attempt := 0; attempt < 20; attempt++ {
+		m := setup(t)
+
+		mockContext := trunkENIIPAMContext(m)
+		ds := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard)
+		// Both trunks are in the datastore. Only the first one was configured.
+		require.NoError(t, ds.AddENI(configuredTrunk, trunkDevice, false, true, false,
+			networkutils.CalculateRouteTableId(trunkDevice, defaultNetworkCard), ""))
+		require.NoError(t, ds.AddENI(unconfiguredTrunk, trunkDevice+1, false, true, false,
+			networkutils.CalculateRouteTableId(trunkDevice+1, defaultNetworkCard), ""))
+		mockContext.trunkENI.markReady(configuredTrunk, configuredMAC)
+
+		pod := branchENIPod(fmt.Sprintf("sgp-pod-two-trunks-%d", attempt))
+		require.NoError(t, m.k8sClient.Create(context.TODO(), pod))
+
+		// Only the CONFIGURED trunk's MAC may be looked up. A lookup of anything else - which is
+		// what resolving via the datastore would do - fails the test as an unexpected call.
+		m.network.EXPECT().GetLinkByMac(configuredMAC, gomock.Any()).Return(
+			&netlink.Device{LinkAttrs: netlink.LinkAttrs{Name: "eth1", Index: configuredLinkIndex}}, nil)
+		m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return([]string{"10.10.0.0/16"}, nil)
+		m.network.EXPECT().UseExternalSNAT().Return(true)
+
+		s := &server{version: "1.2.3", ipamContext: mockContext}
+		resp, err := s.AddNetwork(context.Background(), &pb.AddNetworkRequest{
+			ClientVersion:     "1.2.3",
+			Netns:             "netns",
+			NetworkName:       "net0",
+			ContainerID:       fmt.Sprintf("cid-%d", attempt),
+			IfName:            "eth0",
+			K8S_POD_NAME:      pod.Name,
+			K8S_POD_NAMESPACE: pod.Namespace,
+		})
+
+		require.NoError(t, err)
+		require.True(t, resp.Success, "attempt %d", attempt)
+		require.EqualValues(t, configuredLinkIndex, resp.ParentIfIndex,
+			"attempt %d: the plugin must be given the CONFIGURED trunk's link index", attempt)
+		m.ctrl.Finish()
+	}
 }
