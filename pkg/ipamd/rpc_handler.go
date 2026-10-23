@@ -129,9 +129,13 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 					podENIErrInc("trunkENINotReady")
 					return &failureResponse, nil
 				}
-				trunkENILinkIndex, err = s.ipamContext.getTrunkLinkIndex()
+				// Resolve the link index from the trunk whose readiness was just checked, not
+				// from whichever trunk the datastore happens to name: handing the plugin a
+				// different trunk's index is how a pod's VLAN ends up on an unconfigured link.
+				trunkENILinkIndex, err = s.ipamContext.readyTrunkLinkIndex()
 				if err != nil {
-					log.Warn("Send AddNetworkReply: No trunk ENI Link Index found, cannot add a pod ENI")
+					log.Warnf("Send AddNetworkReply: no link for the configured trunk ENI, cannot add a pod ENI: %v", err)
+					podENIErrInc("trunkENILinkIndex")
 					return &failureResponse, nil
 				}
 				val, branch := pod.Annotations["vpc.amazonaws.com/pod-eni"]
