@@ -30,6 +30,9 @@ const (
 	testTrunkLinkIndex = 3
 	testVlanLinkIndex  = 7
 	testLoweredMTU     = 1500
+	// testOddTrunkMTU is deliberately neither the default MTU nor a value any env var would
+	// produce, so a target that came from anywhere other than the trunk link cannot pass.
+	testOddTrunkMTU = 8000
 )
 
 func testTrunkDevice(mtu int) *netlink.Device {
@@ -49,10 +52,12 @@ func testVlanLink(name string, index, mtu, parentIndex int) *netlink.Vlan {
 	}
 }
 
-// TestSetupENINetworkRaisesStrandedVlanMTU covers the window the customer hit: a branch ENI
-// VLAN was built while the trunk was still at the boot-time 1500, ipamd then raises the trunk
-// to 9001, and the kernel leaves the VLAN behind at 1500 forever. Setting up the trunk must
-// bring its VLAN children back up with it.
+// TestSetupENINetworkRaisesStrandedVlanMTU covers the repair half of the defect: a branch ENI
+// VLAN sits at 1500 while the trunk is being configured up to 9001, and the kernel leaves the
+// VLAN behind forever. Setting up the trunk must bring its VLAN children back up with it.
+// The race that strands the VLAN in the first place is closed by the AddNetwork readiness gate,
+// not here; this is what repairs a VLAN that was already stranded, including by an MTU change
+// made outside ipamd.
 func TestSetupENINetworkRaisesStrandedVlanMTU(t *testing.T) {
 	ctrl, mockNetLink, _, _, _ := setup(t)
 	defer ctrl.Finish()
@@ -146,8 +151,9 @@ func TestReconcileVlanMTU(t *testing.T) {
 		// links is what the netlink dump returns.
 		links []netlink.Link
 		// wantSetMTU lists the VLAN links that must be raised, and to what.
-		wantSetMTU  map[string]int
-		setMTUErr   error
+		wantSetMTU map[string]int
+		// failVlan is the one VLAN whose LinkSetMTU fails, so a partial pass is observable.
+		failVlan    string
 		linkListErr error
 		wantHealed  int
 		wantErr     bool
@@ -157,6 +163,30 @@ func TestReconcileVlanMTU(t *testing.T) {
 			links:      []netlink.Link{testTrunkDevice(testMTU), testVlanLink("vlan.eth.7", testVlanLinkIndex, testLoweredMTU, testTrunkLinkIndex)},
 			wantSetMTU: map[string]int{"vlan.eth.7": testMTU},
 			wantHealed: 1,
+		},
+		{
+			// Pins the TARGET, not just "something got raised". 8000 is neither the default
+			// MTU nor either value used elsewhere in this table, so an implementation that
+			// reconciled to a hardcoded 9001, to POD_MTU, or to AWS_VPC_ENI_MTU would fail
+			// here: the mock only accepts LinkSetMTU(vlan, 8000).
+			name:       "raises to the trunk's actual MTU, not to the default or a configured one",
+			links:      []netlink.Link{testTrunkDevice(testOddTrunkMTU), testVlanLink("vlan.eth.7", testVlanLinkIndex, testLoweredMTU, testTrunkLinkIndex)},
+			wantSetMTU: map[string]int{"vlan.eth.7": testOddTrunkMTU},
+			wantHealed: 1,
+		},
+		{
+			// The other side of the same pin: a VLAN already above the trunk's odd MTU must be
+			// left alone. A hardcoded 9001 target would also skip it, so this row is paired
+			// with the one above - together they can only pass if the target is the trunk's MTU.
+			name:       "leaves a VLAN above the trunk's actual MTU alone",
+			links:      []netlink.Link{testTrunkDevice(testOddTrunkMTU), testVlanLink("vlan.eth.7", testVlanLinkIndex, testMTU, testTrunkLinkIndex)},
+			wantHealed: 0,
+		},
+		{
+			name:       "errors when the trunk link reports MTU 0",
+			links:      []netlink.Link{testTrunkDevice(0), testVlanLink("vlan.eth.7", testVlanLinkIndex, testLoweredMTU, testTrunkLinkIndex)},
+			wantHealed: 0,
+			wantErr:    true,
 		},
 		{
 			name:       "no-op when the VLAN already matches the trunk",
@@ -204,8 +234,10 @@ func TestReconcileVlanMTU(t *testing.T) {
 				testVlanLink("vlan.eth.8", 8, testLoweredMTU, testTrunkLinkIndex),
 			},
 			wantSetMTU: map[string]int{"vlan.eth.7": testMTU, "vlan.eth.8": testMTU},
-			setMTUErr:  errors.New("simulated LinkSetMTU failure"),
-			wantHealed: 0,
+			failVlan:   "vlan.eth.7",
+			// The second VLAN is still raised, so a partial pass reports what it managed AND
+			// the failure. Returning healed=0 on any error would hide the repair that worked.
+			wantHealed: 1,
 			wantErr:    true,
 		},
 		{
@@ -234,7 +266,11 @@ func TestReconcileVlanMTU(t *testing.T) {
 					continue
 				}
 				if mtu, want := tt.wantSetMTU[vlan.Name]; want {
-					mockNetLink.EXPECT().LinkSetMTU(vlan, mtu).Return(tt.setMTUErr)
+					var setErr error
+					if vlan.Name == tt.failVlan {
+						setErr = errors.New("simulated LinkSetMTU failure")
+					}
+					mockNetLink.EXPECT().LinkSetMTU(vlan, mtu).Return(setErr)
 				}
 			}
 

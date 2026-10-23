@@ -125,7 +125,8 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 				// half-configured trunk inherits the trunk's boot-time MTU, and the kernel
 				// never raises it again. Fail the ADD instead; kubelet retries the sandbox.
 				if !s.ipamContext.trunkENI.isReady() {
-					log.Warn("Send AddNetworkReply: trunk ENI not ready yet, cannot add a pod ENI")
+					log.Warnf("Send AddNetworkReply: trunk ENI not ready yet, cannot add a pod ENI for %s/%s", in.K8S_POD_NAMESPACE, in.K8S_POD_NAME)
+					podENIErrInc("trunkENINotReady")
 					return &failureResponse, nil
 				}
 				trunkENILinkIndex, err = s.ipamContext.getTrunkLinkIndex()

@@ -1106,16 +1106,23 @@ func setupENINetwork(eniIP string, eniMac string, networkCard int, eniSubnetCIDR
 		log.Debugf("setupENINetwork: skipping rule for Primary IP of ENI %s, conditions IsTrunkENI: %t, RuleExists: %t", eniIP, isTrunkENI, isRuleConfigured)
 	}
 
-	// The trunk's MTU was just (re)programmed above. The kernel lowers a VLAN link when its
-	// parent's MTU drops, but it never raises one again, so any branch ENI VLAN built while the
-	// trunk was still at the boot-time MTU stays stuck low forever. Raise them back here, as
-	// close as possible to the LinkSetMTU that created the gap. A failure here is logged and
-	// not fatal: the trunk itself is correctly configured and the periodic reconciler retries.
+	// The trunk's MTU was (re)programmed by the LinkSetMTU near the top of this function. The
+	// kernel lowers a VLAN link when its parent's MTU drops but never raises one again, so any
+	// branch ENI VLAN built while the trunk was still at the boot-time MTU stays stuck low
+	// forever. Raise them back now that the trunk is fully configured.
+	//
+	// This sits at the end rather than next to the LinkSetMTU so that it only runs once the
+	// trunk is actually usable - address, routes and all. The cost is that an early return
+	// above skips the repair; that is deliberate, since a trunk whose routes failed is not a
+	// trunk whose VLANs we want to touch, and the periodic reconciler picks it up either way.
+	// A failure here is logged and not fatal for the same reason.
 	if isTrunkENI {
-		if healed, err := reconcileVlanMTU(netLink, linkIndex); err != nil {
-			log.Warnf("setupENINetwork: failed to reconcile VLAN MTUs under trunk link %d: %v", linkIndex, err)
-		} else if healed > 0 {
+		healed, err := reconcileVlanMTU(netLink, linkIndex)
+		if healed > 0 {
 			log.Infof("setupENINetwork: raised the MTU of %d VLAN link(s) under trunk link %d", healed, linkIndex)
+		}
+		if err != nil {
+			log.Warnf("setupENINetwork: could not fully reconcile VLAN MTUs under trunk link %d: %v", linkIndex, err)
 		}
 	}
 
@@ -1149,18 +1156,23 @@ func reconcileVlanMTU(netLink netlinkwrapper.NetLink, trunkLinkIndex int) (int, 
 	}
 
 	targetMTU := 0
+	trunkFound := false
 	for _, link := range links {
 		if link.Attrs().Index == trunkLinkIndex {
+			trunkFound = true
 			targetMTU = link.Attrs().MTU
 			break
 		}
 	}
+	if !trunkFound {
+		return 0, errors.Errorf("reconcileVlanMTU: trunk link index %d is not in the link dump", trunkLinkIndex)
+	}
 	if targetMTU <= 0 {
-		return 0, errors.Errorf("reconcileVlanMTU: trunk link index %d not found", trunkLinkIndex)
+		return 0, errors.Errorf("reconcileVlanMTU: trunk link index %d reports MTU %d, refusing to use it as a target", trunkLinkIndex, targetMTU)
 	}
 
-	healed := 0
-	var lastErr error
+	healed, failed := 0, 0
+	var firstErr error
 	for _, link := range links {
 		vlan, isVlan := link.(*netlink.Vlan)
 		if !isVlan || vlan.ParentIndex != trunkLinkIndex {
@@ -1171,15 +1183,20 @@ func reconcileVlanMTU(netLink netlinkwrapper.NetLink, trunkLinkIndex int) (int, 
 		}
 		log.Infof("reconcileVlanMTU: raising MTU of VLAN link %s from %d to the trunk MTU %d", vlan.Name, vlan.MTU, targetMTU)
 		if err := netLink.LinkSetMTU(vlan, targetMTU); err != nil {
-			// Keep going: one unhappy VLAN must not hide the others.
-			lastErr = errors.Wrapf(err, "reconcileVlanMTU: failed to set MTU %d on VLAN link %s", targetMTU, vlan.Name)
-			log.Errorf("%v", lastErr)
+			// Keep going: one unhappy VLAN must not hide the others. The caller logs.
+			failed++
+			if firstErr == nil {
+				firstErr = errors.Wrapf(err, "failed to set MTU %d on VLAN link %s", targetMTU, vlan.Name)
+			}
 			continue
 		}
 		healed++
 	}
 
-	return healed, lastErr
+	if firstErr != nil {
+		return healed, errors.Wrapf(firstErr, "reconcileVlanMTU: %d of %d VLAN link(s) could not be raised to %d, first failure", failed, healed+failed, targetMTU)
+	}
+	return healed, nil
 }
 
 func getRouteTableNumberForENI(networkCard int, eniIP string, mask int, deviceNumber int, maxENIsPerNetworkCard int, isV6 bool, netLink netlinkwrapper.NetLink) (int, bool, error) {
