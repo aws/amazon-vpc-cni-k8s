@@ -65,6 +65,13 @@ const (
 	nodeIPPoolReconcileInterval = 60 * time.Second
 	decreaseIPPoolInterval      = 30 * time.Second
 
+	// vlanMTUReconcileInterval is how often ipamd re-checks the branch ENI VLAN links against
+	// the trunk ENI's MTU when Security Groups for Pods is enabled. The check is one netlink
+	// link dump with no EC2 or IMDS call, so it is cheap enough to run at half the ENI/IP
+	// reconcile interval it sits next to. That bounds how long a VLAN stranded by an
+	// out-of-band trunk MTU change - something ipamd never gets told about - stays broken.
+	vlanMTUReconcileInterval = 30 * time.Second
+
 	// ipReconcileCooldown is the amount of time that an IP address must wait until it can be added to the data store
 	// during reconciliation after being discovered on the EC2 instance metadata.
 	ipReconcileCooldown = 60 * time.Second
@@ -256,6 +263,55 @@ type IPAMContext struct {
 	networkPolicyMode         string
 	enableMultiNICSupport     bool
 	withApiServer             bool
+	// trunkENI tracks whether ipamd has finished wiring up the trunk ENI's host network.
+	// Deliberately in-memory and not in the datastore: the datastore is checkpointed and
+	// restored across ipamd restarts, while "did this process configure the trunk link"
+	// must start out false after every restart and be re-established by the setup path.
+	trunkENI trunkENIState
+}
+
+// trunkENIState records whether SetupENINetwork has completed for the trunk ENI, and the
+// trunk's MAC so the periodic VLAN MTU reconciler can find its link without an IMDS call.
+// It is read from the gRPC handler goroutines and written from the ENI setup/reconcile
+// goroutine, so every access goes through the mutex.
+type trunkENIState struct {
+	mu    sync.RWMutex
+	ready bool
+	mac   string
+}
+
+// markReady records that the trunk ENI's host network has been configured successfully.
+func (t *trunkENIState) markReady(mac string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.ready = true
+	t.mac = mac
+}
+
+// markNotReady records that the trunk ENI is no longer known to be configured, either
+// because its setup failed or because it is gone from the datastore.
+func (t *trunkENIState) markNotReady() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.ready = false
+	t.mac = ""
+}
+
+// isReady reports whether the trunk ENI's host network has been configured.
+func (t *trunkENIState) isReady() bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.ready
+}
+
+// readyMAC returns the configured trunk ENI's MAC, or "" when the trunk is not ready.
+func (t *trunkENIState) readyMAC() string {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if !t.ready {
+		return ""
+	}
+	return t.mac
 }
 
 type kubeletConfig struct {
@@ -792,6 +848,11 @@ func (c *IPAMContext) updateIPStats(unmanaged int) {
 
 // StartNodeIPPoolManager monitors the IP pool, add or del them when it is required.
 func (c *IPAMContext) StartNodeIPPoolManager(ctx context.Context) {
+	if c.enablePodENI {
+		// Runs for both IPv4 and IPv6, so it is started before the IPv6 branch below.
+		go c.startVlanMTUReconciler(ctx)
+	}
+
 	// For IPv6, if Security Groups for Pods is enabled, wait until trunk ENI is attached and add it to the datastore.
 	if c.enableIPv6 {
 		if c.enablePodENI && c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetTrunkENI() == "" {
@@ -816,6 +877,47 @@ func (c *IPAMContext) StartNodeIPPoolManager(ctx context.Context) {
 		}
 		time.Sleep(sleepDuration)
 		c.nodeIPPoolReconcile(ctx, nodeIPPoolReconcileInterval)
+	}
+}
+
+// startVlanMTUReconciler periodically repairs branch ENI VLAN links whose MTU has fallen below
+// the trunk's. ipamd's own trunk setup already reconciles them inline; this loop is for the MTU
+// changes ipamd does not make itself, where the kernel drags the VLANs down with the trunk and
+// then never raises them again when the trunk recovers.
+func (c *IPAMContext) startVlanMTUReconciler(ctx context.Context) {
+	ticker := time.NewTicker(vlanMTUReconcileInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			c.reconcileVlanMTU()
+		}
+	}
+}
+
+// reconcileVlanMTU raises the branch ENI VLAN links on this node back to the trunk's MTU.
+func (c *IPAMContext) reconcileVlanMTU() {
+	trunkMAC := c.trunkENI.readyMAC()
+	if trunkMAC == "" {
+		// No trunk ENI configured by this process, so there are no branch ENI VLANs to repair.
+		return
+	}
+
+	retryLinkByMacInterval := 100 * time.Millisecond
+	trunkLink, err := c.networkClient.GetLinkByMac(trunkMAC, retryLinkByMacInterval)
+	if err != nil {
+		log.Warnf("VLAN MTU reconcile: failed to find the trunk ENI link with MAC %s: %v", trunkMAC, err)
+		return
+	}
+
+	healed, err := c.networkClient.ReconcileVlanMTUForTrunk(trunkLink.Attrs().Index)
+	if err != nil {
+		log.Errorf("VLAN MTU reconcile: %v", err)
+	}
+	if healed > 0 {
+		log.Infof("VLAN MTU reconcile: raised the MTU of %d VLAN link(s) under trunk ENI link %s", healed, trunkLink.Attrs().Name)
 	}
 }
 
@@ -1376,12 +1478,24 @@ func (c *IPAMContext) setupENI(ctx context.Context, eni string, eniMetadata awsu
 		err := c.networkClient.SetupENINetwork(c.primaryIP[eni], eniMetadata.MAC, eniMetadata.NetworkCard, subnetCidr, c.maxENI, isTrunkENI, routeTableID, isRuleConfigured)
 		if err != nil {
 			// Failed to set up the ENI
+			if isTrunkENI {
+				// AddENI above already made this trunk visible to GetTrunkENI. Make sure a pod
+				// ADD cannot be served off a trunk link we failed to configure.
+				c.trunkENI.markNotReady()
+			}
 			errRemove := c.dataStoreAccess.GetDataStore(eniMetadata.NetworkCard).RemoveENIFromDataStore(eni, true)
 			if errRemove != nil {
 				log.Warnf("failed to remove ENI %s: %v", eni, errRemove)
 			}
 			delete(c.primaryIP, eni)
 			return errors.Wrapf(err, "failed to set up ENI %s network", eni)
+		}
+		if isTrunkENI {
+			// Only now is the trunk link actually usable: it carries the right MTU, it is up,
+			// and its IP and routes are in place. Branch ENI VLANs built before this point
+			// inherit the trunk's boot-time MTU, which is why AddNetwork waits for this flag.
+			c.trunkENI.markReady(eniMetadata.MAC)
+			log.Infof("Trunk ENI %s is ready to serve pod ENI requests", eni)
 		}
 	}
 
@@ -1741,6 +1855,11 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 		// Sweep phase: since the marked ENI have been removed, the remaining ones needs to be sweeped
 		for eni := range currentENIs {
 			log.Infof("Reconcile and delete detached ENI %s", eni)
+			if eni == trunkENI {
+				// The trunk is gone from the instance, so whatever we configured on its link is
+				// gone with it. A replacement trunk re-arms the flag through setupENI.
+				c.trunkENI.markNotReady()
+			}
 			// Force the delete, since aws local metadata has told us that this ENI is no longer
 			// attached, so any IPs assigned from this ENI will no longer work.
 			err = ds.RemoveENIFromDataStore(eni, true /* force */)

@@ -167,6 +167,21 @@ func (mr *MockNetworkAPIsMockRecorder) GetRuleListBySrc(arg0, arg1 interface{}) 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRuleListBySrc", reflect.TypeOf((*MockNetworkAPIs)(nil).GetRuleListBySrc), arg0, arg1)
 }
 
+// ReconcileVlanMTUForTrunk mocks base method.
+func (m *MockNetworkAPIs) ReconcileVlanMTUForTrunk(arg0 int) (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReconcileVlanMTUForTrunk", arg0)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ReconcileVlanMTUForTrunk indicates an expected call of ReconcileVlanMTUForTrunk.
+func (mr *MockNetworkAPIsMockRecorder) ReconcileVlanMTUForTrunk(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReconcileVlanMTUForTrunk", reflect.TypeOf((*MockNetworkAPIs)(nil).ReconcileVlanMTUForTrunk), arg0)
+}
+
 // SetupENINetwork mocks base method.
 func (m *MockNetworkAPIs) SetupENINetwork(arg0, arg1 string, arg2 int, arg3 string, arg4 int, arg5 bool, arg6 int, arg7 bool) error {
 	m.ctrl.T.Helper()
