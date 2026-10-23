@@ -334,7 +334,7 @@ func (t *trunkENIState) markNotReadyIf(eniID string) bool {
 	return true
 }
 
-// ready returns the configured trunk ENI's id and MAC together, or two empty strings when no
+// readyENI returns the configured trunk ENI's id and MAC together, or two empty strings when no
 // trunk is ready. One read under one lock, so a caller can never mix a stale id with a fresh MAC.
 func (t *trunkENIState) readyENI() (eniID, mac string) {
 	t.mu.RLock()
@@ -928,8 +928,9 @@ func (c *IPAMContext) startVlanMTUReconciler(ctx context.Context) {
 	}
 }
 
-// reconcileVlanMTU raises the branch ENI VLAN links on this node back to the trunk's MTU, and
-// notices when the trunk it holds state for has vanished.
+// reconcileVlanMTU raises the branch ENI VLAN links on this node back to the trunk's MTU. It
+// deliberately does NOT revoke readiness when the trunk's link cannot be found: see the comment
+// on that path for why clearing it would trade a self-healing condition for a permanent one.
 func (c *IPAMContext) reconcileVlanMTU() {
 	trunkENI, trunkMAC := c.trunkENI.readyENI()
 	if trunkENI == "" {
@@ -2571,8 +2572,10 @@ func min(x, y int) int {
 	return x
 }
 
-// readyTrunkLinkIndex returns the host link index of the trunk ENI this process has actually
-// configured, or an error when there is none.
+// readyTrunkLinkIndex returns the host link index of the given trunk ENI, which must be the
+// trunk this process has actually configured. The caller passes the id and MAC it already read,
+// so a pod ADD reads the readiness state exactly once: re-reading it here would reintroduce,
+// one lock acquisition later, the very split this function exists to remove.
 //
 // It replaces the previous getTrunkLinkIndex, which asked DataStore.GetTrunkENI which trunk to
 // use. GetTrunkENI is a map scan: while a trunk is being replaced, or while a second trunk has
@@ -2582,8 +2585,7 @@ func min(x, y int) int {
 // boot-time MTU - precisely the defect this change exists to prevent. Resolving from the MAC
 // recorded when that trunk was configured makes the two answers the same answer, and keeps
 // GetAttachedENIs, an IMDS round trip, out of the pod ADD path.
-func (c *IPAMContext) readyTrunkLinkIndex() (int, error) {
-	trunkENI, trunkMAC := c.trunkENI.readyENI()
+func (c *IPAMContext) readyTrunkLinkIndex(trunkENI, trunkMAC string) (int, error) {
 	if trunkENI == "" {
 		return -1, errors.New("no configured trunk ENI")
 	}
