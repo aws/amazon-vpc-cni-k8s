@@ -264,9 +264,19 @@ type IPAMContext struct {
 	enableMultiNICSupport     bool
 	withApiServer             bool
 	// trunkENI tracks whether ipamd has finished wiring up the trunk ENI's host network.
-	// Deliberately in-memory and not in the datastore: the datastore is checkpointed and
-	// restored across ipamd restarts, while "did this process configure the trunk link"
-	// must start out false after every restart and be re-established by the setup path.
+	//
+	// It is deliberately in-memory rather than in the datastore, and that is safe because of
+	// one invariant: an ENI only ever enters the datastore through setupENI, which is also the
+	// only place that sets this flag. The datastore's checkpoint carries IP allocations only
+	// (see DataStore.writeBackingStoreUnsafe), so a restored datastore has no ENIs in it, and
+	// nodeInit re-runs setupENI for every attached ENI - trunk included - before main starts
+	// the pool manager or binds the gRPC socket. So after a restart the flag is already true
+	// by the time the first pod ADD can arrive, and an SGP pod is never rejected for longer
+	// than ipamd's own startup.
+	//
+	// If that invariant ever changes - if ENI records get persisted, or if ReadAllDataStores
+	// moves above nodeInit's setupENI loop - this flag must move with them, or every SGP pod
+	// on the node is rejected until a trunk is re-attached.
 	trunkENI trunkENIState
 }
 
@@ -909,15 +919,18 @@ func (c *IPAMContext) reconcileVlanMTU() {
 	trunkLink, err := c.networkClient.GetLinkByMac(trunkMAC, retryLinkByMacInterval)
 	if err != nil {
 		log.Warnf("VLAN MTU reconcile: failed to find the trunk ENI link with MAC %s: %v", trunkMAC, err)
+		ipamdErrInc("vlanMTUReconcileTrunkLink")
 		return
 	}
 
 	healed, err := c.networkClient.ReconcileVlanMTUForTrunk(trunkLink.Attrs().Index)
-	if err != nil {
-		log.Errorf("VLAN MTU reconcile: %v", err)
-	}
 	if healed > 0 {
 		log.Infof("VLAN MTU reconcile: raised the MTU of %d VLAN link(s) under trunk ENI link %s", healed, trunkLink.Attrs().Name)
+		prometheusmetrics.ReconcileCnt.With(prometheus.Labels{"fn": "vlanMTUReconcile"}).Add(float64(healed))
+	}
+	if err != nil {
+		log.Errorf("VLAN MTU reconcile: %v", err)
+		ipamdErrInc("vlanMTUReconcile")
 	}
 }
 
@@ -1497,6 +1510,13 @@ func (c *IPAMContext) setupENI(ctx context.Context, eni string, eniMetadata awsu
 			c.trunkENI.markReady(eniMetadata.MAC)
 			log.Infof("Trunk ENI %s is ready to serve pod ENI requests", eni)
 		}
+	} else if isTrunkENI {
+		// A trunk ENI is always a secondary attachment, so this branch should be unreachable.
+		// Arm the flag anyway: the primary ENI's link is configured before ipamd ever runs, so
+		// it is genuinely ready, and failing to say so here would reject every SGP pod on the
+		// node forever rather than for the length of one setup.
+		c.trunkENI.markReady(eniMetadata.MAC)
+		log.Warnf("Trunk ENI %s is also the primary ENI; treating it as ready without calling SetupENINetwork", eni)
 	}
 
 	if !c.enableIPv6 {
@@ -1855,7 +1875,10 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 		// Sweep phase: since the marked ENI have been removed, the remaining ones needs to be sweeped
 		for eni := range currentENIs {
 			log.Infof("Reconcile and delete detached ENI %s", eni)
-			if eni == trunkENI {
+			// Ask the datastore rather than reusing the trunkENI local: when a new ENI showed up
+			// above, that local was reassigned to EC2's view of the trunk, which is "" exactly
+			// when the trunk we are about to sweep is no longer attached.
+			if eni == ds.GetTrunkENI() {
 				// The trunk is gone from the instance, so whatever we configured on its link is
 				// gone with it. A replacement trunk re-arms the flag through setupENI.
 				c.trunkENI.markNotReady()

@@ -269,3 +269,56 @@ func TestReconcileVlanMTU_IPAMD(t *testing.T) {
 		mockContext.reconcileVlanMTU()
 	})
 }
+
+// TestNodeIPPoolReconcile_TrunkSweepClearsReadyFlag covers the sweep path. The subtle part is
+// that nodeIPPoolReconcile reassigns its local trunkENI to EC2's view of the trunk as soon as any
+// new ENI shows up, and EC2's view is "" exactly when the trunk we are sweeping has detached. If
+// the sweep compared against that local, the flag would stay set on a trunk that is gone.
+func TestNodeIPPoolReconcile_TrunkSweepClearsReadyFlag(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+	ctx := context.Background()
+
+	mockContext := trunkENIIPAMContext(m)
+	ds := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard)
+
+	primaryENIMetadata := getPrimaryENIMetadata()
+	require.NoError(t, ds.AddENI(primaryENIid, primaryDevice, true, false, false,
+		networkutils.CalculateRouteTableId(primaryDevice, defaultNetworkCard), ""))
+	require.NoError(t, ds.AddENI(trunkENIid, trunkDevice, false, true, false,
+		networkutils.CalculateRouteTableId(trunkDevice, defaultNetworkCard), ""))
+	mockContext.trunkENI.markReady(trunkMAC)
+	require.True(t, mockContext.trunkENI.isReady())
+	require.Equal(t, trunkENIid, ds.GetTrunkENI())
+
+	// IMDS now reports the primary ENI and a brand new secondary one. The trunk is gone.
+	// The new ENI is what makes nodeIPPoolReconcile call DescribeAllENIs and overwrite its
+	// trunkENI local with the (now empty) EC2 trunk.
+	newENI := getSecondaryENIMetadata()
+	attached := []awsutils.ENIMetadata{primaryENIMetadata, newENI}
+
+	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
+	m.awsutils.EXPECT().IsUnmanagedENI(gomock.Any()).AnyTimes().Return(false)
+	m.awsutils.EXPECT().IsUnmanagedNIC(gomock.Any()).AnyTimes().Return(false)
+	m.awsutils.EXPECT().IsEfaOnlyENI(gomock.Any(), gomock.Any()).AnyTimes().Return(false)
+	m.awsutils.EXPECT().SetUnmanagedNetworkCards(gomock.Any()).AnyTimes()
+	m.awsutils.EXPECT().TagENI(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+	m.awsutils.EXPECT().GetAttachedENIs().Return(attached, nil)
+	m.awsutils.EXPECT().GetIPv4sFromEC2(gomock.Any(), gomock.Any()).AnyTimes().Return(primaryENIMetadata.IPv4Addresses, nil)
+	m.awsutils.EXPECT().DescribeAllENIs(gomock.Any()).Return(awsutils.DescribeAllENIsResult{
+		ENIMetadata:             attached,
+		TagMap:                  map[string]awsutils.TagMap{},
+		TrunkENI:                "", // the trunk has detached, so EC2 reports none
+		EFAENIs:                 make(map[string]bool),
+		EFAOnlyENIByNetworkCard: []string{""},
+		ENIsByNetworkCard:       [][]string{defaultNetworkCard: {primaryENIid, secENIid}},
+	}, nil)
+	m.network.EXPECT().GetRouteTableNumberForENI(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(secDevice+1, false, nil)
+	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, gomock.Any(), gomock.Any(), gomock.Any(), false, gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+
+	mockContext.nodeIPPoolReconcile(ctx, 0)
+
+	assert.Empty(t, ds.GetTrunkENI(), "the detached trunk must be swept out of the datastore")
+	assert.False(t, mockContext.trunkENI.isReady(), "a swept trunk must clear the readiness flag")
+	assert.Empty(t, mockContext.trunkENI.readyMAC())
+}
