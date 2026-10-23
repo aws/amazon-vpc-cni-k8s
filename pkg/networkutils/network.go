@@ -32,6 +32,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
 	"github.com/aws/amazon-vpc-cni-k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"k8s.io/apimachinery/pkg/util/sets"
 
@@ -1120,6 +1121,10 @@ func setupENINetwork(eniIP string, eniMac string, networkCard int, eniSubnetCIDR
 		healed, err := reconcileVlanMTU(netLink, linkIndex)
 		if healed > 0 {
 			log.Infof("setupENINetwork: raised the MTU of %d VLAN link(s) under trunk link %d", healed, linkIndex)
+			// Same counter the periodic reconciler in ipamd uses, so a dashboard sees the repairs
+			// this path makes too. It is the path that heals the reported defect, so leaving it
+			// invisible would hide the fix working.
+			prometheusmetrics.ReconcileCnt.With(prometheus.Labels{"fn": "vlanMTUReconcile"}).Add(float64(healed))
 		}
 		if err != nil {
 			log.Warnf("setupENINetwork: could not fully reconcile VLAN MTUs under trunk link %d: %v", linkIndex, err)
