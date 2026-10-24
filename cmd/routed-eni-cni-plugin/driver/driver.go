@@ -65,13 +65,15 @@ type VirtualInterfaceMetadata struct {
 
 // NetworkAPIs defines network API calls
 type NetworkAPIs interface {
-	// SetupPodNetwork sets up pod network for normal ENI based pods
-	SetupPodNetwork(vethMetadata []VirtualInterfaceMetadata, netnsPath string, mtu int, log logger.Logger) error
+	// SetupPodNetwork sets up pod network for normal ENI based pods. When
+	// skipHostVethMACCheck is set, the host-side veth MAC is a random draw that
+	// is not checked against the node's existing links.
+	SetupPodNetwork(vethMetadata []VirtualInterfaceMetadata, netnsPath string, mtu int, skipHostVethMACCheck bool, log logger.Logger) error
 	// TeardownPodNetwork clean up pod network for normal ENI based pods
 	TeardownPodNetwork(vethMetadata []VirtualInterfaceMetadata, log logger.Logger) error
 	// SetupBranchENIPodNetwork sets up pod network for branch ENI based pods
 	SetupBranchENIPodNetwork(vethMetadata VirtualInterfaceMetadata, netnsPath string, vlanID int, eniMAC string,
-		subnetGW string, parentIfIndex int, mtu int, podSGEnforcingMode sgpp.EnforcingMode, log logger.Logger) error
+		subnetGW string, parentIfIndex int, mtu int, podSGEnforcingMode sgpp.EnforcingMode, skipHostVethMACCheck bool, log logger.Logger) error
 	// TeardownBranchENIPodNetwork cleans up pod network for branch ENI based pods
 	TeardownBranchENIPodNetwork(vethMetadata VirtualInterfaceMetadata, vlanID int, podSGEnforcingMode sgpp.EnforcingMode, log logger.Logger) error
 }
@@ -287,13 +289,13 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 
 // SetupPodNetwork wires up linux networking for a pod's network
 // we expect v4Addr and v6Addr to have correct IPAddress Family.
-func (n *linuxNetwork) SetupPodNetwork(vethMetadata []VirtualInterfaceMetadata, netnsPath string, mtu int, log logger.Logger) error {
+func (n *linuxNetwork) SetupPodNetwork(vethMetadata []VirtualInterfaceMetadata, netnsPath string, mtu int, skipHostVethMACCheck bool, log logger.Logger) error {
 	for index, vethData := range vethMetadata {
 
 		log.Debugf("SetupPodNetwork: hostVethName=%s, contVethName=%s, netnsPath=%s, ipAddr=%v, routeTableNumber=%d, mtu=%d",
 			vethData.HostVethName, vethData.ContainerVethName, netnsPath, vethData.IPAddress, vethData.RouteTable, mtu)
 
-		hostVeth, err := n.setupVeth(vethData.HostVethName, vethData.ContainerVethName, netnsPath, vethData.IPAddress, mtu, log, index)
+		hostVeth, err := n.setupVeth(vethData.HostVethName, vethData.ContainerVethName, netnsPath, vethData.IPAddress, mtu, skipHostVethMACCheck, log, index)
 		if err != nil {
 			return errors.Wrapf(err, "SetupPodNetwork: failed to setup veth pair")
 		}
@@ -348,7 +350,7 @@ func vlanIDToRouteTable(vlanID int) (int, error) {
 // SetupBranchENIPodNetwork sets up the network ns for pods requesting its own security group
 // we expect v4Addr and v6Addr to have correct IPAddress Family.
 func (n *linuxNetwork) SetupBranchENIPodNetwork(vethMetadata VirtualInterfaceMetadata, netnsPath string,
-	vlanID int, eniMAC string, subnetGW string, parentIfIndex int, mtu int, podSGEnforcingMode sgpp.EnforcingMode, log logger.Logger) error {
+	vlanID int, eniMAC string, subnetGW string, parentIfIndex int, mtu int, podSGEnforcingMode sgpp.EnforcingMode, skipHostVethMACCheck bool, log logger.Logger) error {
 
 	log.Debugf("SetupBranchENIPodNetwork: hostVethName=%s, contVethName=%s, netnsPath=%s, ipAddr=%v, vlanID=%d, eniMAC=%s, subnetGW=%s, parentIfIndex=%d, mtu=%d, podSGEnforcingMode=%v",
 		vethMetadata.HostVethName, vethMetadata.ContainerVethName, netnsPath, vethMetadata.IPAddress, vlanID, eniMAC, subnetGW, parentIfIndex, mtu, podSGEnforcingMode)
@@ -358,7 +360,7 @@ func (n *linuxNetwork) SetupBranchENIPodNetwork(vethMetadata VirtualInterfaceMet
 		return errors.Wrap(err, "SetupBranchENIPodNetwork")
 	}
 
-	hostVeth, err := n.setupVeth(vethMetadata.HostVethName, vethMetadata.ContainerVethName, netnsPath, vethMetadata.IPAddress, mtu, log, 0)
+	hostVeth, err := n.setupVeth(vethMetadata.HostVethName, vethMetadata.ContainerVethName, netnsPath, vethMetadata.IPAddress, mtu, skipHostVethMACCheck, log, 0)
 	if err != nil {
 		return errors.Wrapf(err, "SetupBranchENIPodNetwork: failed to setup veth pair")
 	}
@@ -428,6 +430,32 @@ func (n *linuxNetwork) TeardownBranchENIPodNetwork(vethMetadata VirtualInterface
 	return nil
 }
 
+// hostVethMAC picks the MAC address assigned to the host side of a pod's veth
+// pair. The host end gets an explicit address at creation so that udev's
+// MACAddressPolicy=persistent leaves it alone (#3354). By default the random
+// address is checked against every link on the node; that RTM_GETLINK dump is
+// interrupted by concurrent veth creation and fails the ADD once the retries
+// are exhausted (#3576). With skipCheck the address is a plain random draw:
+// node-wide uniqueness is not required because every veth pair is its own
+// Ethernet segment and the host ends are never bridged.
+func hostVethMAC(skipCheck bool) (net.HardwareAddr, error) {
+	var macAddrStr string
+	var err error
+	if skipCheck {
+		macAddrStr = generateRandomMAC()
+	} else {
+		macAddrStr, err = NewMACGenerator().generateUniqueRandomMAC()
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to generate Unique MAC addr for host side veth")
+		}
+	}
+	macAddr, err := net.ParseMAC(macAddrStr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to parse generated mac addr %s", macAddrStr)
+	}
+	return macAddr, nil
+}
+
 // setupVeth sets up veth for the pod.
 // setHostVethV6Sysctls hardens the host-side veth for IPv6: accept_ra=0,
 // accept_redirects=1, forwarding=0. Must be applied before the link is
@@ -455,7 +483,7 @@ func setHostVethV6Sysctls(procSys procsyswrapper.ProcSys, hostVethName string, l
 	return nil
 }
 
-func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netnsPath string, ipAddr *net.IPNet, mtu int, log logger.Logger, index int) (netlink.Link, error) {
+func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netnsPath string, ipAddr *net.IPNet, mtu int, skipHostVethMACCheck bool, log logger.Logger, index int) (netlink.Link, error) {
 	// Clean up if hostVeth exists.
 	if oldHostVeth, err := n.netLink.LinkByName(hostVethName); err == nil {
 		if err = n.netLink.LinkDel(oldHostVeth); err != nil {
@@ -463,13 +491,9 @@ func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netns
 		}
 		log.Debugf("Successfully deleted old hostVeth %s", hostVethName)
 	}
-	macAddrStr, err := NewMACGenerator().generateUniqueRandomMAC()
+	macAddr, err := hostVethMAC(skipHostVethMACCheck)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to generate Unique MAC addr for host side veth")
-	}
-	macAddr, err := net.ParseMAC(macAddrStr)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to parse unique generated mac addr %s", macAddrStr)
+		return nil, err
 	}
 	createVethContext := newCreateVethPairContext(contVethName, hostVethName, ipAddr, mtu, index, macAddr, log)
 	if err := n.ns.WithNetNSPath(netnsPath, createVethContext.run); err != nil {

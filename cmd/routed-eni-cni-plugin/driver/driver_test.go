@@ -354,7 +354,7 @@ func Test_linuxNetwork_SetupPodNetwork(t *testing.T) {
 				},
 			}
 
-			err := n.SetupPodNetwork(vIfMetadata, tt.args.netnsPath, tt.args.mtu, testLogger)
+			err := n.SetupPodNetwork(vIfMetadata, tt.args.netnsPath, tt.args.mtu, false, testLogger)
 			if tt.wantErr != nil {
 				assert.EqualError(t, err, tt.wantErr.Error())
 			} else {
@@ -1486,7 +1486,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 				ContainerVethName: tt.args.contVethName,
 			}
 
-			err := n.SetupBranchENIPodNetwork(vIfMetadata, tt.args.netnsPath, tt.args.vlanID, tt.args.eniMAC, tt.args.subnetGW, tt.args.parentIfIndex, tt.args.mtu, tt.args.podSGEnforcingMode, testLogger)
+			err := n.SetupBranchENIPodNetwork(vIfMetadata, tt.args.netnsPath, tt.args.vlanID, tt.args.eniMAC, tt.args.subnetGW, tt.args.parentIfIndex, tt.args.mtu, tt.args.podSGEnforcingMode, false, testLogger)
 			if tt.wantErr != nil {
 				assert.EqualError(t, err, tt.wantErr.Error())
 			} else {
@@ -3851,7 +3851,7 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 				ns:      ns,
 				procSys: procSys,
 			}
-			got, err := n.setupVeth(tt.args.hostVethName, tt.args.contVethName, tt.args.netnsPath, nil, tt.args.mtu, testLogger, 0)
+			got, err := n.setupVeth(tt.args.hostVethName, tt.args.contVethName, tt.args.netnsPath, nil, tt.args.mtu, false, testLogger, 0)
 			if tt.wantErr != nil {
 				assert.EqualError(t, err, tt.wantErr.Error())
 			} else {
@@ -5525,6 +5525,14 @@ func Test_generateUniqueRandomMAC(t *testing.T) {
 		}
 	}
 }
+func Test_hostVethMAC_skipCheck(t *testing.T) {
+	// With the check skipped no link listing happens: a nil netlink would panic if it did.
+	mac, err := hostVethMAC(true)
+	assert.NoError(t, err)
+	assert.Len(t, mac, 6)
+	assert.True(t, isUnicastMAC(mac.String()), "must be unicast and locally administered: %s", mac)
+}
+
 func isUnicastMAC(mac string) bool {
 	addr, err := net.ParseMAC(mac)
 	if err != nil || len(addr) != 6 {

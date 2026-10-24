@@ -441,6 +441,14 @@ Default: `eni`
 
 Specifies the veth prefix used to generate the host-side veth device name for the CNI. The prefix can be at most 4 characters long. The prefixes `eth`, `vlan`, and `lo` are reserved by the CNI plugin and cannot be specified. We recommend using prefix name not shared by any other network interfaces on the worker node instance.
 
+#### `DISABLE_HOST_VETH_MAC_UNIQUENESS_CHECK`
+
+Type: Boolean as a String
+
+Default: `false`
+
+The host side of each pod's veth pair is given an explicit random MAC address at creation so that udev does not rewrite it afterwards. By default that address is also checked against every link on the node, which lists the whole link table for each pod `ADD`; under concurrent pod creation those listings are interrupted by the other pods' veth creation and, after five attempts, the `ADD` fails with `failed to generate Unique MAC addr for host side veth` and the kubelet retries the sandbox. Setting this to `true` skips the check and assigns the random address directly. Every veth pair is its own Ethernet segment and the host ends are never bridged, so the address does not need to be unique across the node.
+
 #### `ADDITIONAL_ENI_TAGS` (v1.6.0+)
 
 Type: String

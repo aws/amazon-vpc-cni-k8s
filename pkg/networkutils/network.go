@@ -915,6 +915,11 @@ func linkByMac(mac string, netLink netlinkwrapper.NetLink, retryInterval time.Du
 		}
 
 		for _, link := range links {
+			// Host-side pod veths carry locally administered addresses chosen by
+			// the CNI plugin and must never be mistaken for an ENI.
+			if _, isVeth := link.(*netlink.Veth); isVeth {
+				continue
+			}
 			if mac == link.Attrs().HardwareAddr.String() {
 				log.Debugf("Found the Link that uses mac address %s and its index is %d (attempt %d/%d)",
 					mac, link.Attrs().Index, attempt, maxAttemptsLinkByMac)
