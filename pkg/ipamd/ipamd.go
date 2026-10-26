@@ -65,18 +65,14 @@ const (
 	nodeIPPoolReconcileInterval = 60 * time.Second
 	decreaseIPPoolInterval      = 30 * time.Second
 
-	// vlanMTUReconcileInterval is how often ipamd re-checks the branch ENI VLAN links against
-	// the trunk ENI's MTU when Security Groups for Pods is enabled. A tick costs two netlink
-	// link dumps and no EC2 or IMDS call at all - one to resolve the trunk link from the MAC
-	// recorded at setup time, one to walk the VLANs - so it is cheap enough to run at half the
-	// ENI/IP reconcile interval it sits next to. That bounds how long a VLAN stranded by an
-	// out-of-band trunk MTU change - something ipamd never gets told about - stays broken.
+	// vlanMTUReconcileInterval bounds how long a branch ENI VLAN stranded below the trunk's MTU
+	// stays broken. ipamd is never told about an out-of-band trunk MTU change, so this is a poll.
+	// A tick costs two local netlink link dumps and no EC2 or IMDS call.
 	vlanMTUReconcileInterval = 30 * time.Second
 
-	// trunkLinkMissingLogEvery rate-limits the warning for a configured trunk whose link cannot
-	// be found. The first failure is always logged; after that, one in this many, so a trunk that
-	// is genuinely gone on an IPv6 node - where the reconcile sweep that would clear it never
-	// runs - does not warn on every tick for the life of the process.
+	// trunkLinkMissingLogEvery rate-limits the warning for a configured trunk whose link cannot be
+	// found: the first failure, then one in this many. On an IPv6 node nothing clears the state, so
+	// an unthrottled warning would repeat for the life of the process.
 	trunkLinkMissingLogEvery = 20
 
 	// ipReconcileCooldown is the amount of time that an IP address must wait until it can be added to the data store
@@ -272,39 +268,30 @@ type IPAMContext struct {
 	withApiServer             bool
 	// trunkENI tracks whether ipamd has finished wiring up the trunk ENI's host network.
 	//
-	// It is deliberately in-memory rather than in the datastore, and that is safe because of
-	// one invariant: an ENI only ever enters the datastore through setupENI, which is also the
-	// only place that sets this flag. The datastore's checkpoint carries IP allocations only
-	// (see DataStore.writeBackingStoreUnsafe), so a restored datastore has no ENIs in it, and
-	// nodeInit re-runs setupENI for every attached ENI - trunk included - before main starts
-	// the pool manager or binds the gRPC socket. So after a restart the flag is already true
-	// by the time the first pod ADD can arrive, and an SGP pod is never rejected for longer
-	// than ipamd's own startup.
-	//
-	// If that invariant ever changes - if ENI records get persisted, or if ReadAllDataStores
-	// moves above nodeInit's setupENI loop - this flag must move with them, or every SGP pod
-	// on the node is rejected until a trunk is re-attached.
+	// It is in-memory rather than in the datastore because it does not need to survive a
+	// restart: the datastore checkpoint carries IP allocations only, so a restored datastore
+	// holds no ENIs, and nodeInit re-runs setupENI for every managed attached ENI before main
+	// starts the pool manager or binds the gRPC socket. If ENI records ever start being
+	// persisted, this flag has to be persisted with them or every SGP pod is rejected until a
+	// trunk is re-attached.
 	trunkENI trunkENIState
-	// trunkLinkMissingTicks counts consecutive VLAN MTU reconcile ticks that could not find the
-	// configured trunk's link, and trunkLinkMissingENI is the trunk those failures are about, so
-	// that a replacement trunk does not inherit its predecessor's count. Both are only read and
-	// written on that loop's own goroutine, so they need no lock.
+	// trunkLinkMissingTicks counts consecutive VLAN MTU reconcile ticks that could not find
+	// trunkLinkMissingENI's link; the id is tracked so a replacement trunk does not inherit its
+	// predecessor's count. Both are only touched on the reconcile goroutine, so they need no lock.
 	trunkLinkMissingTicks int
 	trunkLinkMissingENI   string
 }
 
-// trunkENIState records whether SetupENINetwork has completed for the trunk ENI, and the
-// trunk's MAC so the periodic VLAN MTU reconciler can find its link without an IMDS call.
-// It is read from the gRPC handler goroutines and written from the ENI setup/reconcile
-// goroutine, so every access goes through the mutex.
+// trunkENIState records whether SetupENINetwork has completed for the trunk ENI, plus the trunk's
+// MAC so the VLAN MTU reconciler can resolve its link without an IMDS call. Read from the gRPC
+// handler goroutines and written from the ENI setup goroutine, so every access takes the mutex.
 type trunkENIState struct {
 	mu sync.RWMutex
-	// eniID is the trunk this state is ABOUT, and it is what makes the state safe to clear.
-	// Without it, both places that clear readiness have to work out which trunk they mean by
-	// asking the datastore, and during a trunk replacement the datastore briefly holds two
-	// trunks - so DataStore.GetTrunkENI, which returns whichever one a Go map iteration reaches
-	// first, would non-deterministically disarm the brand-new, correctly configured trunk while
-	// sweeping out the old one. Keying on the ENI id makes every clear decision exact.
+	// eniID names the trunk this state is about, which is what makes it safe to clear. The
+	// alternative - asking the datastore which ENI is "the" trunk - is wrong during a trunk
+	// replacement, when the datastore briefly holds two: DataStore.GetTrunkENI returns whichever
+	// one a Go map iteration reaches first, so it can disarm the new, correctly configured trunk
+	// while the old one is being swept out.
 	eniID string
 	ready bool
 	mac   string
@@ -319,9 +306,9 @@ func (t *trunkENIState) markReady(eniID, mac string) {
 	t.mac = mac
 }
 
-// markNotReadyIf clears the readiness state only when it is held for eniID, and reports whether
-// it cleared anything. Callers must name the trunk they are talking about: clearing the state
-// held for a different, healthy trunk rejects every SGP pod on the node for good.
+// markNotReadyIf clears the readiness state only if it is held for eniID, and reports whether it
+// cleared anything. Clearing the state of a different, healthy trunk would reject every SGP pod
+// on the node until ipamd restarts, so callers must name the trunk they mean.
 func (t *trunkENIState) markNotReadyIf(eniID string) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -334,8 +321,8 @@ func (t *trunkENIState) markNotReadyIf(eniID string) bool {
 	return true
 }
 
-// readyENI returns the configured trunk ENI's id and MAC together, or two empty strings when no
-// trunk is ready. One read under one lock, so a caller can never mix a stale id with a fresh MAC.
+// readyENI returns the configured trunk ENI's id and MAC, or two empty strings when no trunk is
+// ready. One read under one lock, so a caller cannot pair a stale id with a fresh MAC.
 func (t *trunkENIState) readyENI() (eniID, mac string) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -880,7 +867,7 @@ func (c *IPAMContext) updateIPStats(unmanaged int) {
 // StartNodeIPPoolManager monitors the IP pool, add or del them when it is required.
 func (c *IPAMContext) StartNodeIPPoolManager(ctx context.Context) {
 	if c.enablePodENI {
-		// Runs for both IPv4 and IPv6, so it is started before the IPv6 branch below.
+		// The IPv6 branch below never returns, and branch ENI VLANs need reconciling on IPv6 too.
 		go c.startVlanMTUReconciler(ctx)
 	}
 
@@ -912,9 +899,9 @@ func (c *IPAMContext) StartNodeIPPoolManager(ctx context.Context) {
 }
 
 // startVlanMTUReconciler periodically repairs branch ENI VLAN links whose MTU has fallen below
-// the trunk's. ipamd's own trunk setup already reconciles them inline; this loop is for the MTU
-// changes ipamd does not make itself, where the kernel drags the VLANs down with the trunk and
-// then never raises them again when the trunk recovers.
+// the trunk's. Trunk setup already reconciles them inline; this loop covers the MTU changes ipamd
+// does not make itself, where the kernel drags the VLANs down with the trunk and then leaves them
+// there when the trunk recovers.
 func (c *IPAMContext) startVlanMTUReconciler(ctx context.Context) {
 	ticker := time.NewTicker(vlanMTUReconcileInterval)
 	defer ticker.Stop()
@@ -928,16 +915,13 @@ func (c *IPAMContext) startVlanMTUReconciler(ctx context.Context) {
 	}
 }
 
-// reconcileVlanMTU raises the branch ENI VLAN links on this node back to the trunk's MTU. It
-// deliberately does NOT revoke readiness when the trunk's link cannot be found: see the comment
-// on that path for why clearing it would trade a self-healing condition for a permanent one.
+// reconcileVlanMTU raises the branch ENI VLAN links on this node back to the trunk's MTU.
 func (c *IPAMContext) reconcileVlanMTU() {
 	trunkENI, trunkMAC := c.trunkENI.readyENI()
 	if trunkENI == "" {
-		// No trunk ENI configured by this process, so there are no branch ENI VLANs to repair.
-		// Deliberately not inferred from the datastore: "the datastore has a trunk" is also the
-		// normal state in the middle of a trunk setup, and arming or reporting on that basis
-		// would either open the gate on an unconfigured link or cry wolf on a healthy node.
+		// This process has configured no trunk, so it owns no branch ENI VLANs. Asking the
+		// datastore instead would also match the middle of a trunk setup, where the VLANs are
+		// not ours to touch yet.
 		c.trunkLinkMissingTicks = 0
 		c.trunkLinkMissingENI = ""
 		return
@@ -946,30 +930,19 @@ func (c *IPAMContext) reconcileVlanMTU() {
 	retryLinkByMacInterval := 100 * time.Millisecond
 	trunkLink, err := c.networkClient.GetLinkByMac(trunkMAC, retryLinkByMacInterval)
 	if err != nil {
-		// Log, count, and leave the readiness state alone.
-		//
-		// An earlier version cleared readiness after a few consecutive failures here, on the
-		// theory that a trunk with no link must be gone. That was a bad trade. It bought nothing:
-		// AddNetwork already fails for these pods when the trunk's link cannot be resolved, so
-		// clearing cannot prevent a single bad pod ADD. And it cost a lot: nothing re-arms the
-		// state - on IPv4 the reconcile mark phase skips any ENI already in the datastore, so
-		// setupENI never runs again for it, and on IPv6 nothing re-runs it at all - so one
-		// stretch of netlink pressure would turn into a node-wide SGP outage recoverable only by
-		// restarting ipamd. A node that really lost its trunk gets the state cleared by the
-		// reconcile sweep, which names the ENI it is removing.
-		//
-		// The counter exists only to keep this quiet: a trunk that is genuinely gone on an IPv6
-		// node, where that sweep never runs, would otherwise warn on every tick forever.
+		// Log and count, but leave readiness alone. Clearing it here would buy nothing -
+		// AddNetwork already fails these pods when the trunk's link cannot be resolved - and
+		// nothing would re-arm it: the IPv4 reconcile mark phase skips an ENI already in the
+		// datastore, and IPv6 never re-runs setupENI at all. So a transient netlink failure
+		// would become a node-wide SGP outage until ipamd restarts. On IPv4, a node that has
+		// really lost its trunk gets the state cleared by nodeIPPoolReconcile's sweep.
 		if trunkENI != c.trunkLinkMissingENI {
-			// A different trunk than the one we were failing on: start the count again, or this
-			// tick would inherit a previous trunk's failures.
 			c.trunkLinkMissingENI = trunkENI
 			c.trunkLinkMissingTicks = 0
 		}
 		c.trunkLinkMissingTicks++
-		// Count every failure. Only the log is rate limited: on an IPv6 node, where the reconcile
-		// sweep never runs, this counter is the one always-on signal that a trunk's link is gone,
-		// and an alarm sized to the 30s loop would never fire if it only ticked once in twenty.
+		// Counted on every tick even though the log is rate limited: on an IPv6 node, where that
+		// sweep never runs, this is the only always-on signal that the trunk's link is gone.
 		ipamdErrInc("vlanMTUReconcileTrunkLink")
 		if c.trunkLinkMissingTicks == 1 || c.trunkLinkMissingTicks%trunkLinkMissingLogEvery == 0 {
 			log.Warnf("VLAN MTU reconcile: no link found for configured trunk ENI %s with MAC %s "+
@@ -1553,10 +1526,10 @@ func (c *IPAMContext) setupENI(ctx context.Context, eni string, eniMetadata awsu
 		if err != nil {
 			// Failed to set up the ENI
 			if isTrunkENI {
-				// AddENI above already made this trunk visible to GetTrunkENI. Make sure a pod
-				// ADD cannot be served off a trunk link we failed to configure. Named, so that a
-				// failed setup of a SECOND trunk cannot disarm the first one, which is still
-				// configured and still carrying pods.
+				// AddENI above already made this trunk visible to GetTrunkENI, so shut the gate:
+				// no pod ADD may be served off a trunk link we failed to configure. Keyed on
+				// eni, so a failed second trunk cannot disarm a first one that is still carrying
+				// pods.
 				c.trunkENI.markNotReadyIf(eni)
 			}
 			errRemove := c.dataStoreAccess.GetDataStore(eniMetadata.NetworkCard).RemoveENIFromDataStore(eni, true)
@@ -1567,19 +1540,17 @@ func (c *IPAMContext) setupENI(ctx context.Context, eni string, eniMetadata awsu
 			return errors.Wrapf(err, "failed to set up ENI %s network", eni)
 		}
 		if isTrunkENI {
-			// Only now is the trunk link actually usable: it carries the right MTU, it is up,
-			// and its IP and routes are in place. Branch ENI VLANs built before this point
-			// inherit the trunk's boot-time MTU, which is why AddNetwork waits for this flag.
+			// Only now does the trunk link carry its real MTU, with its IP and routes in place.
+			// A branch ENI VLAN built before this point inherits the trunk's boot-time MTU, which
+			// is why AddNetwork waits for this flag.
 			c.trunkENI.markReady(eni, eniMetadata.MAC)
 			log.Infof("Trunk ENI %s is ready to serve pod ENI requests", eni)
 		}
 	} else if isTrunkENI {
-		// A trunk ENI is always a secondary attachment, so this branch should be unreachable.
-		// Arm the flag anyway. SetupENINetwork is skipped for the primary ENI not because its
-		// link is unconfigured but because ipamd configures it elsewhere: nodeInit calls
-		// SetupHostNetwork first, which programs the primary link. So a trunk that was somehow
-		// also the primary ENI is genuinely ready here, and staying silent would reject every
-		// SGP pod on the node forever rather than for the length of one setup.
+		// A trunk is always a secondary attachment, so this should be unreachable. Arm the flag
+		// anyway: SetupENINetwork is skipped for the primary ENI because nodeInit's
+		// SetupHostNetwork already programmed that link, not because it is unconfigured. Staying
+		// silent here would reject every SGP pod on the node for the life of the process.
 		c.trunkENI.markReady(eni, eniMetadata.MAC)
 		log.Warnf("Trunk ENI %s is also the primary ENI; treating it as ready without calling SetupENINetwork", eni)
 	}
@@ -1940,15 +1911,12 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 		// Sweep phase: since the marked ENI have been removed, the remaining ones needs to be sweeped
 		for eni := range currentENIs {
 			log.Infof("Reconcile and delete detached ENI %s", eni)
-			// Name the ENI being swept rather than asking which ENI is "the" trunk. Both of the
-			// obvious ways to ask are wrong here: the trunkENI local was reassigned above to
-			// EC2's view of the trunk, which is "" exactly when the trunk being swept has
-			// detached; and ds.GetTrunkENI() is a map scan that, during a replacement where the
-			// new trunk was just added in the phase above, can name the NEW trunk and so disarm
-			// a trunk that is correctly configured and serving pods.
+			// Pass the ENI being swept rather than asking which ENI is "the" trunk. The trunkENI
+			// local was reassigned above to EC2's view, which is "" exactly when the trunk being
+			// swept has detached; ds.GetTrunkENI() has the hazard described on trunkENIState.eniID,
+			// and the replacement trunk it can name was just added in the phase above.
 			if c.trunkENI.markNotReadyIf(eni) {
-				// The trunk we configured is gone from the instance, so whatever we set on its
-				// link went with it. A replacement re-arms the state through setupENI.
+				// A replacement trunk re-arms the state through setupENI.
 				log.Infof("Trunk ENI %s is gone; pod ENI requests will be rejected until a trunk is configured again", eni)
 			}
 			// Force the delete, since aws local metadata has told us that this ENI is no longer
@@ -2572,27 +2540,22 @@ func min(x, y int) int {
 	return x
 }
 
-// readyTrunkLinkIndex returns the host link index of the given trunk ENI, which must be the
-// trunk this process has actually configured. The caller passes the id and MAC it already read,
-// so a pod ADD reads the readiness state exactly once: re-reading it here would reintroduce,
-// one lock acquisition later, the very split this function exists to remove.
+// readyTrunkLinkIndex returns the host link index of the trunk ENI the caller names, which must
+// be the trunk this process has configured. The id and MAC are passed in rather than re-read so
+// that a pod ADD consults the readiness state exactly once; a second read could return a
+// different trunk, and the admission decision and the link index handed to the plugin have to
+// be about the same ENI or the pod's VLAN lands on an unconfigured trunk.
 //
-// It replaces the previous getTrunkLinkIndex, which asked DataStore.GetTrunkENI which trunk to
-// use. GetTrunkENI is a map scan: while a trunk is being replaced, or while a second trunk has
-// been added to the datastore but not yet configured, it can name a different ENI than the one
-// readiness is held for. A pod ADD would then be admitted on the strength of trunk A and handed
-// trunk B's link index, and the plugin would build the pod's VLAN on a trunk still at its
-// boot-time MTU - precisely the defect this change exists to prevent. Resolving from the MAC
-// recorded when that trunk was configured makes the two answers the same answer, and keeps
-// GetAttachedENIs, an IMDS round trip, out of the pod ADD path.
+// Resolving the link from the MAC recorded at setup also keeps GetAttachedENIs, an IMDS round
+// trip, out of the pod ADD path.
 func (c *IPAMContext) readyTrunkLinkIndex(trunkENI, trunkMAC string) (int, error) {
 	if trunkENI == "" {
 		return -1, errors.New("no configured trunk ENI")
 	}
 	if trunkMAC == "" {
-		// linkByMac("") would match any link whose hardware address is nil. Not reachable today,
-		// since readiness is only ever set with the MAC from ENI metadata, but the consequence of
-		// being wrong here is a pod VLAN built on an arbitrary link.
+		// Not reachable today - readiness is only ever set with the MAC from ENI metadata - but
+		// linkByMac("") matches any link with a nil hardware address, which would put a pod's
+		// VLAN on an arbitrary link.
 		return -1, errors.Errorf("configured trunk ENI %s has no MAC recorded", trunkENI)
 	}
 	retryLinkByMacInterval := 100 * time.Millisecond
