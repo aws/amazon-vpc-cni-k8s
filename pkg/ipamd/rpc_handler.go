@@ -120,12 +120,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 					log.Warn("Send AddNetworkReply: No trunk ENI found, cannot add a pod ENI")
 					return &failureResponse, nil
 				}
-				// The GetTrunkENI check above is not enough: a trunk is visible there as soon as
-				// it is added to the datastore, which happens before its link is configured. A
-				// VLAN built on a half-configured trunk inherits the trunk's boot-time MTU and
-				// the kernel never raises it again, so serve this pod only off a trunk ipamd has
-				// finished configuring - and take both the decision and the link index from that
-				// one read, so they cannot be about different trunks.
+				// The check above is not enough: a trunk is in the datastore before its link is configured.
 				readyTrunkENI, readyTrunkMAC := s.ipamContext.trunkENI.readyENI()
 				if readyTrunkENI == "" {
 					log.Warnf("Send AddNetworkReply: trunk ENI not ready yet, cannot add a pod ENI for %s/%s", in.K8S_POD_NAMESPACE, in.K8S_POD_NAME)
