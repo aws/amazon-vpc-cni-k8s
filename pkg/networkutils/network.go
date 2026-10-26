@@ -171,8 +171,7 @@ type NetworkAPIs interface {
 	GetLinkByMac(mac string, retryInterval time.Duration) (netlink.Link, error)
 	DeleteRulesBySrc(eniIP string, v6enabled bool) error
 	GetRouteTableNumberForENI(networkCard int, eniIP string, deviceNumber int, maxENIsPerNetworkCard int, isV6 bool) (int, bool, error)
-	// ReconcileVlanMTUForTrunk raises the MTU of every VLAN link parented on the trunk ENI
-	// to the trunk's current MTU. It returns the number of VLAN links it raised.
+	// ReconcileVlanMTUForTrunk raises every VLAN link parented on the trunk ENI to the trunk's MTU.
 	ReconcileVlanMTUForTrunk(trunkLinkIndex int) (int, error)
 }
 
@@ -1107,21 +1106,12 @@ func setupENINetwork(eniIP string, eniMac string, networkCard int, eniSubnetCIDR
 		log.Debugf("setupENINetwork: skipping rule for Primary IP of ENI %s, conditions IsTrunkENI: %t, RuleExists: %t", eniIP, isTrunkENI, isRuleConfigured)
 	}
 
-	// The LinkSetMTU near the top of this function may have raised the trunk. The kernel lowers
-	// a VLAN link when its parent's MTU drops but never raises one again, so a branch ENI VLAN
-	// built while the trunk was still at its boot-time MTU stays stuck low. Raise them here,
-	// after the trunk's address and routes are in place, so the repair only runs on a trunk that
-	// is actually usable. An early return above therefore skips the repair for that attempt, and
-	// the periodic pass will not cover for it - ipamd only arms that for a trunk it configured -
-	// but ipamd retries the whole setup, and the repair runs on the attempt that succeeds. A
-	// failure of the repair itself is not fatal: the trunk is configured by now, so the periodic
-	// pass does retry.
+	// The kernel lowers a VLAN link with its parent but never raises one again, so raise them here.
 	if isTrunkENI {
 		healed, err := reconcileVlanMTU(netLink, linkIndex)
 		if healed > 0 {
 			log.Infof("setupENINetwork: raised the MTU of %d VLAN link(s) under trunk link %d", healed, linkIndex)
-			// Same counter as the periodic reconciler in ipamd, so repairs from either path show
-			// up on one dashboard.
+			// Same counter as the periodic reconciler in ipamd.
 			prometheusmetrics.ReconcileCnt.With(prometheus.Labels{"fn": "vlanMTUReconcile"}).Add(float64(healed))
 		}
 		if err != nil {
@@ -1132,24 +1122,12 @@ func setupENINetwork(eniIP string, eniMac string, networkCard int, eniSubnetCIDR
 	return nil
 }
 
-// ReconcileVlanMTUForTrunk raises the MTU of every VLAN link parented on the given trunk link
-// index to the trunk's current MTU, and returns how many links it raised.
+// ReconcileVlanMTUForTrunk raises every VLAN link parented on the given trunk link index to the trunk's MTU.
 func (n *linuxNetwork) ReconcileVlanMTUForTrunk(trunkLinkIndex int) (int, error) {
 	return reconcileVlanMTU(n.netLink, trunkLinkIndex)
 }
 
-// reconcileVlanMTU brings the branch ENI VLAN links parented on trunkLinkIndex back up to the
-// trunk's MTU.
-//
-// The target is the trunk's current MTU rather than any configured value, because a VLAN can
-// never carry more than its parent - the kernel rejects that with ERANGE - and a VLAN at the
-// trunk MTU is what the plugin's VLAN inherits from the trunk at creation anyway, on a node where
-// the trunk was configured first. It is also safe for any pod MTU below it, which is why the
-// target is not POD_MTU. The trunk's own MTU is left alone: reasserting it would pit ipamd
-// against whoever changed it.
-//
-// VLANs already at or above the target are skipped, so this never lowers a link; the kernel
-// does that itself when the parent drops.
+// reconcileVlanMTU raises the VLAN links parented on trunkLinkIndex to the trunk's current MTU, the most a VLAN can carry.
 func reconcileVlanMTU(netLink netlinkwrapper.NetLink, trunkLinkIndex int) (int, error) {
 	links, err := netLink.LinkList()
 	if err != nil {

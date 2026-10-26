@@ -30,8 +30,7 @@ const (
 	testTrunkLinkIndex = 3
 	testVlanLinkIndex  = 7
 	testLoweredMTU     = 1500
-	// testOddTrunkMTU is neither the default MTU nor a value any env var would produce, so a
-	// target taken from anywhere other than the trunk link cannot pass.
+	// testOddTrunkMTU is neither the default MTU nor a value any env var would produce.
 	testOddTrunkMTU = 8000
 )
 
@@ -52,11 +51,7 @@ func testVlanLink(name string, index, mtu, parentIndex int) *netlink.Vlan {
 	}
 }
 
-// TestSetupENINetworkRaisesStrandedVlanMTU covers the repair half of the fix: a branch ENI VLAN
-// sits at 1500 while the trunk is configured up to 9001, and the kernel leaves the VLAN behind.
-// Trunk setup must bring its VLAN children up with it. What strands the VLAN in the first place
-// is closed by the AddNetwork readiness gate, not here; this repairs a VLAN already stranded,
-// including by an MTU change made outside ipamd.
+// TestSetupENINetworkRaisesStrandedVlanMTU checks trunk setup brings a VLAN child stuck at 1500 up with it.
 func TestSetupENINetworkRaisesStrandedVlanMTU(t *testing.T) {
 	ctrl, mockNetLink, _, _, _ := setup(t)
 	defer ctrl.Finish()
@@ -65,8 +60,7 @@ func TestSetupENINetworkRaisesStrandedVlanMTU(t *testing.T) {
 	trunkAfter := testTrunkDevice(testMTU)
 	strandedVlan := testVlanLink("vlan.eth.7", testVlanLinkIndex, testLoweredMTU, testTrunkLinkIndex)
 
-	// linkByMac sees the trunk at its pre-setup MTU; the reconcile pass then sees it at the MTU
-	// setupENINetwork just programmed, with the VLAN child still stuck low.
+	// linkByMac sees the trunk at its pre-setup MTU; the reconcile pass sees the programmed one.
 	findTrunk := mockNetLink.EXPECT().LinkList().Return([]netlink.Link{trunkBefore}, nil)
 	reconcileList := mockNetLink.EXPECT().LinkList().Return([]netlink.Link{trunkAfter, strandedVlan}, nil)
 	gomock.InOrder(findTrunk, reconcileList)
@@ -90,8 +84,7 @@ func TestSetupENINetworkRaisesStrandedVlanMTU(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// TestSetupENINetworkVlanReconcileFailureIsNotFatal asserts the trunk is still reported as set up
-// when the VLAN repair fails: the trunk itself is configured, and the periodic reconciler retries.
+// TestSetupENINetworkVlanReconcileFailureIsNotFatal asserts trunk setup still succeeds when the VLAN repair fails.
 func TestSetupENINetworkVlanReconcileFailureIsNotFatal(t *testing.T) {
 	ctrl, mockNetLink, _, _, _ := setup(t)
 	defer ctrl.Finish()
@@ -117,8 +110,7 @@ func TestSetupENINetworkVlanReconcileFailureIsNotFatal(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// TestSetupENINetworkSkipsVlanReconcileForNonTrunkENI makes sure a plain secondary ENI does not
-// pay for a second link dump: no LinkList beyond linkByMac's.
+// TestSetupENINetworkSkipsVlanReconcileForNonTrunkENI checks a plain secondary ENI costs no second link dump.
 func TestSetupENINetworkSkipsVlanReconcileForNonTrunkENI(t *testing.T) {
 	ctrl, mockNetLink, _, _, _ := setup(t)
 	defer ctrl.Finish()
@@ -162,17 +154,12 @@ func TestReconcileVlanMTU(t *testing.T) {
 			wantHealed: 1,
 		},
 		{
-			// Pins the target, not just that something was raised: the mock accepts only
-			// LinkSetMTU(vlan, 8000), so reconciling to a hardcoded 9001, to POD_MTU or to
-			// AWS_VPC_ENI_MTU fails here.
 			name:       "raises to the trunk's actual MTU, not to the default or a configured one",
 			links:      []netlink.Link{testTrunkDevice(testOddTrunkMTU), testVlanLink("vlan.eth.7", testVlanLinkIndex, testLoweredMTU, testTrunkLinkIndex)},
 			wantSetMTU: map[string]int{"vlan.eth.7": testOddTrunkMTU},
 			wantHealed: 1,
 		},
 		{
-			// The other side of that pin: a hardcoded 9001 target would also skip this VLAN, so
-			// the two rows only pass together if the target is the trunk's own MTU.
 			name:       "leaves a VLAN above the trunk's actual MTU alone",
 			links:      []netlink.Link{testTrunkDevice(testOddTrunkMTU), testVlanLink("vlan.eth.7", testVlanLinkIndex, testMTU, testTrunkLinkIndex)},
 			wantHealed: 0,
@@ -189,8 +176,7 @@ func TestReconcileVlanMTU(t *testing.T) {
 			wantHealed: 0,
 		},
 		{
-			// A VLAN above its parent is not a state the kernel produces or would accept
-			// (ERANGE). Synthetic, to pin the vlan.MTU >= targetMTU guard on its own.
+			// Synthetic: the kernel rejects a VLAN above its parent with ERANGE.
 			name:       "never lowers a VLAN and never exceeds the trunk MTU",
 			links:      []netlink.Link{testTrunkDevice(testLoweredMTU), testVlanLink("vlan.eth.7", testVlanLinkIndex, testMTU, testTrunkLinkIndex)},
 			wantHealed: 0,
@@ -230,8 +216,7 @@ func TestReconcileVlanMTU(t *testing.T) {
 			},
 			wantSetMTU: map[string]int{"vlan.eth.7": testMTU, "vlan.eth.8": testMTU},
 			failVlan:   "vlan.eth.7",
-			// A partial pass reports both what it managed and the failure; returning healed=0
-			// on any error would hide the repair that worked.
+			// A partial pass reports both what it managed and the failure.
 			wantHealed: 1,
 			wantErr:    true,
 		},
@@ -280,8 +265,7 @@ func TestReconcileVlanMTU(t *testing.T) {
 	}
 }
 
-// TestReconcileVlanMTUForTrunk exercises the exported entry point the periodic ipamd reconciler
-// calls.
+// TestReconcileVlanMTUForTrunk exercises the exported entry point the periodic ipamd reconciler calls.
 func TestReconcileVlanMTUForTrunk(t *testing.T) {
 	ctrl, mockNetLink, _, _, _ := setup(t)
 	defer ctrl.Finish()
