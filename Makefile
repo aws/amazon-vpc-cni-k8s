@@ -381,9 +381,10 @@ generate:
 
 # Generate limit file go code
 # Generate eni-max-pods.txt file for EKS AMI
+# Instance types missing from the EC2 API are dropped. Pass GENERATE_LIMITS_ARGS=-skip-removals to retain them instead.
 generate-limits: GOOS=
 generate-limits:    ## Generate limit file go code
-	go run $(VENDOR_OVERRIDE_FLAG) scripts/gen_vpc_ip_limits.go
+	go run $(VENDOR_OVERRIDE_FLAG) scripts/gen_vpc_ip_limits.go $(GENERATE_LIMITS_ARGS)
 	gofmt -w pkg/vpc/vpc_ip_resource_limit.go
 
 ekscharts-sync:
