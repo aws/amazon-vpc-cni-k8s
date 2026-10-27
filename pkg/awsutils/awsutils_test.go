@@ -3972,7 +3972,7 @@ func TestDataStoreENISubnetID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a mock logger
 			mockLog := logger.DefaultLogger()
-			ds := datastore.NewDataStore(mockLog, datastore.NullCheckpoint{}, false, 0)
+			ds := datastore.NewDataStore(mockLog, datastore.NullCheckpoint{}, false, false, 0)
 
 			// Add ENI with SubnetID
 			err := ds.AddENI("eni-test", 1, false, false, false, 100, tt.subnetID)

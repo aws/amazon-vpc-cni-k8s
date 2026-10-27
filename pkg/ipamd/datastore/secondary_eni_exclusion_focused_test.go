@@ -26,7 +26,7 @@ import (
 // 1. When secondary ENI is excluded, new pods should avoid it
 // 2. When all non-excluded ENIs are full, allocation should fail appropriately
 func TestSecondaryENIExclusionFocused(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, false, defaultNetworkCard)
 
 	// Setup: Primary ENI with one IP
 	err := ds.AddENI("eni-primary", 0, true, false, false, 0, "")
@@ -104,7 +104,7 @@ func TestSecondaryENIExclusionFocused(t *testing.T) {
 
 // TestSecondaryENIExclusionWithPods tests exclusion when secondary ENI has existing pods
 func TestSecondaryENIExclusionWithPods(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, false, defaultNetworkCard)
 
 	// Setup ENIs
 	err := ds.AddENI("eni-primary", 0, true, false, false, 0, "")
