@@ -65,6 +65,7 @@ var _ = Describe("test host networking", func() {
 				Build()
 
 			By("creating a deployment to launch pod using primary and secondary ENI IP")
+			DeferCleanup(f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted, deployment)
 			deployment, err = f.K8sResourceManagers.DeploymentManager().
 				CreateAndWaitTillDeploymentIsReady(deployment, utils.DefaultDeploymentReadyTimeout)
 			Expect(err).ToNot(HaveOccurred())
@@ -191,6 +192,7 @@ func mtuValidationTest(usePodMTU bool, mtuVal int) {
 	time.Sleep(utils.PollIntervalMedium)
 
 	By("creating a deployment to launch pods")
+	DeferCleanup(f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted, deployment)
 	deployment, err = f.K8sResourceManagers.DeploymentManager().
 		CreateAndWaitTillDeploymentIsReady(deployment, utils.DefaultDeploymentReadyTimeout)
 	Expect(err).ToNot(HaveOccurred())
