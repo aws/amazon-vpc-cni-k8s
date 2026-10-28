@@ -225,6 +225,9 @@ type APIs interface {
 	// Enable SageMaker attach delegation for HyperPod nodes (by providerID)
 	InitHyperPodFromProviderID(context.Context, string) error
 
+	// IsHyperPod returns true if ENI attach is delegated to SageMaker HyperPod
+	IsHyperPod() bool
+
 	// GetInstanceID returns the instance ID
 	GetInstanceID() string
 
@@ -536,6 +539,11 @@ func (cache *EC2InstanceMetadataCache) InitHyperPodFromProviderID(ctx context.Co
 	return nil
 }
 
+// IsHyperPod returns true if ENI attach is delegated to SageMaker HyperPod
+func (cache *EC2InstanceMetadataCache) IsHyperPod() bool {
+	return cache.sagemakerMeta.isHyperPod
+}
+
 // InitWithEC2metadata initializes the EC2InstanceMetadataCache with the data retrieved from EC2 metadata service
 func (cache *EC2InstanceMetadataCache) initWithEC2Metadata(ctx context.Context) error {
 	var err error
@@ -817,8 +825,13 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 		return ENIMetadata{}, err
 	}
 	if eniMAC == primaryMAC && deviceNum != 0 {
-		// Can this even happen? To be backwards compatible, we will always use 0 here and log an error.
-		log.Errorf("Device number of primary ENI is %d! Forcing it to be 0 as expected", deviceNum)
+		// On HyperPod the ENI at device 0 is owned by the service and not visible in IMDS, so the primary ENI is at device 1
+		if cache.sagemakerMeta.isHyperPod {
+			log.Debugf("Device number of primary ENI is %d on HyperPod node, using 0", deviceNum)
+		} else {
+			// Can this even happen? To be backwards compatible, we will always use 0 here and log an error.
+			log.Errorf("Device number of primary ENI is %d! Forcing it to be 0 as expected", deviceNum)
+		}
 		deviceNum = 0
 	}
 
@@ -1088,7 +1101,7 @@ func (cache *EC2InstanceMetadataCache) AllocENI(ctx context.Context, sg []*strin
 func (cache *EC2InstanceMetadataCache) attachENI(ctx context.Context, eniID string, networkCard int) (string, error) {
 	// HyperPod nodes delegate the attach to the SageMaker control plane.
 	if cache.sagemakerMeta.isHyperPod {
-		return cache.attachENIHyperPod(ctx, eniID)
+		return cache.attachENIHyperPod(ctx, eniID, networkCard)
 	}
 
 	// attach to instance
@@ -1119,7 +1132,11 @@ func (cache *EC2InstanceMetadataCache) attachENI(ctx context.Context, eniID stri
 
 // attachENIHyperPod delegates the ENI attach to the SageMaker control plane for
 // HyperPod nodes via sagemaker:AttachClusterNodeNetworkInterface.
-func (cache *EC2InstanceMetadataCache) attachENIHyperPod(ctx context.Context, eniID string) (string, error) {
+func (cache *EC2InstanceMetadataCache) attachENIHyperPod(ctx context.Context, eniID string, networkCard int) (string, error) {
+	// AttachClusterNodeNetworkInterface has no network card parameter and always attaches to network card 0
+	if networkCard != 0 {
+		return "", fmt.Errorf("attachENIHyperPod: network card %d is not supported, SageMaker only attaches to network card 0", networkCard)
+	}
 	// The cluster ARN is resolved once in InitHyperPodFromProviderID
 	input := &sagemaker.AttachClusterNodeNetworkInterfaceInput{
 		ClusterName:        aws.String(cache.sagemakerMeta.hyperPodClusterName),
@@ -1820,12 +1837,6 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs(ctx context.Context) (Des
 		return DescribeAllENIsResult{}, err
 	}
 
-	// Collect the verified ENIs
-	var verifiedENIs []ENIMetadata
-	for _, eniMetadata := range eniMap {
-		verifiedENIs = append(verifiedENIs, eniMetadata)
-	}
-
 	// Collect ENI response into ENI metadata and tags.
 	var trunkENI string
 	efaENIs := make(map[string]bool, 0)
@@ -1878,9 +1889,25 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs(ctx context.Context) (Des
 		// Check IPv4 addresses
 		if len(eniMetadata.IPv4Addresses) > 0 {
 			logOutOfSyncState(eniID, eniMetadata.IPv4Addresses, ec2res.PrivateIpAddresses)
+			// Treat EC2 DescribeNetworkInterfaces as the source of truth.
+			eniMetadata.IPv4Addresses = reconcileIPv4AddressesWithEC2(eniID, eniMetadata.IPv4Addresses, ec2res.PrivateIpAddresses)
+			eniMap[eniID] = eniMetadata
+		}
+
+		// Check IPv4 prefixes (prefix-delegation mode) to make sure no stale-IMDS risk as secondary addresses.
+		if len(eniMetadata.IPv4Prefixes) > 0 {
+			eniMetadata.IPv4Prefixes = reconcileIPv4PrefixesWithEC2(eniID, eniMetadata.IPv4Prefixes, ec2res.Ipv4Prefixes)
+			eniMap[eniID] = eniMetadata
 		}
 		tagMap[eniMetadata.ENIID] = convertSDKTagsToTags(ec2res.TagSet)
 	}
+
+	// Collect the verified ENIs.
+	var verifiedENIs []ENIMetadata
+	for _, eniMetadata := range eniMap {
+		verifiedENIs = append(verifiedENIs, eniMetadata)
+	}
+
 	return DescribeAllENIsResult{
 		ENIMetadata:             verifiedENIs,
 		TagMap:                  tagMap,
@@ -1954,6 +1981,54 @@ func badENIID(errMsg string) string {
 		return ""
 	}
 	return found[1]
+}
+
+// Returns the subset of IMDS-derived IPv4 addresses that EC2 DescribeNetworkInterfaces also reports for the ENI (EC2 is treated as the source of truth).
+func reconcileIPv4AddressesWithEC2(eniID string, imdsIPv4s, ec2IPv4s []ec2types.NetworkInterfacePrivateIpAddress) []ec2types.NetworkInterfacePrivateIpAddress {
+	if len(ec2IPv4s) == 0 {
+		// A zero-length EC2 response here is a transient/partial response. Keep the IMDS list rather
+		// than wiping the ENI (including its primary); the next reconcile with a healthy EC2 response
+		// corrects any stale entry.
+		log.Warnf("reconcileIPv4AddressesWithEC2: EC2 DescribeNetworkInterfaces returned no IPv4 addresses for ENI %s; keeping IMDS-reported addresses to avoid wiping the ENI (likely a transient/partial EC2 response)", eniID)
+		return imdsIPv4s
+	}
+	ec2IPv4Set := sets.NewString()
+	for _, ec2IPv4 := range ec2IPv4s {
+		ec2IPv4Set.Insert(aws.ToString(ec2IPv4.PrivateIpAddress))
+	}
+
+	reconciled := make([]ec2types.NetworkInterfacePrivateIpAddress, 0, len(imdsIPv4s))
+	for _, imdsIPv4 := range imdsIPv4s {
+		ip := aws.ToString(imdsIPv4.PrivateIpAddress)
+		// Always keep the primary address; it must never be dropped.
+		if aws.ToBool(imdsIPv4.Primary) || ec2IPv4Set.Has(ip) {
+			reconciled = append(reconciled, imdsIPv4)
+			continue
+		}
+		log.Warnf("reconcileIPv4AddressesWithEC2: dropping IPv4 address %s on ENI %s that IMDS reports but EC2 DescribeNetworkInterfaces does not, to prevent allocating a stale address", ip, eniID)
+	}
+	return reconciled
+}
+
+// Returns the subset of IMDS-derived IPv4 prefixes that EC2 DescribeNetworkInterfaces also reports for the ENI.
+// Unlike secondary addresses, an ENI has no mandatory primary prefix, so a successful DescribeNetworkInterfaces
+// response with zero IPv4 prefixes means the last prefix was unassigned and every IMDS prefix is stale and must be dropped.
+func reconcileIPv4PrefixesWithEC2(eniID string, imdsPrefixes, ec2Prefixes []ec2types.Ipv4PrefixSpecification) []ec2types.Ipv4PrefixSpecification {
+	ec2PrefixSet := sets.NewString()
+	for _, ec2Prefix := range ec2Prefixes {
+		ec2PrefixSet.Insert(aws.ToString(ec2Prefix.Ipv4Prefix))
+	}
+
+	reconciled := make([]ec2types.Ipv4PrefixSpecification, 0, len(imdsPrefixes))
+	for _, imdsPrefix := range imdsPrefixes {
+		prefix := aws.ToString(imdsPrefix.Ipv4Prefix)
+		if ec2PrefixSet.Has(prefix) {
+			reconciled = append(reconciled, imdsPrefix)
+			continue
+		}
+		log.Warnf("reconcileIPv4PrefixesWithEC2: dropping IPv4 prefix %s on ENI %s that IMDS reports but EC2 DescribeNetworkInterfaces does not, to prevent allocating a stale prefix", prefix, eniID)
+	}
+	return reconciled
 }
 
 // logOutOfSyncState compares the IP and metadata returned by IMDS and the EC2 API DescribeNetworkInterfaces calls
