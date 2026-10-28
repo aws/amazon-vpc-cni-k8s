@@ -5773,3 +5773,81 @@ func Test_linuxNetwork_claimHostVethName(t *testing.T) {
 		})
 	}
 }
+
+func Test_linuxNetwork_claimAltHostVethName(t *testing.T) {
+	const (
+		vethName  = "vlan8ea2c11fe35"
+		altName   = "eni8ea2c11fe35"
+		netnsPath = "/proc/42/ns/net"
+	)
+	foreign := &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Name: altName, Index: 9, ParentIndex: 42, Alias: hostVethAlias("other")}}
+	ours := &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Name: altName, Index: 9, ParentIndex: 42, Alias: hostVethAlias(testSandboxID)}}
+
+	tests := []struct {
+		name     string
+		alt      string
+		existing netlink.Link // nil: alt name is free
+		wantDel  bool
+		wantErr  string
+	}{
+		{name: "no alt name", alt: ""},
+		{name: "alt equals the name", alt: vethName},
+		{name: "alt name is free", alt: altName},
+		{name: "alt name owned by this sandbox", alt: altName, existing: ours, wantDel: true},
+		{name: "alt name owned by another sandbox", alt: altName, existing: foreign,
+			wantErr: `hostVeth eni8ea2c11fe35 is owned by sandbox "other", refusing to delete it for sandbox "sandbox-1"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+			netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
+			if tt.alt != "" && tt.alt != vethName {
+				if tt.existing == nil {
+					netLink.EXPECT().LinkByName(tt.alt).Return(nil, errors.New("not exists"))
+				} else {
+					netLink.EXPECT().LinkByName(tt.alt).Return(tt.existing, nil)
+				}
+			}
+			if tt.wantDel {
+				netLink.EXPECT().LinkDel(tt.existing).Return(nil)
+			}
+			n := &linuxNetwork{netLink: netLink}
+			err := n.claimAltHostVethName(VirtualInterfaceMetadata{HostVethName: vethName, AltHostVethName: tt.alt, SandboxID: testSandboxID}, netnsPath, testLogger)
+			if tt.wantErr != "" {
+				assert.EqualError(t, err, tt.wantErr)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func Test_linuxNetwork_SetupPodNetworks_refuseForeignAltHostVethName(t *testing.T) {
+	meta := VirtualInterfaceMetadata{
+		HostVethName:      "eni8ea2c11fe35",
+		AltHostVethName:   "vlan8ea2c11fe35",
+		ContainerVethName: "eth0",
+		SandboxID:         testSandboxID,
+		IPAddress:         &net.IPNet{IP: net.ParseIP("192.168.100.42"), Mask: net.CIDRMask(32, 32)},
+	}
+	foreign := &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Name: meta.AltHostVethName, Index: 9, ParentIndex: 42, Alias: hostVethAlias("other")}}
+
+	for _, branch := range []bool{false, true} {
+		t.Run(fmt.Sprintf("branchENI=%v", branch), func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+			netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
+			netLink.EXPECT().LinkByName(meta.AltHostVethName).Return(foreign, nil)
+			n := &linuxNetwork{netLink: netLink}
+
+			var err error
+			if branch {
+				err = n.SetupBranchENIPodNetwork(meta, "/proc/42/ns/net", 7, "00:00:5e:00:53:af", "192.168.120.1", 3, 9001, sgpp.EnforcingModeStrict, testLogger)
+			} else {
+				err = n.SetupPodNetwork([]VirtualInterfaceMetadata{meta}, "/proc/42/ns/net", 9001, testLogger)
+			}
+			assert.ErrorContains(t, err, `hostVeth vlan8ea2c11fe35 is owned by sandbox "other"`)
+		})
+	}
+}

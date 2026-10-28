@@ -64,7 +64,8 @@ type VirtualInterfaceMetadata struct {
 	ContainerVethName string
 	// SandboxID is the container/sandbox ID from the CNI ADD request. It records
 	// which sandbox a host veth belongs to. See claimHostVethName.
-	SandboxID string
+	SandboxID       string
+	AltHostVethName string
 }
 
 // NetworkAPIs defines network API calls
@@ -297,6 +298,9 @@ func (n *linuxNetwork) SetupPodNetwork(vethMetadata []VirtualInterfaceMetadata, 
 		log.Debugf("SetupPodNetwork: hostVethName=%s, contVethName=%s, netnsPath=%s, ipAddr=%v, routeTableNumber=%d, mtu=%d",
 			vethData.HostVethName, vethData.ContainerVethName, netnsPath, vethData.IPAddress, vethData.RouteTable, mtu)
 
+		if err := n.claimAltHostVethName(vethData, netnsPath, log); err != nil {
+			return errors.Wrapf(err, "SetupPodNetwork: failed to setup veth pair")
+		}
 		hostVeth, err := n.setupVeth(vethData.HostVethName, vethData.ContainerVethName, netnsPath, vethData.IPAddress, mtu, vethData.SandboxID, log, index)
 		if err != nil {
 			return errors.Wrapf(err, "SetupPodNetwork: failed to setup veth pair")
@@ -362,6 +366,9 @@ func (n *linuxNetwork) SetupBranchENIPodNetwork(vethMetadata VirtualInterfaceMet
 		return errors.Wrap(err, "SetupBranchENIPodNetwork")
 	}
 
+	if err := n.claimAltHostVethName(vethMetadata, netnsPath, log); err != nil {
+		return errors.Wrapf(err, "SetupBranchENIPodNetwork: failed to setup veth pair")
+	}
 	hostVeth, err := n.setupVeth(vethMetadata.HostVethName, vethMetadata.ContainerVethName, netnsPath, vethMetadata.IPAddress, mtu, vethMetadata.SandboxID, log, 0)
 	if err != nil {
 		return errors.Wrapf(err, "SetupBranchENIPodNetwork: failed to setup veth pair")
@@ -537,6 +544,13 @@ func (n *linuxNetwork) claimHostVethName(hostVethName string, sandboxID string, 
 	}
 	log.Debugf("Successfully deleted old hostVeth %s", hostVethName)
 	return nil
+}
+
+func (n *linuxNetwork) claimAltHostVethName(v VirtualInterfaceMetadata, netnsPath string, log logger.Logger) error {
+	if v.AltHostVethName == "" || v.AltHostVethName == v.HostVethName {
+		return nil
+	}
+	return n.claimHostVethName(v.AltHostVethName, v.SandboxID, netnsPath, log)
 }
 
 // hostVethPeerInNetns reports whether link is one half of a veth pair whose other

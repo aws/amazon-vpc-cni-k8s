@@ -394,6 +394,7 @@ func TestCmdAddForMultiNICAttachment(t *testing.T) {
 			HostVethName:      "eni" + podHash,
 			ContainerVethName: ifName,
 			SandboxID:         containerID,
+			AltHostVethName:   "vlan" + podHash,
 		},
 		{
 			IPAddress: &net.IPNet{
@@ -405,6 +406,7 @@ func TestCmdAddForMultiNICAttachment(t *testing.T) {
 			HostVethName:      "enice799470a46",
 			ContainerVethName: "mNicIf1",
 			SandboxID:         containerID,
+			AltHostVethName:   "vlance799470a46",
 		},
 	}
 	mocksNetwork.EXPECT().SetupPodNetwork(vethMetadata, cmdArgs.Netns, gomock.Any(), gomock.Any()).Return(nil)
@@ -739,7 +741,12 @@ func TestCmdAddForPodENINetwork(t *testing.T) {
 	mockNP.EXPECT().EnforceNpToPod(gomock.Any(), gomock.Any()).Return(enforceNpReply, nil)
 
 	mocksNetwork.EXPECT().SetupBranchENIPodNetwork(gomock.Any(), cmdArgs.Netns, 1, "eniHardwareAddr",
-		"10.0.0.1", 2, gomock.Any(), sgpp.EnforcingModeStrict, gomock.Any()).Return(nil)
+		"10.0.0.1", 2, gomock.Any(), sgpp.EnforcingModeStrict, gomock.Any()).DoAndReturn(
+		func(v driver.VirtualInterfaceMetadata, _ string, _ int, _, _ string, _, _ int, _ sgpp.EnforcingMode, _ logger.Logger) error {
+			assert.Equal(t, "vlan"+podHash, v.HostVethName)
+			assert.Equal(t, "eni"+podHash, v.AltHostVethName)
+			return nil
+		})
 
 	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil)
 
