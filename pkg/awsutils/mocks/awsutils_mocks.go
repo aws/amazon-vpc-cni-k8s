@@ -611,6 +611,20 @@ func (mr *MockAPIsMockRecorder) RefreshSGIDs(arg0, arg1, arg2 interface{}) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RefreshSGIDs", reflect.TypeOf((*MockAPIs)(nil).RefreshSGIDs), arg0, arg1, arg2)
 }
 
+// SetDeleteOnTermination mocks base method.
+func (m *MockAPIs) SetDeleteOnTermination(arg0 context.Context, arg1, arg2 string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetDeleteOnTermination", arg0, arg1, arg2)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetDeleteOnTermination indicates an expected call of SetDeleteOnTermination.
+func (mr *MockAPIsMockRecorder) SetDeleteOnTermination(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetDeleteOnTermination", reflect.TypeOf((*MockAPIs)(nil).SetDeleteOnTermination), arg0, arg1, arg2)
+}
+
 // SetEFAOnlyENIs mocks base method.
 func (m *MockAPIs) SetEFAOnlyENIs(arg0 []string) {
 	m.ctrl.T.Helper()
