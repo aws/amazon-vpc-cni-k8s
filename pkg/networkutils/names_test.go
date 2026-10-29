@@ -86,3 +86,9 @@ func TestGeneratePodHostVethNameSuffix(t *testing.T) {
 		})
 	}
 }
+
+func TestGeneratePodHostVethName_Index(t *testing.T) {
+	assert.Equal(t, "enic36cb0217f8", GeneratePodHostVethName("eni", "prod", "web", 0))
+	assert.Equal(t, "eni6803dcbd785", GeneratePodHostVethName("eni", "prod", "web", 1))
+	assert.Equal(t, "enie12e7897172", GeneratePodHostVethName("eni", "prod", "web.1", 0))
+}

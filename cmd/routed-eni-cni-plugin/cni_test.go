@@ -403,10 +403,10 @@ func TestCmdAddForMultiNICAttachment(t *testing.T) {
 			},
 			DeviceNumber:      devNum,
 			RouteTable:        (MAX_ENI * (NetworkCards - 1)) + devNum + 1,
-			HostVethName:      "enice799470a46",
+			HostVethName:      "eni93e8c30965c",
 			ContainerVethName: "mNicIf1",
 			SandboxID:         containerID,
-			AltHostVethName:   "vlance799470a46",
+			AltHostVethName:   "vlan93e8c30965c",
 		},
 	}
 	mocksNetwork.EXPECT().SetupPodNetwork(vethMetadata, cmdArgs.Netns, gomock.Any(), gomock.Any()).Return(nil)
