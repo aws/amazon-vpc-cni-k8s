@@ -12,7 +12,7 @@ import (
 func GeneratePodHostVethName(prefix string, podNamespace string, podName string, index int) string {
 
 	if index > 0 {
-		podName = fmt.Sprintf("%s.%s", podName, strconv.Itoa(index))
+		podName = fmt.Sprintf("%s/%d", podName, index)
 	}
 	suffix := GeneratePodHostVethNameSuffix(podNamespace, podName)
 	return fmt.Sprintf("%s%s", prefix, suffix)

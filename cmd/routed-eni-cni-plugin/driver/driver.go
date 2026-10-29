@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
@@ -61,6 +62,10 @@ type VirtualInterfaceMetadata struct {
 	RouteTable        int
 	HostVethName      string
 	ContainerVethName string
+	// SandboxID is the container/sandbox ID from the CNI ADD request. It records
+	// which sandbox a host veth belongs to. See claimHostVethName.
+	SandboxID       string
+	AltHostVethName string
 }
 
 // NetworkAPIs defines network API calls
@@ -293,7 +298,10 @@ func (n *linuxNetwork) SetupPodNetwork(vethMetadata []VirtualInterfaceMetadata, 
 		log.Debugf("SetupPodNetwork: hostVethName=%s, contVethName=%s, netnsPath=%s, ipAddr=%v, routeTableNumber=%d, mtu=%d",
 			vethData.HostVethName, vethData.ContainerVethName, netnsPath, vethData.IPAddress, vethData.RouteTable, mtu)
 
-		hostVeth, err := n.setupVeth(vethData.HostVethName, vethData.ContainerVethName, netnsPath, vethData.IPAddress, mtu, log, index)
+		if err := n.claimAltHostVethName(vethData, netnsPath, log); err != nil {
+			return errors.Wrapf(err, "SetupPodNetwork: failed to setup veth pair")
+		}
+		hostVeth, err := n.setupVeth(vethData.HostVethName, vethData.ContainerVethName, netnsPath, vethData.IPAddress, mtu, vethData.SandboxID, log, index)
 		if err != nil {
 			return errors.Wrapf(err, "SetupPodNetwork: failed to setup veth pair")
 		}
@@ -358,7 +366,10 @@ func (n *linuxNetwork) SetupBranchENIPodNetwork(vethMetadata VirtualInterfaceMet
 		return errors.Wrap(err, "SetupBranchENIPodNetwork")
 	}
 
-	hostVeth, err := n.setupVeth(vethMetadata.HostVethName, vethMetadata.ContainerVethName, netnsPath, vethMetadata.IPAddress, mtu, log, 0)
+	if err := n.claimAltHostVethName(vethMetadata, netnsPath, log); err != nil {
+		return errors.Wrapf(err, "SetupBranchENIPodNetwork: failed to setup veth pair")
+	}
+	hostVeth, err := n.setupVeth(vethMetadata.HostVethName, vethMetadata.ContainerVethName, netnsPath, vethMetadata.IPAddress, mtu, vethMetadata.SandboxID, log, 0)
 	if err != nil {
 		return errors.Wrapf(err, "SetupBranchENIPodNetwork: failed to setup veth pair")
 	}
@@ -455,13 +466,9 @@ func setHostVethV6Sysctls(procSys procsyswrapper.ProcSys, hostVethName string, l
 	return nil
 }
 
-func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netnsPath string, ipAddr *net.IPNet, mtu int, log logger.Logger, index int) (netlink.Link, error) {
-	// Clean up if hostVeth exists.
-	if oldHostVeth, err := n.netLink.LinkByName(hostVethName); err == nil {
-		if err = n.netLink.LinkDel(oldHostVeth); err != nil {
-			return nil, errors.Wrapf(err, "failed to delete old hostVeth %s", hostVethName)
-		}
-		log.Debugf("Successfully deleted old hostVeth %s", hostVethName)
+func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netnsPath string, ipAddr *net.IPNet, mtu int, sandboxID string, log logger.Logger, index int) (netlink.Link, error) {
+	if err := n.claimHostVethName(hostVethName, sandboxID, netnsPath, log); err != nil {
+		return nil, err
 	}
 	macAddrStr, err := NewMACGenerator().generateUniqueRandomMAC()
 	if err != nil {
@@ -483,7 +490,100 @@ func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netns
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to find hostVeth %s", hostVethName)
 	}
+
+	// Record the owner so a later ADD can check it.
+	if sandboxID != "" {
+		if err := n.netLink.LinkSetAlias(hostVeth, hostVethAlias(sandboxID)); err != nil {
+			return nil, errors.Wrapf(err, "failed to stamp ownership alias on hostVeth %s", hostVethName)
+		}
+	}
 	return hostVeth, nil
+}
+
+// hostVethAliasPrefix namespaces the ownership stamp written to the link alias.
+const hostVethAliasPrefix = "aws-vpc-cni:"
+
+func hostVethAlias(sandboxID string) string {
+	return hostVethAliasPrefix + sandboxID
+}
+
+// claimHostVethName makes hostVethName available for this sandbox, deleting an
+// existing link only when that link can be shown to belong to this sandbox.
+// Otherwise it fails, so the ADD fails rather than the delete proceeding.
+func (n *linuxNetwork) claimHostVethName(hostVethName string, sandboxID string, netnsPath string, log logger.Logger) error {
+	existing, err := n.netLink.LinkByName(hostVethName)
+	if err != nil {
+		// Name is free, nothing to reclaim.
+		return nil
+	}
+
+	alias := existing.Attrs().Alias
+	switch {
+	case sandboxID != "" && alias == hostVethAlias(sandboxID):
+		// Stamped for this sandbox.
+		log.Debugf("Reclaiming hostVeth %s previously created for sandbox %s", hostVethName, sandboxID)
+	case strings.HasPrefix(alias, hostVethAliasPrefix):
+		// Stamped for some other sandbox.
+		return errors.Errorf("hostVeth %s is owned by sandbox %q, refusing to delete it for sandbox %q",
+			hostVethName, strings.TrimPrefix(alias, hostVethAliasPrefix), sandboxID)
+	default:
+		// No stamp, so it predates the alias or is not ours. Fall back to the peer.
+		owned, err := n.hostVethPeerInNetns(existing, netnsPath, log)
+		if err != nil {
+			return errors.Wrapf(err, "unable to establish ownership of existing hostVeth %s, refusing to delete it", hostVethName)
+		}
+		if !owned {
+			return errors.Errorf("hostVeth %s already exists and its peer is not in netns %s, refusing to delete it",
+				hostVethName, netnsPath)
+		}
+		log.Debugf("Reclaiming unstamped hostVeth %s whose peer is in netns %s", hostVethName, netnsPath)
+	}
+
+	if err := n.netLink.LinkDel(existing); err != nil {
+		return errors.Wrapf(err, "failed to delete old hostVeth %s", hostVethName)
+	}
+	log.Debugf("Successfully deleted old hostVeth %s", hostVethName)
+	return nil
+}
+
+func (n *linuxNetwork) claimAltHostVethName(v VirtualInterfaceMetadata, netnsPath string, log logger.Logger) error {
+	if v.AltHostVethName == "" || v.AltHostVethName == v.HostVethName {
+		return nil
+	}
+	return n.claimHostVethName(v.AltHostVethName, v.SandboxID, netnsPath, log)
+}
+
+// hostVethPeerInNetns reports whether link is one half of a veth pair whose other
+// half lives in netnsPath. ParentIndex carries the peer's ifindex, which is only
+// meaningful inside the peer's netns, so it is resolved there.
+func (n *linuxNetwork) hostVethPeerInNetns(link netlink.Link, netnsPath string, log logger.Logger) (bool, error) {
+	if link.Type() != "veth" {
+		return false, nil
+	}
+	peerIndex := link.Attrs().ParentIndex
+	hostIndex := link.Attrs().Index
+	if peerIndex == 0 {
+		return false, errors.Errorf("existing link %s reports no veth peer index", link.Attrs().Name)
+	}
+
+	owned := false
+	err := n.ns.WithNetNSPath(netnsPath, func(ns.NetNS) error {
+		peer, err := n.netLink.LinkByIndex(peerIndex)
+		if err != nil {
+			// Does not resolve here, so the peer is elsewhere.
+			log.Debugf("veth peer index %d not present in netns %s: %v", peerIndex, netnsPath, err)
+			return nil
+		}
+		// Require the pair to point back at each other.
+		if peer.Type() == "veth" && peer.Attrs().ParentIndex == hostIndex {
+			owned = true
+		}
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return owned, nil
 }
 
 // setupVlan sets up the vlan interface for branchENI, and configures default routes in specified route table
