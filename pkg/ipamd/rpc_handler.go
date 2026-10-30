@@ -253,6 +253,10 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 	}
 
 	if errors != nil {
+		if onlyNoAvailableIPInDataStore(errors) {
+			prometheusmetrics.NoAvailableIPAddrs.Inc()
+			log.Errorf("DataStore has no available IP/Prefix addresses")
+		}
 		log.Errorf("Returning failure response for AddNetwork: %v", errors)
 	} else {
 		log.Infof("Address assigned from datastores:  %d", len(ipAddrs))
@@ -311,6 +315,19 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 	resp.Success = errors == nil
 	log.Infof("Send AddNetworkReply: Success: %t IPAddr: %v, resp: %s, err: %v", resp.Success, resp.IPAllocationMetadata, &resp, err)
 	return &resp, nil
+}
+
+func onlyNoAvailableIPInDataStore(errs error) bool {
+	merr, ok := errs.(*multiErr.Error)
+	if !ok || len(merr.Errors) == 0 {
+		return false
+	}
+	for _, err := range merr.Errors {
+		if err != datastore.ErrNoAvailableIPInDataStore {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *server) validateVersion(clientVersion string) error {
