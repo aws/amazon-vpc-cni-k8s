@@ -250,6 +250,8 @@ type IPAMContext struct {
 	myNodeName                string
 	enablePrefixDelegation    bool
 	lastInsufficientCidrError time.Time
+	lastPoolIncreaseFailure   time.Time
+	poolIncreaseBackoff       time.Duration
 	enableManageUntaggedMode  bool
 	enablePodIPAnnotation     bool
 	maxPods                   int // maximum number of pods that can be scheduled on the node
@@ -409,6 +411,27 @@ func containsPrivateIPAddressLimitExceededError(err error) bool {
 // inInsufficientCidrCoolingPeriod checks whether IPAMD is in insufficientCidrErrorCooldown
 func (c *IPAMContext) inInsufficientCidrCoolingPeriod() bool {
 	return time.Since(c.lastInsufficientCidrError) <= insufficientCidrErrorCooldown
+}
+
+// inPoolIncreaseBackoff checks whether a recent failed EC2 call should delay the next pool increase.
+func (c *IPAMContext) inPoolIncreaseBackoff() bool {
+	return time.Since(c.lastPoolIncreaseFailure) < c.poolIncreaseBackoff
+}
+
+// recordPoolIncreaseResult doubles the backoff after a failure, capped at insufficientCidrErrorCooldown, and clears it on success.
+func (c *IPAMContext) recordPoolIncreaseResult(err error) {
+	if err == nil {
+		c.poolIncreaseBackoff = 0
+		return
+	}
+	c.poolIncreaseBackoff = 2 * c.poolIncreaseBackoff
+	if c.poolIncreaseBackoff < ipPoolMonitorInterval {
+		c.poolIncreaseBackoff = ipPoolMonitorInterval
+	}
+	if c.poolIncreaseBackoff > insufficientCidrErrorCooldown {
+		c.poolIncreaseBackoff = insufficientCidrErrorCooldown
+	}
+	c.lastPoolIncreaseFailure = time.Now()
 }
 
 // New retrieves IP address usage information from Instance MetaData service and Kubelet
@@ -1005,6 +1028,10 @@ func (c *IPAMContext) increaseDatastorePool(ctx context.Context, networkCard int
 		log.Debugf("Recently we had InsufficientCidr error hence will wait for %v before retrying", insufficientCidrErrorCooldown)
 		return nil
 	}
+	if c.inPoolIncreaseBackoff() {
+		log.Debugf("Last pool increase failed, waiting %v before retrying", c.poolIncreaseBackoff)
+		return nil
+	}
 
 	increasedPool, err := c.tryAssignCidrs(ctx, networkCard)
 	if err != nil {
@@ -1013,15 +1040,19 @@ func (c *IPAMContext) increaseDatastorePool(ctx context.Context, networkCard int
 			c.lastInsufficientCidrError = time.Now()
 			return nil
 		}
+		c.recordPoolIncreaseResult(err)
 		log.Errorf(err.Error())
 		return err
 	}
 	if increasedPool {
+		c.recordPoolIncreaseResult(nil)
 		c.updateLastNodeIPPoolAction(networkCard)
 	} else {
 		// If we did not add any IPs, try to allocate an ENI.
 		if c.hasRoomForEni(networkCard) {
-			if err = c.tryAllocateENI(ctx, networkCard); err == nil {
+			err = c.tryAllocateENI(ctx, networkCard)
+			c.recordPoolIncreaseResult(err)
+			if err == nil {
 				c.updateLastNodeIPPoolAction(networkCard)
 			} else {
 				// Note that no error is returned if ENI allocation fails. This is because ENI allocation failure should not cause node to be "NotReady".
