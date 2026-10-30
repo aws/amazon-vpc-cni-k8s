@@ -25,7 +25,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-var log = logger.Get()
+// log is resolved lazily to not build a logger (on the ipamd default log path) at package-init time.
+var log = logger.Lazy()
 
 var (
 	IpamdErr = prometheus.NewCounterVec(

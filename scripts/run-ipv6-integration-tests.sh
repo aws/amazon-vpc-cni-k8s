@@ -9,6 +9,8 @@ GINKGO_TEST_BUILD="$SCRIPT_DIR/../test/build"
 
 # TEST_IMAGE_REGISTRY is the registry in test-infra-* accounts where e2e test images are stored
 TEST_IMAGE_REGISTRY=${TEST_IMAGE_REGISTRY:-"617930562442.dkr.ecr.us-west-2.amazonaws.com"}
+# Set to true to test the VPC CNI already installed on the cluster instead of the latest addon
+SKIP_ADDON_INSTALLATION=${SKIP_ADDON_INSTALLATION:-"false"}
 
 source "$SCRIPT_DIR"/lib/set_kubeconfig.sh
 source "$SCRIPT_DIR"/lib/add-on.sh
@@ -20,11 +22,14 @@ function run_ginkgo_test() {
 }
 
 load_cluster_details
-load_addon_details
 
-echo "Running IPv6 integration tests against the latest addon version"
-
-install_add_on "$LATEST_ADDON_VERSION"
+if [[ $SKIP_ADDON_INSTALLATION == "true" ]]; then
+  echo "Skipping addon installation, running IPv6 integration tests against the installed VPC CNI"
+else
+  load_addon_details
+  echo "Running IPv6 integration tests against the latest addon version"
+  install_add_on "$LATEST_ADDON_VERSION"
+fi
 run_ginkgo_test
 
 echo "all tests ran successfully in $(($SECONDS / 60)) minutes and $(($SECONDS % 60)) seconds"
