@@ -32,6 +32,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
 	"github.com/aws/amazon-vpc-cni-k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"k8s.io/apimachinery/pkg/util/sets"
 
@@ -170,6 +171,8 @@ type NetworkAPIs interface {
 	GetLinkByMac(mac string, retryInterval time.Duration) (netlink.Link, error)
 	DeleteRulesBySrc(eniIP string, v6enabled bool) error
 	GetRouteTableNumberForENI(networkCard int, eniIP string, deviceNumber int, maxENIsPerNetworkCard int, isV6 bool) (int, bool, error)
+	// ReconcileVlanMTUForTrunk raises every VLAN link parented on the trunk ENI to the trunk's MTU.
+	ReconcileVlanMTUForTrunk(trunkLinkIndex int) (int, error)
 }
 
 type linuxNetwork struct {
@@ -1103,7 +1106,76 @@ func setupENINetwork(eniIP string, eniMac string, networkCard int, eniSubnetCIDR
 		log.Debugf("setupENINetwork: skipping rule for Primary IP of ENI %s, conditions IsTrunkENI: %t, RuleExists: %t", eniIP, isTrunkENI, isRuleConfigured)
 	}
 
+	// The kernel lowers a VLAN link with its parent but never raises one again, so raise them here.
+	if isTrunkENI {
+		healed, err := reconcileVlanMTU(netLink, linkIndex)
+		if healed > 0 {
+			log.Infof("setupENINetwork: raised the MTU of %d VLAN link(s) under trunk link %d", healed, linkIndex)
+			// Same counter as the periodic reconciler in ipamd.
+			prometheusmetrics.ReconcileCnt.With(prometheus.Labels{"fn": "vlanMTUReconcile"}).Add(float64(healed))
+		}
+		if err != nil {
+			log.Warnf("setupENINetwork: could not fully reconcile VLAN MTUs under trunk link %d: %v", linkIndex, err)
+		}
+	}
+
 	return nil
+}
+
+// ReconcileVlanMTUForTrunk raises every VLAN link parented on the given trunk link index to the trunk's MTU.
+func (n *linuxNetwork) ReconcileVlanMTUForTrunk(trunkLinkIndex int) (int, error) {
+	return reconcileVlanMTU(n.netLink, trunkLinkIndex)
+}
+
+// reconcileVlanMTU raises the VLAN links parented on trunkLinkIndex to the trunk's current MTU, the most a VLAN can carry.
+func reconcileVlanMTU(netLink netlinkwrapper.NetLink, trunkLinkIndex int) (int, error) {
+	links, err := netLink.LinkList()
+	if err != nil {
+		return 0, errors.Wrap(err, "reconcileVlanMTU: failed to list links")
+	}
+
+	targetMTU := 0
+	trunkFound := false
+	for _, link := range links {
+		if link.Attrs().Index == trunkLinkIndex {
+			trunkFound = true
+			targetMTU = link.Attrs().MTU
+			break
+		}
+	}
+	if !trunkFound {
+		return 0, errors.Errorf("reconcileVlanMTU: trunk link index %d is not in the link dump", trunkLinkIndex)
+	}
+	if targetMTU <= 0 {
+		return 0, errors.Errorf("reconcileVlanMTU: trunk link index %d reports MTU %d, refusing to use it as a target", trunkLinkIndex, targetMTU)
+	}
+
+	healed, failed := 0, 0
+	var firstErr error
+	for _, link := range links {
+		vlan, isVlan := link.(*netlink.Vlan)
+		if !isVlan || vlan.ParentIndex != trunkLinkIndex {
+			continue
+		}
+		if vlan.MTU >= targetMTU {
+			continue
+		}
+		log.Infof("reconcileVlanMTU: raising MTU of VLAN link %s from %d to the trunk MTU %d", vlan.Name, vlan.MTU, targetMTU)
+		if err := netLink.LinkSetMTU(vlan, targetMTU); err != nil {
+			// Keep going so that one unhappy VLAN does not block the others; the caller logs.
+			failed++
+			if firstErr == nil {
+				firstErr = errors.Wrapf(err, "failed to set MTU %d on VLAN link %s", targetMTU, vlan.Name)
+			}
+			continue
+		}
+		healed++
+	}
+
+	if firstErr != nil {
+		return healed, errors.Wrapf(firstErr, "reconcileVlanMTU: %d of %d VLAN link(s) could not be raised to %d, first failure", failed, healed+failed, targetMTU)
+	}
+	return healed, nil
 }
 
 func getRouteTableNumberForENI(networkCard int, eniIP string, mask int, deviceNumber int, maxENIsPerNetworkCard int, isV6 bool, netLink netlinkwrapper.NetLink) (int, bool, error) {

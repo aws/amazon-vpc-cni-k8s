@@ -120,9 +120,17 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 					log.Warn("Send AddNetworkReply: No trunk ENI found, cannot add a pod ENI")
 					return &failureResponse, nil
 				}
-				trunkENILinkIndex, err = s.ipamContext.getTrunkLinkIndex()
+				// The check above is not enough: a trunk is in the datastore before its link is configured.
+				readyTrunkENI, readyTrunkMAC := s.ipamContext.trunkENI.readyENI()
+				if readyTrunkENI == "" {
+					log.Warnf("Send AddNetworkReply: trunk ENI not ready yet, cannot add a pod ENI for %s/%s", in.K8S_POD_NAMESPACE, in.K8S_POD_NAME)
+					podENIErrInc("trunkENINotReady")
+					return &failureResponse, nil
+				}
+				trunkENILinkIndex, err = s.ipamContext.readyTrunkLinkIndex(readyTrunkENI, readyTrunkMAC)
 				if err != nil {
-					log.Warn("Send AddNetworkReply: No trunk ENI Link Index found, cannot add a pod ENI")
+					log.Warnf("Send AddNetworkReply: no link for configured trunk ENI %s, cannot add a pod ENI: %v", readyTrunkENI, err)
+					podENIErrInc("trunkENILinkIndex")
 					return &failureResponse, nil
 				}
 				val, branch := pod.Annotations["vpc.amazonaws.com/pod-eni"]
