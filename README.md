@@ -723,6 +723,17 @@ Specifies the number of seconds an IP address is in cooldown after pod deletion.
 **Note:** 0 is a supported value, however it is highly discouraged.
 **Note:** Higher cooldown periods may lead to a higher number of EC2 API calls as IPs are in cooldown cache.
 
+#### `IP_ASSIGNMENT_WAIT_PERIOD` (v1.24.0+)
+
+Type: Integer as a String
+
+Default: `0`
+
+Specifies the number of seconds a CNI ADD request waits for a pod IP address in the IPAM datastore. During this period, the request tries each managed network card until an IP address becomes available. If the period ends before an IP address becomes available, the request fails. The default value of `0` makes the request fail immediately, which is the behavior of releases before v1.24.0.
+
+**Note:** The period applies to each request, not to each network card. A request for one IP address waits for one `IP_ASSIGNMENT_WAIT_PERIOD` at the most.
+**Note:** The `awscni_add_ip_wait_duration_seconds` and `awscni_add_ip_waiters` metrics show the effect of this value.
+
 #### `DISABLE_POD_V6` (v1.15.0+)
 
 Type: Boolean as a String
