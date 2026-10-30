@@ -210,7 +210,7 @@ const (
 
 	envIPAssignmentWaitPeriod = "IP_ASSIGNMENT_WAIT_PERIOD"
 
-	defaultIPAssignmentWaitPeriod = 0
+	defaultIPAssignmentWaitPeriod = 10
 
 	// Scale config for network cards > 0
 	DefaultWarmIPTarget    = 1

@@ -110,7 +110,7 @@ const (
 	envEnableMultiNICSupport = "ENABLE_MULTI_NIC"
 
 	envIPAssignmentWaitPeriod     = "IP_ASSIGNMENT_WAIT_PERIOD"
-	defaultIPAssignmentWaitPeriod = 0
+	defaultIPAssignmentWaitPeriod = 10
 )
 
 // NetConfList describes an ordered list of networks.
