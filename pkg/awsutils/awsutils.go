@@ -1847,6 +1847,16 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs(ctx context.Context) (Des
 		attachment := ec2res.Attachment
 		// Validate that Attachment is populated by EC2 response before logging
 		if attachment != nil {
+			// Leave out ENIs whose EC2 attachment is not attached (e.g. detaching or detached).
+			// IMDS can still list such an ENI for a while, e.g. when the instance rebooted right
+			// after ipamd asked EC2 to detach it. Its IPs must not go to pods: they stop working
+			// once the detach completes, and the reconcile then force-removes the ENI with those
+			// pods still using its IPs.
+			if attachment.Status != ec2types.AttachmentStatusAttached {
+				log.Warnf("DescribeAllENIs: ENI %s is in instance metadata but its EC2 attachment is %s, leaving it out", eniID, attachment.Status)
+				delete(eniMap, eniID)
+				continue
+			}
 			log.Infof("Got network card index %v for ENI %v", aws.ToInt32(attachment.NetworkCardIndex), eniID)
 			if aws.ToInt32(attachment.DeviceIndex) == 0 && aws.ToInt32(attachment.NetworkCardIndex) == 0 {
 				// Check if DeleteOnTermination is set for Primary ENI
