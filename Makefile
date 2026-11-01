@@ -89,7 +89,10 @@ VENDOR_OVERRIDE_FLAG = -mod=mod
 endif
 
 # LDFLAGS is the set of flags used when building golang executables.
-LDFLAGS = -X pkg/version/info.Version=$(VERSION) -X pkg/awsutils/awssession.version=$(VERSION)
+# The -X path must be the package's Go import path, not its filesystem path:
+# the linker silently drops an -X flag whose path/variable doesn't resolve to
+# an existing string var, so a typo here never breaks the build loudly.
+LDFLAGS = -X github.com/aws/amazon-vpc-cni-k8s/pkg/version.Version=$(VERSION)
 # ALLPKGS is the set of packages provided in source.
 ALLPKGS = $(shell go list $(VENDOR_OVERRIDE_FLAG) ./... | grep -v cmd/packet-verifier)
 # BINS is the set of built command executables.
