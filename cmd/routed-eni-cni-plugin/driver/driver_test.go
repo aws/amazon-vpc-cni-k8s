@@ -5648,6 +5648,8 @@ func Test_linuxNetwork_claimHostVethName(t *testing.T) {
 		// peer is what LinkByIndex returns inside netnsPath, nil for an error.
 		peer           netlink.Link
 		expectPeerCall bool
+		// netnsOpenErr makes entering netnsPath fail, so the peer is never looked up.
+		netnsOpenErr bool
 		// noSandboxID calls claimHostVethName with an empty sandbox ID. Nothing
 		// can be stamped or matched by stamp in that case, so ownership has to be
 		// established from the veth peer or not at all.
@@ -5699,6 +5701,14 @@ func Test_linuxNetwork_claimHostVethName(t *testing.T) {
 			wantErr:        "hostVeth eni8ea2c11fe35 already exists and its peer is not in netns /proc/42/ns/net, refusing to delete it",
 		},
 		{
+			// The netns cannot be entered, so the peer cannot be checked and the
+			// existing link is left in place.
+			name:         "unstamped, target netns cannot be entered",
+			existing:     legacy,
+			netnsOpenErr: true,
+			wantErr:      "unable to establish ownership of existing hostVeth eni8ea2c11fe35, refusing to delete it: no such file or directory",
+		},
+		{
 			name:     "existing link is not a veth",
 			existing: &netlink.Dummy{LinkAttrs: netlink.LinkAttrs{Name: vethName, Index: hostIndex}},
 			wantErr:  "hostVeth eni8ea2c11fe35 already exists and its peer is not in netns /proc/42/ns/net, refusing to delete it",
@@ -5741,7 +5751,9 @@ func Test_linuxNetwork_claimHostVethName(t *testing.T) {
 			} else {
 				netLink.EXPECT().LinkByName(vethName).Return(tt.existing, nil)
 			}
-			if tt.expectPeerCall {
+			if tt.netnsOpenErr {
+				nsMock.EXPECT().WithNetNSPath(netnsPath, gomock.Any()).Return(errors.New("no such file or directory"))
+			} else if tt.expectPeerCall {
 				// Actually run the callback inside the mocked netns so that the
 				// peer lookup is exercised rather than skipped.
 				nsMock.EXPECT().WithNetNSPath(netnsPath, gomock.Any()).DoAndReturn(
