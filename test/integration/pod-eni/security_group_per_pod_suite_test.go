@@ -22,7 +22,9 @@ import (
 	awsUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws/utils"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
+	"github.com/aws/amazon-vpc-cni-k8s/test/integration/common"
 	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/aws/vpc"
+	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -133,6 +135,16 @@ var _ = BeforeSuite(func() {
 })
 
 var _ = AfterSuite(func() {
+	var errs prometheus.MultiError
+
+	// DeferCleanup still deletes the security group if the DaemonSet restore below fails.
+	DeferCleanup(func() {
+		By("deleting the security group")
+		errs.Append(common.EnsureSecurityGroupDeleted(f, securityGroupId))
+
+		Expect(errs.MaybeUnwrap()).ToNot(HaveOccurred(), "cleanup operations failed")
+	})
+
 	By("disabling pod-eni on aws-node DaemonSet")
 	k8sUtils.RemoveVarFromDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName,
 		utils.AwsNodeNamespace, utils.AwsNodeName, map[string]struct{}{
@@ -140,10 +152,5 @@ var _ = AfterSuite(func() {
 		})
 
 	By("terminating instances")
-	err := awsUtils.TerminateInstances(f)
-	Expect(err).ToNot(HaveOccurred())
-
-	By("deleting the security group")
-	err = f.CloudServices.EC2().DeleteSecurityGroup(context.TODO(), securityGroupId)
-	Expect(err).ToNot(HaveOccurred())
+	errs.Append(awsUtils.TerminateInstances(f))
 })

@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
@@ -30,12 +31,16 @@ type EC2 interface {
 	DescribeHyperPodInstance(ctx context.Context, instanceID string, instanceType string) (types.Instance, error)
 	DescribeVPC(ctx context.Context, vpcID string) (*ec2.DescribeVpcsOutput, error)
 	DescribeNetworkInterface(ctx context.Context, interfaceIDs []string) (*ec2.DescribeNetworkInterfacesOutput, error)
+	DescribeCNINetworkInterfacesInSubnet(ctx context.Context, subnetID string) ([]types.NetworkInterface, error)
+	DetachNetworkInterface(ctx context.Context, attachmentID string, force bool) error
+	DeleteNetworkInterface(ctx context.Context, interfaceID string) error
 	AuthorizeSecurityGroupIngress(ctx context.Context, groupID string, protocol string, fromPort int, toPort int, cidrIP string, sourceSG bool) error
 	RevokeSecurityGroupIngress(ctx context.Context, groupID string, protocol string, fromPort int, toPort int, cidrIP string, sourceSG bool) error
 	AuthorizeSecurityGroupEgress(ctx context.Context, groupID string, protocol string, fromPort int, toPort int, cidrIP string) error
 	RevokeSecurityGroupEgress(ctx context.Context, groupID string, protocol string, fromPort int, toPort int, cidrIP string) error
 	AssociateVPCCIDRBlock(ctx context.Context, vpcId string, cidrBlock string) (*ec2.AssociateVpcCidrBlockOutput, error)
 	TerminateInstance(ctx context.Context, instanceIDs []string) error
+	WaitUntilInstancesTerminated(ctx context.Context, instanceIDs []string, timeout time.Duration) error
 	DisAssociateVPCCIDRBlock(ctx context.Context, associationID string) error
 	DescribeSubnets(ctx context.Context, subnetIDs []string) (*ec2.DescribeSubnetsOutput, error)
 	CreateSubnet(ctx context.Context, cidrBlock string, vpcID string, az string) (*ec2.CreateSubnetOutput, error)
@@ -315,6 +320,34 @@ func (d *defaultEC2) DescribeNetworkInterface(ctx context.Context, interfaceIDs 
 	return d.client.DescribeNetworkInterfaces(ctx, describeNetworkInterfaceInput)
 }
 
+func (d *defaultEC2) DescribeCNINetworkInterfacesInSubnet(ctx context.Context, subnetID string) ([]types.NetworkInterface, error) {
+	out, err := d.client.DescribeNetworkInterfaces(ctx, &ec2.DescribeNetworkInterfacesInput{
+		Filters: []types.Filter{
+			{Name: aws.String("subnet-id"), Values: []string{subnetID}},
+			{Name: aws.String("description"), Values: []string{"aws-K8S-*"}},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out.NetworkInterfaces, nil
+}
+
+func (d *defaultEC2) DetachNetworkInterface(ctx context.Context, attachmentID string, force bool) error {
+	_, err := d.client.DetachNetworkInterface(ctx, &ec2.DetachNetworkInterfaceInput{
+		AttachmentId: aws.String(attachmentID),
+		Force:        aws.Bool(force),
+	})
+	return err
+}
+
+func (d *defaultEC2) DeleteNetworkInterface(ctx context.Context, interfaceID string) error {
+	_, err := d.client.DeleteNetworkInterface(ctx, &ec2.DeleteNetworkInterfaceInput{
+		NetworkInterfaceId: aws.String(interfaceID),
+	})
+	return err
+}
+
 func (d *defaultEC2) AssociateVPCCIDRBlock(ctx context.Context, vpcId string, cidrBlock string) (*ec2.AssociateVpcCidrBlockOutput, error) {
 	associateVPCCidrBlockInput := &ec2.AssociateVpcCidrBlockInput{
 		CidrBlock: aws.String(cidrBlock),
@@ -450,6 +483,10 @@ func (d *defaultEC2) TerminateInstance(ctx context.Context, instanceIDs []string
 	}
 	_, err := d.client.TerminateInstances(ctx, terminateInstanceInput)
 	return err
+}
+
+func (d *defaultEC2) WaitUntilInstancesTerminated(ctx context.Context, instanceIDs []string, timeout time.Duration) error {
+	return ec2.NewInstanceTerminatedWaiter(d.client).Wait(ctx, &ec2.DescribeInstancesInput{InstanceIds: instanceIDs}, timeout)
 }
 
 func (d *defaultEC2) DescribeVPC(ctx context.Context, vpcID string) (*ec2.DescribeVpcsOutput, error) {

@@ -7,10 +7,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
+	. "github.com/onsi/ginkgo/v2"
 )
 
 // Subnet deletes get the longest bound because they must wait out the CNI's async
@@ -68,14 +71,37 @@ func EnsureSecurityGroupDeleted(f *framework.Framework, groupID string) error {
 }
 
 // EnsureSubnetDeleted retries DeleteSubnet until it succeeds or the subnet is
-// already gone.
+// already gone. Only pass subnets the test created: it force-releases CNI ENIs in the subnet.
 func EnsureSubnetDeleted(f *framework.Framework, subnetID string) error {
 	if subnetID == "" {
 		return nil
 	}
 	return pollUntilDeleted(subnetPollTimeout,
 		fmt.Sprintf("subnet %s could not be deleted (it will leak and pin the VPC stack)", subnetID),
-		func() error { return f.CloudServices.EC2().DeleteSubnet(context.TODO(), subnetID) })
+		func() error {
+			err := f.CloudServices.EC2().DeleteSubnet(context.TODO(), subnetID)
+			if err != nil && !IsNotFound(err) {
+				releaseCNIENIsInSubnet(f, subnetID)
+			}
+			return err
+		})
+}
+
+func releaseCNIENIsInSubnet(f *framework.Framework, subnetID string) {
+	enis, err := f.CloudServices.EC2().DescribeCNINetworkInterfacesInSubnet(context.TODO(), subnetID)
+	if err != nil {
+		return
+	}
+	for _, eni := range enis {
+		eniID := aws.ToString(eni.NetworkInterfaceId)
+		if eni.Status == ec2types.NetworkInterfaceStatusAvailable {
+			_, _ = fmt.Fprintf(GinkgoWriter, "deleting CNI ENI %s in subnet %s\n", eniID, subnetID)
+			_ = f.CloudServices.EC2().DeleteNetworkInterface(context.TODO(), eniID)
+		} else if eni.Attachment != nil && eni.Attachment.AttachmentId != nil {
+			_, _ = fmt.Fprintf(GinkgoWriter, "force-detaching CNI ENI %s in subnet %s\n", eniID, subnetID)
+			_ = f.CloudServices.EC2().DetachNetworkInterface(context.TODO(), *eni.Attachment.AttachmentId, true)
+		}
+	}
 }
 
 // EnsureVPCCIDRDisassociated retries DisAssociateVPCCIDRBlock until it succeeds or
