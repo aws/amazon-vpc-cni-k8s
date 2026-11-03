@@ -17,7 +17,7 @@ function wait_for_addon_status() {
   local expected_status=$1
   local retry_attempt=0
   if [ "$expected_status" =  "DELETED" ]; then
-    while $(aws eks describe-addon $ENDPOINT_FLAG --cluster-name "$CLUSTER_NAME" --addon-name $VPC_CNI_ADDON_NAME --region "$REGION"); do
+    while aws eks describe-addon $ENDPOINT_FLAG --cluster-name "$CLUSTER_NAME" --addon-name $VPC_CNI_ADDON_NAME --region "$REGION" > /dev/null 2>&1; do
       if [ $retry_attempt -ge 30 ]; then
         echo "failed to delete addon, qutting after too many attempts"
         exit 1
