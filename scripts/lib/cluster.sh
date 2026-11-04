@@ -2,6 +2,9 @@
 
 source "$SCRIPT_DIR"/lib/set_kubeconfig.sh
 
+# Time Ginkgo gives cleanup nodes to finish after a suite hits --timeout; override via env.
+: "${GINKGO_GRACE_PERIOD:=10m}"
+
 function load_cluster_details() {
   echo "loading cluster details $CLUSTER_NAME"
   DESCRIBE_CLUSTER_OP=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$REGION" $ENDPOINT_FLAG)
