@@ -119,6 +119,13 @@ type NetConfList struct {
 	Plugins      []*NetConf `json:"plugins,omitempty"`
 }
 
+// Set to "true" to give the host side of each pod veth a random MAC without
+// first listing the node's links (see hostVethMAC in the routed-eni plugin).
+const (
+	envDisableHostVethMACUniquenessCheck     = "DISABLE_HOST_VETH_MAC_UNIQUENESS_CHECK"
+	defaultDisableHostVethMACUniquenessCheck = false
+)
+
 // NetConf stores the common network config for the CNI plugin
 type NetConf struct {
 	CNIVersion string `json:"cniVersion,omitempty"`
@@ -153,6 +160,8 @@ type NetConf struct {
 	PluginLogFile string `json:"pluginLogFile,omitempty"`
 
 	PluginLogLevel string `json:"pluginLogLevel,omitempty"`
+
+	DisableHostVethMACUniquenessCheck string `json:"disableHostVethMACUniquenessCheck,omitempty"`
 }
 
 // IPAMConfig references containernetworking structure defined at https://github.com/containernetworking/plugins/blob/main/plugins/ipam/host-local/backend/allocator/config.go
@@ -268,6 +277,7 @@ func generateJSON(jsonFile string, outFile string, getPrimaryIP func(ipv4 bool) 
 	pluginLogFile := utils.GetEnv(envPluginLogFile, defaultPluginLogFile)
 	pluginLogLevel := utils.GetEnv(envPluginLogLevel, defaultPluginLogLevel)
 	randomizeSNAT := utils.GetEnv(envRandomizeSNAT, defaultRandomizeSNAT)
+	disableHostVethMACUniquenessCheck := utils.GetBoolAsStringEnvVar(envDisableHostVethMACUniquenessCheck, defaultDisableHostVethMACUniquenessCheck)
 
 	netconf := string(byteValue)
 	netconf = strings.Replace(netconf, "__VETHPREFIX__", vethPrefix, -1)
@@ -282,6 +292,7 @@ func generateJSON(jsonFile string, outFile string, getPrimaryIP func(ipv4 bool) 
 	netconf = strings.Replace(netconf, "__EGRESSPLUGINIPAMDATADIR__", egressIPAMDataDir, -1)
 	netconf = strings.Replace(netconf, "__RANDOMIZESNAT__", randomizeSNAT, -1)
 	netconf = strings.Replace(netconf, "__NODEIP__", nodeIP, -1)
+	netconf = strings.Replace(netconf, "__DISABLEHOSTVETHMACUNIQUENESSCHECK__", strconv.FormatBool(disableHostVethMACUniquenessCheck), -1)
 
 	byteValue = []byte(netconf)
 
