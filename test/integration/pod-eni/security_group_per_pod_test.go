@@ -75,6 +75,11 @@ var _ = Describe("Security Group for Pods Test", func() {
 		By("creating the Security Group Policy")
 		err = f.K8sResourceManagers.CustomResourceManager().CreateResource(securityGroupPolicy)
 		Expect(err).ToNot(HaveOccurred())
+
+		// Give VPC Resource Controller time to settle after the SGP is created, before branch ENI pods
+		// are scheduled; pods created immediately after node replacement occasionally come up unreachable.
+		By("waiting for the Security Group Policy to settle")
+		time.Sleep(30 * time.Second)
 	})
 
 	JustAfterEach(func() {
