@@ -16,6 +16,8 @@ package driver
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"os"
@@ -62,9 +64,9 @@ type VirtualInterfaceMetadata struct {
 	RouteTable        int
 	HostVethName      string
 	ContainerVethName string
-	// SandboxID is the container/sandbox ID from the CNI ADD request. It records
-	// which sandbox a host veth belongs to. See claimHostVethName.
-	SandboxID       string
+	// PodIdentity is the pod's namespace and name. It records which pod a host veth
+	// belongs to. See claimHostVethName.
+	PodIdentity     string
 	AltHostVethName string
 }
 
@@ -301,7 +303,7 @@ func (n *linuxNetwork) SetupPodNetwork(vethMetadata []VirtualInterfaceMetadata, 
 		if err := n.claimAltHostVethName(vethData, netnsPath, log); err != nil {
 			return errors.Wrapf(err, "SetupPodNetwork: failed to setup veth pair")
 		}
-		hostVeth, err := n.setupVeth(vethData.HostVethName, vethData.ContainerVethName, netnsPath, vethData.IPAddress, mtu, vethData.SandboxID, log, index)
+		hostVeth, err := n.setupVeth(vethData.HostVethName, vethData.ContainerVethName, netnsPath, vethData.IPAddress, mtu, vethData.PodIdentity, log, index)
 		if err != nil {
 			return errors.Wrapf(err, "SetupPodNetwork: failed to setup veth pair")
 		}
@@ -369,7 +371,7 @@ func (n *linuxNetwork) SetupBranchENIPodNetwork(vethMetadata VirtualInterfaceMet
 	if err := n.claimAltHostVethName(vethMetadata, netnsPath, log); err != nil {
 		return errors.Wrapf(err, "SetupBranchENIPodNetwork: failed to setup veth pair")
 	}
-	hostVeth, err := n.setupVeth(vethMetadata.HostVethName, vethMetadata.ContainerVethName, netnsPath, vethMetadata.IPAddress, mtu, vethMetadata.SandboxID, log, 0)
+	hostVeth, err := n.setupVeth(vethMetadata.HostVethName, vethMetadata.ContainerVethName, netnsPath, vethMetadata.IPAddress, mtu, vethMetadata.PodIdentity, log, 0)
 	if err != nil {
 		return errors.Wrapf(err, "SetupBranchENIPodNetwork: failed to setup veth pair")
 	}
@@ -466,8 +468,8 @@ func setHostVethV6Sysctls(procSys procsyswrapper.ProcSys, hostVethName string, l
 	return nil
 }
 
-func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netnsPath string, ipAddr *net.IPNet, mtu int, sandboxID string, log logger.Logger, index int) (netlink.Link, error) {
-	if err := n.claimHostVethName(hostVethName, sandboxID, netnsPath, log); err != nil {
+func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netnsPath string, ipAddr *net.IPNet, mtu int, podIdentity string, log logger.Logger, index int) (netlink.Link, error) {
+	if err := n.claimHostVethName(hostVethName, podIdentity, netnsPath, log); err != nil {
 		return nil, err
 	}
 	macAddrStr, err := NewMACGenerator().generateUniqueRandomMAC()
@@ -492,8 +494,8 @@ func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netns
 	}
 
 	// Record the owner so a later ADD can check it.
-	if sandboxID != "" {
-		if err := n.netLink.LinkSetAlias(hostVeth, hostVethAlias(sandboxID)); err != nil {
+	if podIdentity != "" {
+		if err := n.netLink.LinkSetAlias(hostVeth, hostVethAlias(podIdentity)); err != nil {
 			return nil, errors.Wrapf(err, "failed to stamp ownership alias on hostVeth %s", hostVethName)
 		}
 	}
@@ -503,14 +505,19 @@ func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netns
 // hostVethAliasPrefix namespaces the ownership stamp written to the link alias.
 const hostVethAliasPrefix = "aws-vpc-cni:"
 
-func hostVethAlias(sandboxID string) string {
-	return hostVethAliasPrefix + sandboxID
+// hostVethAlias stamps a hash rather than the identity itself. A namespace and pod name can
+// reach 63 and 253 bytes, and IFLA_IFALIAS caps at 256, so storing them raw would fail the
+// ADD for long names. SHA-256 is used in full because the attacker grinds the truncated
+// SHA-1 in the veth name itself, so a truncated stamp would be worthless.
+func hostVethAlias(podIdentity string) string {
+	sum := sha256.Sum256([]byte(podIdentity))
+	return hostVethAliasPrefix + hex.EncodeToString(sum[:])
 }
 
 // claimHostVethName makes hostVethName available for this sandbox, deleting an
 // existing link only when that link can be shown to belong to this sandbox.
 // Otherwise it fails, so the ADD fails rather than the delete proceeding.
-func (n *linuxNetwork) claimHostVethName(hostVethName string, sandboxID string, netnsPath string, log logger.Logger) error {
+func (n *linuxNetwork) claimHostVethName(hostVethName string, podIdentity string, netnsPath string, log logger.Logger) error {
 	existing, err := n.netLink.LinkByName(hostVethName)
 	if err != nil {
 		// Name is free, nothing to reclaim.
@@ -519,13 +526,14 @@ func (n *linuxNetwork) claimHostVethName(hostVethName string, sandboxID string, 
 
 	alias := existing.Attrs().Alias
 	switch {
-	case sandboxID != "" && alias == hostVethAlias(sandboxID):
-		// Stamped for this sandbox.
-		log.Debugf("Reclaiming hostVeth %s previously created for sandbox %s", hostVethName, sandboxID)
+	case podIdentity != "" && alias == hostVethAlias(podIdentity):
+		// Stamped for this pod. An earlier sandbox of the same pod may still hold the link,
+		// because CNI DEL does not delete it and the kernel only reaps it with the old netns.
+		log.Debugf("Reclaiming hostVeth %s previously created for pod %s", hostVethName, podIdentity)
 	case strings.HasPrefix(alias, hostVethAliasPrefix):
-		// Stamped for some other sandbox.
-		return errors.Errorf("hostVeth %s is owned by sandbox %q, refusing to delete it for sandbox %q",
-			hostVethName, strings.TrimPrefix(alias, hostVethAliasPrefix), sandboxID)
+		// Stamped for a different pod, which is the name collision this guards against.
+		return errors.Errorf("hostVeth %s is owned by another pod, refusing to delete it for pod %q",
+			hostVethName, podIdentity)
 	default:
 		// No stamp, so it predates the alias or is not ours. Fall back to the peer.
 		owned, err := n.hostVethPeerInNetns(existing, netnsPath, log)
@@ -550,7 +558,7 @@ func (n *linuxNetwork) claimAltHostVethName(v VirtualInterfaceMetadata, netnsPat
 	if v.AltHostVethName == "" || v.AltHostVethName == v.HostVethName {
 		return nil
 	}
-	return n.claimHostVethName(v.AltHostVethName, v.SandboxID, netnsPath, log)
+	return n.claimHostVethName(v.AltHostVethName, v.PodIdentity, netnsPath, log)
 }
 
 // hostVethPeerInNetns reports whether link is one half of a veth pair whose other
