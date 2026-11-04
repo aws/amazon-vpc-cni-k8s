@@ -36,4 +36,6 @@ const (
 
 	DefaultDeploymentReadyTimeout = time.Second * 300
 	ShortDeploymentReadyTimeout   = time.Second * 120
+
+	DefaultJobCompletionTimeout = time.Second * 300
 )
