@@ -225,6 +225,9 @@ type APIs interface {
 	// Enable SageMaker attach delegation for HyperPod nodes (by providerID)
 	InitHyperPodFromProviderID(context.Context, string) error
 
+	// IsHyperPod returns true if ENI attach is delegated to SageMaker HyperPod
+	IsHyperPod() bool
+
 	// GetInstanceID returns the instance ID
 	GetInstanceID() string
 
@@ -536,6 +539,11 @@ func (cache *EC2InstanceMetadataCache) InitHyperPodFromProviderID(ctx context.Co
 	return nil
 }
 
+// IsHyperPod returns true if ENI attach is delegated to SageMaker HyperPod
+func (cache *EC2InstanceMetadataCache) IsHyperPod() bool {
+	return cache.sagemakerMeta.isHyperPod
+}
+
 // InitWithEC2metadata initializes the EC2InstanceMetadataCache with the data retrieved from EC2 metadata service
 func (cache *EC2InstanceMetadataCache) initWithEC2Metadata(ctx context.Context) error {
 	var err error
@@ -817,8 +825,13 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 		return ENIMetadata{}, err
 	}
 	if eniMAC == primaryMAC && deviceNum != 0 {
-		// Can this even happen? To be backwards compatible, we will always use 0 here and log an error.
-		log.Errorf("Device number of primary ENI is %d! Forcing it to be 0 as expected", deviceNum)
+		// On HyperPod the ENI at device 0 is owned by the service and not visible in IMDS, so the primary ENI is at device 1
+		if cache.sagemakerMeta.isHyperPod {
+			log.Debugf("Device number of primary ENI is %d on HyperPod node, using 0", deviceNum)
+		} else {
+			// Can this even happen? To be backwards compatible, we will always use 0 here and log an error.
+			log.Errorf("Device number of primary ENI is %d! Forcing it to be 0 as expected", deviceNum)
+		}
 		deviceNum = 0
 	}
 
@@ -1088,7 +1101,7 @@ func (cache *EC2InstanceMetadataCache) AllocENI(ctx context.Context, sg []*strin
 func (cache *EC2InstanceMetadataCache) attachENI(ctx context.Context, eniID string, networkCard int) (string, error) {
 	// HyperPod nodes delegate the attach to the SageMaker control plane.
 	if cache.sagemakerMeta.isHyperPod {
-		return cache.attachENIHyperPod(ctx, eniID)
+		return cache.attachENIHyperPod(ctx, eniID, networkCard)
 	}
 
 	// attach to instance
@@ -1119,7 +1132,11 @@ func (cache *EC2InstanceMetadataCache) attachENI(ctx context.Context, eniID stri
 
 // attachENIHyperPod delegates the ENI attach to the SageMaker control plane for
 // HyperPod nodes via sagemaker:AttachClusterNodeNetworkInterface.
-func (cache *EC2InstanceMetadataCache) attachENIHyperPod(ctx context.Context, eniID string) (string, error) {
+func (cache *EC2InstanceMetadataCache) attachENIHyperPod(ctx context.Context, eniID string, networkCard int) (string, error) {
+	// AttachClusterNodeNetworkInterface has no network card parameter and always attaches to network card 0
+	if networkCard != 0 {
+		return "", fmt.Errorf("attachENIHyperPod: network card %d is not supported, SageMaker only attaches to network card 0", networkCard)
+	}
 	// The cluster ARN is resolved once in InitHyperPodFromProviderID
 	input := &sagemaker.AttachClusterNodeNetworkInterfaceInput{
 		ClusterName:        aws.String(cache.sagemakerMeta.hyperPodClusterName),

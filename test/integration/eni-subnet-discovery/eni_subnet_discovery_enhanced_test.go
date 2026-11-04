@@ -215,11 +215,7 @@ var _ = Describe("ENI Subnet Discovery Enhanced Tests", func() {
 					Expect(err).ToNot(HaveOccurred())
 				}
 
-				otherSubnetOutput, err := f.CloudServices.EC2().
-					CreateSubnet(context.TODO(), subnetCidr.String(), f.Options.AWSVPCID, *primaryInstance.Placement.AvailabilityZone)
-				Expect(err).ToNot(HaveOccurred())
-
-				otherClusterSubnetID = *otherSubnetOutput.Subnet.SubnetId
+				otherClusterSubnetID = createSpecSubnet(subnetCidr.String())
 
 				By("Tagging other subnet with different cluster tag")
 				_, err = f.CloudServices.EC2().
@@ -260,12 +256,7 @@ var _ = Describe("ENI Subnet Discovery Enhanced Tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				By("Deleting other cluster subnet")
-				if otherClusterSubnetID != "" {
-					err := f.CloudServices.EC2().DeleteSubnet(context.TODO(), otherClusterSubnetID)
-					if err != nil {
-						GinkgoWriter.Printf("Warning: Failed to delete other cluster subnet %s: %v\n", otherClusterSubnetID, err)
-					}
-				}
+				deleteSpecSubnet(otherClusterSubnetID)
 			})
 
 			It("should only use subnets tagged for this cluster", func() {
