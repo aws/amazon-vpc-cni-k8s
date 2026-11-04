@@ -27,6 +27,7 @@ type JobBuilder struct {
 	name                   string
 	parallelism            int
 	container              v1.Container
+	initContainers         []v1.Container
 	labels                 map[string]string
 	terminationGracePeriod int
 	nodeName               string
@@ -64,6 +65,11 @@ func (j *JobBuilder) Namespace(namespace string) *JobBuilder {
 
 func (j *JobBuilder) Container(container v1.Container) *JobBuilder {
 	j.container = container
+	return j
+}
+
+func (j *JobBuilder) InitContainer(container v1.Container) *JobBuilder {
+	j.initContainers = append(j.initContainers, container)
 	return j
 }
 
@@ -106,6 +112,7 @@ func (j *JobBuilder) Build() *batchV1.Job {
 				},
 				Spec: v1.PodSpec{
 					HostNetwork:                   j.hostNetwork,
+					InitContainers:                j.initContainers,
 					Containers:                    []v1.Container{j.container},
 					TerminationGracePeriodSeconds: aws.Int64(int64(j.terminationGracePeriod)),
 					RestartPolicy:                 v1.RestartPolicyNever,
