@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/golang/mock/gomock"
 	"github.com/pkg/errors"
@@ -261,7 +262,7 @@ func addTrunkToDatastore(t *testing.T, c *IPAMContext) {
 		networkutils.CalculateRouteTableId(trunkDevice, defaultNetworkCard), ""))
 }
 
-// TestReconcileVlanMTU_IPAMD covers the periodic reconciler's wiring.
+// TestReconcileVlanMTU_IPAMD covers the VLAN MTU check's own wiring, independent of the reconcile pass that drives it.
 func TestReconcileVlanMTU_IPAMD(t *testing.T) {
 	t.Run("no-op while no trunk is ready", func(t *testing.T) {
 		m := setup(t)
@@ -303,7 +304,7 @@ func TestReconcileVlanMTU_IPAMD(t *testing.T) {
 
 		mockContext.reconcileVlanMTU()
 		assert.True(t, trunkIsReady(mockContext), "one transient netlink failure must not close the gate")
-		assert.Equal(t, 1, mockContext.trunkLinkMissingTicks)
+		assert.Equal(t, 1, mockContext.trunkLinkMissingChecks)
 	})
 
 	// Nothing re-arms the state once cleared; see the error path in IPAMContext.reconcileVlanMTU.
@@ -314,23 +315,23 @@ func TestReconcileVlanMTU_IPAMD(t *testing.T) {
 		mockContext := trunkENIIPAMContext(m)
 		mockContext.trunkENI.markReady(trunkENIid, trunkMAC)
 
-		const ticks = 25 // past the log rate limit, so the quiet path is exercised too
+		const checks = 25 // past the log rate limit, so the quiet path is exercised too
 		prometheusmetrics.IpamdErr.Reset()
 		m.network.EXPECT().GetLinkByMac(trunkMAC, gomock.Any()).
-			Return(nil, errors.New("simulated lookup failure")).Times(ticks)
+			Return(nil, errors.New("simulated lookup failure")).Times(checks)
 
-		for i := 0; i < ticks; i++ {
+		for i := 0; i < checks; i++ {
 			mockContext.reconcileVlanMTU()
 		}
 
 		assert.True(t, trunkIsReady(mockContext),
 			"a netlink lookup failure must never cost the node its trunk readiness")
-		assert.Equal(t, ticks, mockContext.trunkLinkMissingTicks)
+		assert.Equal(t, checks, mockContext.trunkLinkMissingChecks)
 		assert.Equal(t, trunkENIid, mockContext.trunkLinkMissingENI)
-		// Only the log is rate limited; the counter has to tick every time.
-		assert.Equal(t, float64(ticks),
+		// Only the log is rate limited; the counter has to move on every check.
+		assert.Equal(t, float64(checks),
 			testutil.ToFloat64(prometheusmetrics.IpamdErr.With(prometheus.Labels{"fn": "vlanMTUReconcileTrunkLink"})),
-			"the error counter must tick once per failed check, not once per log line")
+			"the error counter must move once per failed check, not once per log line")
 	})
 
 	// A replacement trunk must not inherit its predecessor's consecutive-failure count.
@@ -347,13 +348,13 @@ func TestReconcileVlanMTU_IPAMD(t *testing.T) {
 		m.network.EXPECT().GetLinkByMac(trunkMAC, gomock.Any()).Return(nil, errors.New("gone")).Times(2)
 		mockContext.reconcileVlanMTU()
 		mockContext.reconcileVlanMTU()
-		require.Equal(t, 2, mockContext.trunkLinkMissingTicks)
+		require.Equal(t, 2, mockContext.trunkLinkMissingChecks)
 
 		mockContext.trunkENI.markReady(newTrunkENIid, newTrunkMAC)
 		m.network.EXPECT().GetLinkByMac(newTrunkMAC, gomock.Any()).Return(nil, errors.New("blip"))
 		mockContext.reconcileVlanMTU()
 
-		assert.Equal(t, 1, mockContext.trunkLinkMissingTicks, "the count must restart for the new trunk")
+		assert.Equal(t, 1, mockContext.trunkLinkMissingChecks, "the count must restart for the new trunk")
 		assert.Equal(t, newTrunkENIid, mockContext.trunkLinkMissingENI)
 		assert.True(t, trunkIsReady(mockContext))
 	})
@@ -367,14 +368,14 @@ func TestReconcileVlanMTU_IPAMD(t *testing.T) {
 
 		m.network.EXPECT().GetLinkByMac(trunkMAC, gomock.Any()).Return(nil, errors.New("blip"))
 		mockContext.reconcileVlanMTU()
-		require.Equal(t, 1, mockContext.trunkLinkMissingTicks)
+		require.Equal(t, 1, mockContext.trunkLinkMissingChecks)
 
 		m.network.EXPECT().GetLinkByMac(trunkMAC, gomock.Any()).Return(
 			&netlink.Device{LinkAttrs: netlink.LinkAttrs{Name: "eth1", Index: trunkLinkIndex}}, nil)
 		m.network.EXPECT().ReconcileVlanMTUForTrunk(trunkLinkIndex).Return(0, nil)
 		mockContext.reconcileVlanMTU()
 
-		assert.Zero(t, mockContext.trunkLinkMissingTicks)
+		assert.Zero(t, mockContext.trunkLinkMissingChecks)
 		assert.True(t, trunkIsReady(mockContext))
 	})
 }
@@ -419,12 +420,20 @@ func TestNodeIPPoolReconcile_TrunkSweepClearsReadyFlag(t *testing.T) {
 	}, nil)
 	m.network.EXPECT().GetRouteTableNumberForENI(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(secDevice+1, false, nil)
 	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, gomock.Any(), gomock.Any(), gomock.Any(), false, gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+	// No GetLinkByMac expectation: the VLAN MTU check runs after the sweep, so it must find no ready
+	// trunk. If it ran before the sweep, gomock fails the pass on the unexpected lookup - though it
+	// reports the OTHER mocks as unsatisfied, because it aborts the test where the lookup happened.
+	// The counters asserted below are the positive half: only the no-trunk branch zeroes them.
+	mockContext.trunkLinkMissingChecks = 7
+	mockContext.trunkLinkMissingENI = trunkENIid
 
 	mockContext.nodeIPPoolReconcile(ctx, 0)
 
 	assert.Empty(t, ds.GetTrunkENI(), "the detached trunk must be swept out of the datastore")
 	assert.False(t, trunkIsReady(mockContext), "a swept trunk must clear the readiness flag")
 	assert.Empty(t, mockContext.trunkENI.mac)
+	assert.Zero(t, mockContext.trunkLinkMissingChecks, "the VLAN MTU check must have run and found no ready trunk")
+	assert.Empty(t, mockContext.trunkLinkMissingENI)
 }
 
 // TestNodeIPPoolReconcile_TrunkReplacementKeepsNewTrunkReady guards the pass that configures a new trunk and sweeps the old one.
@@ -472,6 +481,10 @@ func TestNodeIPPoolReconcile_TrunkReplacementKeepsNewTrunkReady(t *testing.T) {
 		m.network.EXPECT().GetRouteTableNumberForENI(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(trunkDevice+1, false, nil)
 		// The new trunk's link is configured successfully, so it must end up ready.
 		m.network.EXPECT().SetupENINetwork(gomock.Any(), newTrunkMAC, gomock.Any(), gomock.Any(), gomock.Any(), true, gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+		// The pass ends with the VLAN MTU check, and it must target the NEW trunk.
+		m.network.EXPECT().GetLinkByMac(newTrunkMAC, gomock.Any()).Return(
+			&netlink.Device{LinkAttrs: netlink.LinkAttrs{Name: "eth1", Index: trunkLinkIndex}}, nil)
+		m.network.EXPECT().ReconcileVlanMTUForTrunk(trunkLinkIndex).Return(0, nil)
 
 		mockContext.nodeIPPoolReconcile(ctx, 0)
 
@@ -578,6 +591,118 @@ func TestAddNetwork_PodENI_UsesTheConfiguredTrunksLink(t *testing.T) {
 			"attempt %d: the plugin must be given the CONFIGURED trunk's link index", attempt)
 		m.ctrl.Finish()
 	}
+}
+
+// expectIMDSReconcileBoilerplate allows the metadata calls a reconcile pass makes that this test does not assert on.
+func expectIMDSReconcileBoilerplate(m *testMocks) {
+	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
+	m.awsutils.EXPECT().IsUnmanagedENI(gomock.Any()).AnyTimes().Return(false)
+	m.awsutils.EXPECT().IsUnmanagedNIC(gomock.Any()).AnyTimes().Return(false)
+	m.awsutils.EXPECT().IsEfaOnlyENI(gomock.Any(), gomock.Any()).AnyTimes().Return(false)
+	m.awsutils.EXPECT().SetUnmanagedNetworkCards(gomock.Any()).AnyTimes()
+	m.awsutils.EXPECT().TagENI(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+	m.awsutils.EXPECT().GetIPv4sFromEC2(gomock.Any(), gomock.Any()).AnyTimes().Return(nil, errors.New("not under test"))
+}
+
+// readyTrunkInDatastore puts a configured trunk and the primary ENI in the datastore.
+func readyTrunkInDatastore(t *testing.T, c *IPAMContext) {
+	t.Helper()
+	ds := c.dataStoreAccess.GetDataStore(defaultNetworkCard)
+	require.NoError(t, ds.AddENI(primaryENIid, primaryDevice, true, false, false,
+		networkutils.CalculateRouteTableId(primaryDevice, defaultNetworkCard), ""))
+	require.NoError(t, ds.AddENI(trunkENIid, trunkDevice, false, true, false,
+		networkutils.CalculateRouteTableId(trunkDevice, defaultNetworkCard), ""))
+	c.trunkENI.markReady(trunkENIid, trunkMAC)
+}
+
+// TestNodeIPPoolReconcile_RunsVlanMTUCheck pins the VLAN MTU check to the ENI reconcile pass that now drives it.
+func TestNodeIPPoolReconcile_RunsVlanMTUCheck(t *testing.T) {
+	t.Run("a healthy pass reconciles the VLANs under the ready trunk", func(t *testing.T) {
+		m := setup(t)
+		defer m.ctrl.Finish()
+
+		mockContext := trunkENIIPAMContext(m)
+		readyTrunkInDatastore(t, mockContext)
+
+		// IMDS reports both ENIs, so nothing is added and nothing is swept.
+		attached := []awsutils.ENIMetadata{getPrimaryENIMetadata(), trunkENIMetadata()}
+		expectIMDSReconcileBoilerplate(m)
+		m.awsutils.EXPECT().GetAttachedENIs().Return(attached, nil)
+
+		// These two expectations are what the subtest proves; ctrl.Finish fails the pass if they go uncalled.
+		m.network.EXPECT().GetLinkByMac(trunkMAC, gomock.Any()).Return(
+			&netlink.Device{LinkAttrs: netlink.LinkAttrs{Name: "eth1", Index: trunkLinkIndex}}, nil)
+		m.network.EXPECT().ReconcileVlanMTUForTrunk(trunkLinkIndex).Return(1, nil)
+
+		mockContext.nodeIPPoolReconcile(context.Background(), 0)
+	})
+
+	t.Run("still runs when the pass returns early after the interval gate", func(t *testing.T) {
+		m := setup(t)
+		defer m.ctrl.Finish()
+
+		mockContext := trunkENIIPAMContext(m)
+		readyTrunkInDatastore(t, mockContext)
+
+		// The pass gets past the interval gate and then bails out on IMDS, before the sweep.
+		m.awsutils.EXPECT().GetAttachedENIs().Return(nil, errors.New("simulated IMDS failure"))
+		m.network.EXPECT().GetLinkByMac(trunkMAC, gomock.Any()).Return(
+			&netlink.Device{LinkAttrs: netlink.LinkAttrs{Name: "eth1", Index: trunkLinkIndex}}, nil)
+		m.network.EXPECT().ReconcileVlanMTUForTrunk(trunkLinkIndex).Return(1, nil)
+
+		mockContext.nodeIPPoolReconcile(context.Background(), 0)
+	})
+
+	// The other early return with its own shape: it leaves from inside the per-datastore loop,
+	// after the mark phase, so the sweep is skipped for every network card.
+	t.Run("still runs when the pass aborts on DescribeAllENIs", func(t *testing.T) {
+		m := setup(t)
+		defer m.ctrl.Finish()
+
+		mockContext := trunkENIIPAMContext(m)
+		readyTrunkInDatastore(t, mockContext)
+
+		// A third ENI IMDS knows about but the datastore does not forces the DescribeAllENIs call.
+		attached := []awsutils.ENIMetadata{getPrimaryENIMetadata(), trunkENIMetadata(), getSecondaryENIMetadata()}
+		expectIMDSReconcileBoilerplate(m)
+		m.awsutils.EXPECT().GetAttachedENIs().Return(attached, nil)
+		m.awsutils.EXPECT().DescribeAllENIs(gomock.Any()).Return(
+			awsutils.DescribeAllENIsResult{}, errors.New("simulated EC2 failure"))
+
+		m.network.EXPECT().GetLinkByMac(trunkMAC, gomock.Any()).Return(
+			&netlink.Device{LinkAttrs: netlink.LinkAttrs{Name: "eth1", Index: trunkLinkIndex}}, nil)
+		m.network.EXPECT().ReconcileVlanMTUForTrunk(trunkLinkIndex).Return(1, nil)
+
+		mockContext.nodeIPPoolReconcile(context.Background(), 0)
+		assert.True(t, trunkIsReady(mockContext), "an aborted pass must not disarm a healthy trunk")
+	})
+
+	t.Run("does not run when pod ENI is disabled", func(t *testing.T) {
+		m := setup(t)
+		defer m.ctrl.Finish()
+
+		mockContext := trunkENIIPAMContext(m)
+		readyTrunkInDatastore(t, mockContext)
+		mockContext.enablePodENI = false
+
+		// No network expectations at all: any VLAN MTU call fails this subtest.
+		m.awsutils.EXPECT().GetAttachedENIs().Return(nil, errors.New("simulated IMDS failure"))
+
+		mockContext.nodeIPPoolReconcile(context.Background(), 0)
+	})
+
+	t.Run("does not run when the interval gate skips the pass", func(t *testing.T) {
+		m := setup(t)
+		defer m.ctrl.Finish()
+
+		mockContext := trunkENIIPAMContext(m)
+		readyTrunkInDatastore(t, mockContext)
+		mockContext.lastNodeIPPoolAction = time.Now()
+
+		// A trunk is attached, so the needsTrunkEni exception does not apply and the pass is skipped.
+		// No expectations at all: not even GetAttachedENIs may be reached.
+		mockContext.nodeIPPoolReconcile(context.Background(), time.Hour)
+	})
 }
 
 // TestReadyTrunkLinkIndex covers each of the resolver's guards on its own.

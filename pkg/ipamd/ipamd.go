@@ -65,11 +65,9 @@ const (
 	nodeIPPoolReconcileInterval = 60 * time.Second
 	decreaseIPPoolInterval      = 30 * time.Second
 
-	// vlanMTUReconcileInterval is how often branch ENI VLANs are checked against the trunk's MTU.
-	vlanMTUReconcileInterval = 30 * time.Second
-
-	// trunkLinkMissingLogEvery rate-limits the missing trunk link warning to the first failure, then one in this many.
-	trunkLinkMissingLogEvery = 20
+	// trunkLinkMissingLogEvery rate-limits the missing trunk link warning to the first failure, then one in this
+	// many. Tuned against nodeIPPoolReconcileInterval, which drives the check: one warning per ~10 minutes.
+	trunkLinkMissingLogEvery = 10
 
 	// ipReconcileCooldown is the amount of time that an IP address must wait until it can be added to the data store
 	// during reconciliation after being discovered on the EC2 instance metadata.
@@ -266,9 +264,9 @@ type IPAMContext struct {
 	// kept in memory rather than in the datastore because it must be re-established after every
 	// restart: nodeInit re-runs setupENI for each attached ENI before anything serves pods.
 	trunkENI trunkENIState
-	// trunkLinkMissingTicks counts reconcile ticks that missed trunkLinkMissingENI's link; both stay on that goroutine.
-	trunkLinkMissingTicks int
-	trunkLinkMissingENI   string
+	// trunkLinkMissingChecks counts reconcile passes that missed trunkLinkMissingENI's link; both stay on nodeIPPoolReconcile's goroutine.
+	trunkLinkMissingChecks int
+	trunkLinkMissingENI    string
 }
 
 // trunkENIState records whether SetupENINetwork has completed for the trunk ENI, plus its MAC.
@@ -848,11 +846,6 @@ func (c *IPAMContext) updateIPStats(unmanaged int) {
 
 // StartNodeIPPoolManager monitors the IP pool, add or del them when it is required.
 func (c *IPAMContext) StartNodeIPPoolManager(ctx context.Context) {
-	if c.enablePodENI {
-		// The IPv6 branch below never returns, and branch ENI VLANs need reconciling on IPv6 too.
-		go c.startVlanMTUReconciler(ctx)
-	}
-
 	// For IPv6, if Security Groups for Pods is enabled, wait until trunk ENI is attached and add it to the datastore.
 	if c.enableIPv6 {
 		if c.enablePodENI && c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetTrunkENI() == "" {
@@ -880,26 +873,12 @@ func (c *IPAMContext) StartNodeIPPoolManager(ctx context.Context) {
 	}
 }
 
-// startVlanMTUReconciler periodically repairs branch ENI VLAN links whose MTU has fallen below the trunk's.
-func (c *IPAMContext) startVlanMTUReconciler(ctx context.Context) {
-	ticker := time.NewTicker(vlanMTUReconcileInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			c.reconcileVlanMTU()
-		}
-	}
-}
-
-// reconcileVlanMTU raises the branch ENI VLAN links on this node back to the trunk's MTU.
+// reconcileVlanMTU raises the branch ENI VLAN links on this node back to the trunk's MTU. Driven by nodeIPPoolReconcile.
 func (c *IPAMContext) reconcileVlanMTU() {
 	trunkENI, trunkMAC := c.trunkENI.readyENI()
 	if trunkENI == "" {
 		// This process has configured no trunk, so it owns no branch ENI VLANs.
-		c.trunkLinkMissingTicks = 0
+		c.trunkLinkMissingChecks = 0
 		c.trunkLinkMissingENI = ""
 		return
 	}
@@ -907,27 +886,28 @@ func (c *IPAMContext) reconcileVlanMTU() {
 	retryLinkByMacInterval := 100 * time.Millisecond
 	trunkLink, err := c.networkClient.GetLinkByMac(trunkMAC, retryLinkByMacInterval)
 	if err != nil {
-		// Log and count, but leave readiness alone: nothing here would re-arm it, so a transient
-		// netlink failure would become a node-wide SGP outage until ipamd restarts. On IPv4, a node
-		// that has really lost its trunk gets the state cleared by nodeIPPoolReconcile's sweep.
+		// Log and count, but leave readiness alone: nothing here would re-arm it, so a transient netlink
+		// failure would become a node-wide SGP outage until ipamd restarts. A node that has really lost
+		// its trunk gets the state cleared by a later pass's sweep - not this one, whose sweep either
+		// already ran without clearing it or was skipped entirely by an early return.
 		if trunkENI != c.trunkLinkMissingENI {
 			c.trunkLinkMissingENI = trunkENI
-			c.trunkLinkMissingTicks = 0
+			c.trunkLinkMissingChecks = 0
 		}
-		c.trunkLinkMissingTicks++
-		// Counted every tick, not once per log line: on IPv6 nothing else signals a missing trunk link.
+		c.trunkLinkMissingChecks++
+		// Counted every pass, not once per log line, so the rate limit cannot hide a long outage.
 		ipamdErrInc("vlanMTUReconcileTrunkLink")
-		if c.trunkLinkMissingTicks == 1 || c.trunkLinkMissingTicks%trunkLinkMissingLogEvery == 0 {
+		if c.trunkLinkMissingChecks == 1 || c.trunkLinkMissingChecks%trunkLinkMissingLogEvery == 0 {
 			log.Warnf("VLAN MTU reconcile: no link found for configured trunk ENI %s with MAC %s "+
 				"(%d consecutive checks); not touching its VLANs until the link is back: %v",
-				trunkENI, trunkMAC, c.trunkLinkMissingTicks, err)
+				trunkENI, trunkMAC, c.trunkLinkMissingChecks, err)
 		} else {
 			log.Debugf("VLAN MTU reconcile: still no link for trunk ENI %s (%d consecutive checks)",
-				trunkENI, c.trunkLinkMissingTicks)
+				trunkENI, c.trunkLinkMissingChecks)
 		}
 		return
 	}
-	c.trunkLinkMissingTicks = 0
+	c.trunkLinkMissingChecks = 0
 	c.trunkLinkMissingENI = ""
 
 	healed, err := c.networkClient.ReconcileVlanMTUForTrunk(trunkLink.Attrs().Index)
@@ -1771,6 +1751,13 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 
 	prometheusmetrics.IpamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Add(float64(1))
 	defer prometheusmetrics.IpamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Sub(float64(1))
+
+	if c.enablePodENI {
+		// Deferred so it runs after the sweep below, and still runs on the paths that return early.
+		// On one goroutine with the sweep, so it can no longer raise the MTU of a departed trunk's VLANs.
+		// Cadence is this function's: ~nodeIPPoolReconcileInterval, or every pass while the node is trunkless.
+		defer c.reconcileVlanMTU()
+	}
 
 	log.Debugf("Reconciling ENI/IP pool info because time since last %v > %v", timeSinceLast, interval)
 	allENIs, err := c.awsClient.GetAttachedENIs()

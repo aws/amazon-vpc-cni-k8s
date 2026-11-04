@@ -265,7 +265,7 @@ func TestReconcileVlanMTU(t *testing.T) {
 	}
 }
 
-// TestReconcileVlanMTUForTrunk exercises the exported entry point the periodic ipamd reconciler calls.
+// TestReconcileVlanMTUForTrunk exercises the exported entry point the ipamd reconcile pass calls.
 func TestReconcileVlanMTUForTrunk(t *testing.T) {
 	ctrl, mockNetLink, _, _, _ := setup(t)
 	defer ctrl.Finish()

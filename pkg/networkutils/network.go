@@ -1111,7 +1111,7 @@ func setupENINetwork(eniIP string, eniMac string, networkCard int, eniSubnetCIDR
 		healed, err := reconcileVlanMTU(netLink, linkIndex)
 		if healed > 0 {
 			log.Infof("setupENINetwork: raised the MTU of %d VLAN link(s) under trunk link %d", healed, linkIndex)
-			// Same counter as the periodic reconciler in ipamd.
+			// Same counter as the ipamd reconcile pass.
 			prometheusmetrics.ReconcileCnt.With(prometheus.Labels{"fn": "vlanMTUReconcile"}).Add(float64(healed))
 		}
 		if err != nil {
