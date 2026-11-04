@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -68,6 +69,10 @@ type TrafficTest struct {
 	// sending traffic. Newly attached network interfaces (e.g. branch ENIs) can take time after
 	// creation before they serve traffic.
 	PreTrafficDelay time.Duration
+	// If set, each client pod runs an init container that polls the metric server until it
+	// responds or this timeout elapses, so a client only starts sending traffic once its own
+	// pod networking (e.g. a newly created branch ENI) passes traffic.
+	ClientNetworkReadyTimeout time.Duration
 }
 
 // Tests traffic by creating multiple server pods using a deployment and multiple client pods
@@ -238,14 +243,37 @@ func (t *TrafficTest) startTrafficClient(serverAddList string, metricServerIP st
 		}).
 		Build()
 
-	clientJob := manifest.NewDefaultJobBuilder().
+	clientJobBuilder := manifest.NewDefaultJobBuilder().
 		Name("traffic-client-regular-pods").
 		Parallelism(t.ClientCount).
 		Container(trafficClientContainer).
-		PodLabels(t.ClientPodLabelKey, t.ClientPodLabelVal).
-		Build()
+		PodLabels(t.ClientPodLabelKey, t.ClientPodLabelVal)
+
+	if t.ClientNetworkReadyTimeout > 0 {
+		clientJobBuilder.InitContainer(t.clientNetworkReadyContainer(metricServerIP))
+	}
+
+	clientJob := clientJobBuilder.Build()
 
 	return t.Framework.K8sResourceManagers.JobManager().CreateAndWaitTillJobCompleted(clientJob)
+}
+
+// clientNetworkReadyContainer returns an init container that retries a read-only GET against the
+// metric server until it succeeds or ClientNetworkReadyTimeout elapses. It shares the client pod's
+// network namespace, so it succeeding means the client pod can reach other pods.
+func (t *TrafficTest) clientNetworkReadyContainer(metricServerIP string) v1.Container {
+	timeoutSeconds := int(t.ClientNetworkReadyTimeout.Seconds())
+	return manifest.NewCurlContainer(t.Framework.Options.TestImageRegistry).
+		Name("wait-for-pod-network").
+		Command([]string{"curl"}).
+		Args([]string{
+			"--silent", "--show-error", "--fail", "--output", "/dev/null",
+			"--connect-timeout", "2", "--max-time", "3",
+			"--retry", strconv.Itoa(timeoutSeconds), "--retry-delay", "1",
+			"--retry-all-errors", "--retry-max-time", strconv.Itoa(timeoutSeconds),
+			fmt.Sprintf("http://%s/get/metric/connectivity", net.JoinHostPort(metricServerIP, metricServerPort)),
+		}).
+		Build()
 }
 
 func (t *TrafficTest) startMetricServerPod() (*v1.Pod, error) {

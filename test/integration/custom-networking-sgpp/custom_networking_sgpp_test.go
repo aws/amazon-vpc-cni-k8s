@@ -118,6 +118,7 @@ var _ = Describe("Custom Networking + Security Groups for Pods Test", func() {
 				ValidateServerPods:             ValidatePodsHaveBranchENI,
 				IsV6Enabled:                    !isIPv4Cluster,
 				PreTrafficDelay:                30 * time.Second,
+				ClientNetworkReadyTimeout:      2 * time.Minute,
 			}
 
 			By("performing traffic test")
@@ -161,6 +162,7 @@ var _ = Describe("Custom Networking + Security Groups for Pods Test", func() {
 				ValidateClientPods:             ValidatePodsHaveBranchENI,
 				IsV6Enabled:                    !isIPv4Cluster,
 				PreTrafficDelay:                30 * time.Second,
+				ClientNetworkReadyTimeout:      2 * time.Minute,
 			}
 
 			successRate, err := t.TestTraffic()
