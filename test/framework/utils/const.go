@@ -38,4 +38,6 @@ const (
 	ShortDeploymentReadyTimeout   = time.Second * 120
 
 	DefaultJobCompletionTimeout = time.Second * 300
+
+	DefaultDaemonSetUpdateTimeout = time.Minute * 15
 )
