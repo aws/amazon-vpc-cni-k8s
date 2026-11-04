@@ -305,6 +305,21 @@ func TestGetAttachedENIs(t *testing.T) {
 	}
 }
 
+// TestGetAttachedENIsHyperPodPrimaryDevice verifies that on HyperPod, where the service-owned ENI at device 0 is not
+// visible in IMDS and the primary ENI is at device 1, the primary ENI is still treated as device 0.
+func TestGetAttachedENIsHyperPodPrimaryDevice(t *testing.T) {
+	mockMetadata := testMetadata(map[string]interface{}{
+		metadataMACPath + primaryMAC + metadataDeviceNum: "1",
+	})
+
+	cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, sagemakerMeta: sagemakerMetadata{isHyperPod: true}}
+	ens, err := cache.GetAttachedENIs()
+	if assert.NoError(t, err) {
+		assert.Equal(t, 1, len(ens))
+		assert.Equal(t, 0, ens[0].DeviceNumber)
+	}
+}
+
 func TestGetAttachedENIsWithEfaOnly(t *testing.T) {
 	mockMetadata := testMetadata(map[string]interface{}{
 		metadataMACPath:                                primaryMAC + " " + eni2MAC,
@@ -555,6 +570,263 @@ func TestDescribeAllENIs(t *testing.T) {
 	}
 }
 
+// After an IPAMD restart, IMDS can still report an IPv4 address that EC2 DescribeNetworkInterfaces no longer lists (because it was recently unassigned).
+// DescribeAllENIs must treat EC2 as the source of truth and must NOT return the stale, EC2-absent address.
+func TestDescribeAllENIsStaleIMDSAddressDropped(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	const staleIP = "10.0.0.99"
+
+	// IMDS reports the primary IP plus a stale secondary IP.
+	mockMetadata := testMetadata(map[string]interface{}{
+		metadataMACPath + primaryMAC + metadataIPv4s: eni1PrivateIP + " " + staleIP,
+	})
+
+	// EC2 DescribeNetworkInterfaces is the source of truth and only reports the primary IP.
+	// The stale secondary IP is absent, modeling an address that was recently unassigned.
+	result := &ec2.DescribeNetworkInterfacesOutput{
+		NetworkInterfaces: []ec2types.NetworkInterface{{
+			Attachment: &ec2types.NetworkInterfaceAttachment{
+				NetworkCardIndex: aws.Int32(0),
+				DeviceIndex:      aws.Int32(0),
+			},
+			NetworkInterfaceId: aws.String(primaryeniID),
+			PrivateIpAddresses: []ec2types.NetworkInterfacePrivateIpAddress{
+				{Primary: aws.Bool(true), PrivateIpAddress: aws.String(eni1PrivateIP)},
+			},
+		}},
+	}
+
+	mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(result, nil)
+	cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2, instanceType: "test"}
+	vpc.SetInstance("test", 4, 10, 0, []vpc.NetworkCard{{MaximumNetworkInterfaces: 4, NetworkCardIndex: 0}}, "nitro", false)
+
+	metaData, err := cache.DescribeAllENIs(context.Background())
+	assert.NoError(t, err)
+
+	// Find the primary ENI in the returned metadata.
+	var primaryENI *ENIMetadata
+	for i := range metaData.ENIMetadata {
+		if metaData.ENIMetadata[i].ENIID == primaryeniID {
+			primaryENI = &metaData.ENIMetadata[i]
+			break
+		}
+	}
+	assert.NotNil(t, primaryENI, "primary ENI should be present in result")
+
+	// Collect the IPv4 addresses that DescribeAllENIs returned for the ENI.
+	var returnedIPs []string
+	for _, addr := range primaryENI.IPv4Addresses {
+		returnedIPs = append(returnedIPs, aws.ToString(addr.PrivateIpAddress))
+	}
+
+	// The stale, EC2-absent address must not be returned, and the primary must remain.
+	assert.NotContains(t, returnedIPs, staleIP,
+		"stale IMDS address absent from EC2 DescribeNetworkInterfaces must not be returned")
+	assert.Contains(t, returnedIPs, eni1PrivateIP,
+		"EC2-confirmed primary address must still be returned")
+}
+
+// Reconciliation helper 5-scenario edge case testing.
+func TestReconcileIPv4AddressesWithEC2(t *testing.T) {
+	ipAddr := func(ip string, primary bool) ec2types.NetworkInterfacePrivateIpAddress {
+		return ec2types.NetworkInterfacePrivateIpAddress{Primary: aws.Bool(primary), PrivateIpAddress: aws.String(ip)}
+	}
+	ips := func(addrs []ec2types.NetworkInterfacePrivateIpAddress) []string {
+		out := make([]string, 0, len(addrs))
+		for _, a := range addrs {
+			out = append(out, aws.ToString(a.PrivateIpAddress))
+		}
+		return out
+	}
+
+	primary := ipAddr(eni1PrivateIP, true)
+	secondaryA := ipAddr("10.0.0.10", false)
+	secondaryB := ipAddr("10.0.0.11", false)
+	stale := ipAddr("10.0.0.99", false)
+
+	testCases := []struct {
+		name     string
+		imds     []ec2types.NetworkInterfacePrivateIpAddress
+		ec2      []ec2types.NetworkInterfacePrivateIpAddress
+		expected []string
+	}{
+		{
+			name:     "empty EC2 response is a no-op (never wipe addresses)",
+			imds:     []ec2types.NetworkInterfacePrivateIpAddress{primary, secondaryA},
+			ec2:      nil,
+			expected: []string{eni1PrivateIP, "10.0.0.10"},
+		},
+		{
+			name:     "IMDS and EC2 fully agree, nothing dropped",
+			imds:     []ec2types.NetworkInterfacePrivateIpAddress{primary, secondaryA, secondaryB},
+			ec2:      []ec2types.NetworkInterfacePrivateIpAddress{primary, secondaryA, secondaryB},
+			expected: []string{eni1PrivateIP, "10.0.0.10", "10.0.0.11"},
+		},
+		{
+			name:     "all secondaries EC2-confirmed, none dropped",
+			imds:     []ec2types.NetworkInterfacePrivateIpAddress{primary, secondaryA, secondaryB},
+			ec2:      []ec2types.NetworkInterfacePrivateIpAddress{secondaryB, primary, secondaryA},
+			expected: []string{eni1PrivateIP, "10.0.0.10", "10.0.0.11"},
+		},
+		{
+			name:     "stale IMDS-only secondary dropped, confirmed secondary and primary kept",
+			imds:     []ec2types.NetworkInterfacePrivateIpAddress{primary, secondaryA, stale},
+			ec2:      []ec2types.NetworkInterfacePrivateIpAddress{primary, secondaryA},
+			expected: []string{eni1PrivateIP, "10.0.0.10"},
+		},
+		{
+			name:     "primary never dropped even if EC2 omits it",
+			imds:     []ec2types.NetworkInterfacePrivateIpAddress{primary, stale},
+			ec2:      []ec2types.NetworkInterfacePrivateIpAddress{secondaryA},
+			expected: []string{eni1PrivateIP},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := reconcileIPv4AddressesWithEC2(primaryeniID, tc.imds, tc.ec2)
+			assert.ElementsMatch(t, tc.expected, ips(got), tc.name)
+		})
+	}
+}
+
+// Prefix-delegation analogue: EC2 is source of truth for /28 prefixes, an IMDS-only prefix EC2 does not
+// confirm is dropped, and an empty EC2 prefix list is a no-op.
+func TestReconcileIPv4PrefixesWithEC2(t *testing.T) {
+	prefix := func(cidr string) ec2types.Ipv4PrefixSpecification {
+		return ec2types.Ipv4PrefixSpecification{Ipv4Prefix: aws.String(cidr)}
+	}
+	cidrs := func(ps []ec2types.Ipv4PrefixSpecification) []string {
+		out := make([]string, 0, len(ps))
+		for _, p := range ps {
+			out = append(out, aws.ToString(p.Ipv4Prefix))
+		}
+		return out
+	}
+
+	prefixA := prefix("10.0.0.0/28")
+	prefixB := prefix("10.0.0.16/28")
+	stale := prefix("10.0.0.240/28")
+
+	testCases := []struct {
+		name     string
+		imds     []ec2types.Ipv4PrefixSpecification
+		ec2      []ec2types.Ipv4PrefixSpecification
+		expected []string
+	}{
+		{
+			name:     "empty EC2 prefix list is authoritative: all IMDS prefixes dropped",
+			imds:     []ec2types.Ipv4PrefixSpecification{prefixA, prefixB},
+			ec2:      nil,
+			expected: []string{},
+		},
+		{
+			name:     "IMDS and EC2 fully agree, nothing dropped",
+			imds:     []ec2types.Ipv4PrefixSpecification{prefixA, prefixB},
+			ec2:      []ec2types.Ipv4PrefixSpecification{prefixB, prefixA},
+			expected: []string{"10.0.0.0/28", "10.0.0.16/28"},
+		},
+		{
+			name:     "stale IMDS-only prefix dropped, confirmed prefix kept",
+			imds:     []ec2types.Ipv4PrefixSpecification{prefixA, stale},
+			ec2:      []ec2types.Ipv4PrefixSpecification{prefixA},
+			expected: []string{"10.0.0.0/28"},
+		},
+		{
+			name:     "all IMDS prefixes stale, EC2 confirms none",
+			imds:     []ec2types.Ipv4PrefixSpecification{stale},
+			ec2:      []ec2types.Ipv4PrefixSpecification{prefixA},
+			expected: []string{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := reconcileIPv4PrefixesWithEC2(primaryeniID, tc.imds, tc.ec2)
+			assert.ElementsMatch(t, tc.expected, cidrs(got), tc.name)
+		})
+	}
+}
+
+// Verifies that when two ENIs are attached and only one of them has a stale IMDS-only address, DescribeAllENIs trims only the stale address on the affected ENI and leaves the other ENI's addresses untouched.
+func TestDescribeAllENIsStaleIMDSAddressDroppedMultiENI(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	const staleIP = "10.0.0.99"
+
+	// IMDS reports two ENIs. The primary ENI additionally reports a stale secondary IP that EC2
+	// no longer lists; the second ENI's single IP is fully confirmed by EC2.
+	mockMetadata := testMetadata(map[string]interface{}{
+		metadataMACPath: primaryMAC + " " + eni2MAC,
+		metadataMACPath + primaryMAC + metadataIPv4s:   eni1PrivateIP + " " + staleIP,
+		metadataMACPath + eni2MAC:                      imdsMACFields,
+		metadataMACPath + eni2MAC + metadataDeviceNum:  eni2Device,
+		metadataMACPath + eni2MAC + metadataInterface:  eni2ID,
+		metadataMACPath + eni2MAC + metadataSubnetCIDR: subnetCIDR,
+		metadataMACPath + eni2MAC + metadataSubnetID:   subnetID,
+		metadataMACPath + eni2MAC + metadataIPv4s:      eni2PrivateIP,
+	})
+
+	// EC2 is the source of truth: primary ENI only has its primary IP (stale secondary absent),
+	// second ENI has its confirmed IP.
+	result := &ec2.DescribeNetworkInterfacesOutput{
+		NetworkInterfaces: []ec2types.NetworkInterface{
+			{
+				Attachment: &ec2types.NetworkInterfaceAttachment{
+					NetworkCardIndex: aws.Int32(0),
+					DeviceIndex:      aws.Int32(0),
+				},
+				NetworkInterfaceId: aws.String(primaryeniID),
+				PrivateIpAddresses: []ec2types.NetworkInterfacePrivateIpAddress{
+					{Primary: aws.Bool(true), PrivateIpAddress: aws.String(eni1PrivateIP)},
+				},
+			},
+			{
+				Attachment: &ec2types.NetworkInterfaceAttachment{
+					NetworkCardIndex: aws.Int32(0),
+					DeviceIndex:      aws.Int32(1),
+				},
+				NetworkInterfaceId: aws.String(eni2ID),
+				PrivateIpAddresses: []ec2types.NetworkInterfacePrivateIpAddress{
+					{Primary: aws.Bool(true), PrivateIpAddress: aws.String(eni2PrivateIP)},
+				},
+			},
+		},
+	}
+
+	mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(result, nil)
+	cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2, instanceType: "test"}
+	vpc.SetInstance("test", 4, 10, 0, []vpc.NetworkCard{{MaximumNetworkInterfaces: 4, NetworkCardIndex: 0}}, "nitro", false)
+
+	metaData, err := cache.DescribeAllENIs(context.Background())
+	assert.NoError(t, err)
+
+	ipsForENI := func(eniID string) []string {
+		for i := range metaData.ENIMetadata {
+			if metaData.ENIMetadata[i].ENIID == eniID {
+				var out []string
+				for _, addr := range metaData.ENIMetadata[i].IPv4Addresses {
+					out = append(out, aws.ToString(addr.PrivateIpAddress))
+				}
+				return out
+			}
+		}
+		return nil
+	}
+
+	primaryIPs := ipsForENI(primaryeniID)
+	assert.NotContains(t, primaryIPs, staleIP, "stale IMDS-only address must be dropped from the affected ENI")
+	assert.Contains(t, primaryIPs, eni1PrivateIP, "confirmed primary address must remain")
+
+	// The unaffected ENI must keep its EC2-confirmed address and be unchanged.
+	secondIPs := ipsForENI(eni2ID)
+	assert.Contains(t, secondIPs, eni2PrivateIP, "unaffected ENI's confirmed address must remain")
+	assert.NotContains(t, secondIPs, staleIP, "stale address must not leak onto the unaffected ENI")
+}
+
 func TestAllocENI(t *testing.T) {
 	ctrl, mockEC2 := setup(t)
 	defer ctrl.Finish()
@@ -708,6 +980,22 @@ func TestAllocENIHyperPod(t *testing.T) {
 
 	_, err := cache.AllocENI(context.Background(), nil, "", 5, 0)
 	assert.NoError(t, err)
+}
+
+// TestAttachENIHyperPodNonDefaultNetworkCard verifies that an attach to a network card other than 0 is
+// rejected without calling SageMaker, since AttachClusterNodeNetworkInterface always attaches to network card 0.
+func TestAttachENIHyperPodNonDefaultNetworkCard(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockSM := mock_sagemakerwrapper.NewMockSageMaker(ctrl)
+
+	cache := &EC2InstanceMetadataCache{
+		instanceID:    "i-1234567890",
+		sagemakerMeta: sagemakerMetadata{isHyperPod: true, sagemakerSVC: mockSM},
+	}
+
+	_, err := cache.attachENI(context.Background(), eniID, 1)
+	assert.Error(t, err)
 }
 
 func TestAllocENINoFreeDevice(t *testing.T) {

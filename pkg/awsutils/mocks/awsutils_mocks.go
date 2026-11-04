@@ -498,6 +498,20 @@ func (mr *MockAPIsMockRecorder) IsEfaOnlyENI(arg0, arg1 interface{}) *gomock.Cal
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsEfaOnlyENI", reflect.TypeOf((*MockAPIs)(nil).IsEfaOnlyENI), arg0, arg1)
 }
 
+// IsHyperPod mocks base method.
+func (m *MockAPIs) IsHyperPod() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsHyperPod")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsHyperPod indicates an expected call of IsHyperPod.
+func (mr *MockAPIsMockRecorder) IsHyperPod() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsHyperPod", reflect.TypeOf((*MockAPIs)(nil).IsHyperPod))
+}
+
 // IsPrefixDelegationSupported mocks base method.
 func (m *MockAPIs) IsPrefixDelegationSupported() bool {
 	m.ctrl.T.Helper()

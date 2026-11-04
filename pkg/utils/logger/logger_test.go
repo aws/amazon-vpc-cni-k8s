@@ -15,6 +15,7 @@ package logger
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -97,4 +98,35 @@ func TestGetPluginLogFilePath(t *testing.T) {
 		Compress:   true,
 	}
 	assert.Equal(t, zapcore.AddSync(expectedLumberJackLogger), getPluginLogFilePath(inputPluginLogFile))
+}
+
+// Constructing a logger must not touch the log destination. This test points a
+// logger at a not-yet-existing file and asserts the file is NOT created merely
+// by building the logger. The first write must only happen when something is
+// actually logged.
+func TestNewDoesNotWriteAtConstruction(t *testing.T) {
+	dir := t.TempDir()
+	logFile := filepath.Join(dir, "nested", "ipamd.log")
+
+	logConfig := &Configuration{
+		LogLevel:    "Debug",
+		LogLocation: logFile,
+	}
+	_ = New(logConfig)
+
+	_, err := os.Stat(logFile)
+	assert.True(t, os.IsNotExist(err),
+		"building a logger must not create or write to the log file %q, but it exists after New()", logFile)
+}
+
+// Lazy() returns a logger proxy that must not build or configure the underlying
+// logger until one of its methods is actually called (avoids touching disk at
+// package-init time), deferring to whatever logger main() installs via New().
+func TestLazyDoesNotBuildUntilUsed(t *testing.T) {
+	// Reset package state so this test is independent of ordering.
+	log = nil
+
+	_ = Lazy()
+
+	assert.Nil(t, log, "Lazy() must not construct the underlying logger before any log method is called")
 }

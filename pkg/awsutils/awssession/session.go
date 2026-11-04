@@ -44,8 +44,9 @@ func NewAWSSDKHTTPClient() *awshttp.BuildableClient {
 	return awshttp.NewBuildableClient().WithTimeout(getHTTPTimeout())
 }
 
+// log is resolved lazily to not build a logger (on the ipamd default log path) at package-init time.
 var (
-	log = logger.Get()
+	log = logger.Lazy()
 )
 
 func getHTTPTimeout() time.Duration {

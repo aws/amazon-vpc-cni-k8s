@@ -115,7 +115,7 @@ func TestSetupENINetwork(t *testing.T) {
 		Mask: testEniSubnetIPNet.Mask,
 	}
 	mockNetLink.EXPECT().AddrList(gomock.Any(), unix.AF_INET).Return([]netlink.Addr{}, nil)
-	mockNetLink.EXPECT().AddrAdd(gomock.Any(), &netlink.Addr{IPNet: testEniAddr}).Return(nil)
+	mockNetLink.EXPECT().AddrAdd(gomock.Any(), &netlink.Addr{IPNet: testEniAddr, Flags: unix.IFA_F_NOPREFIXROUTE}).Return(nil)
 
 	mockNetLink.EXPECT().RouteDel(gomock.Any())
 	mockNetLink.EXPECT().RouteReplace(gomock.Any()).Return(nil)
@@ -123,7 +123,8 @@ func TestSetupENINetwork(t *testing.T) {
 	mockNetLink.EXPECT().RouteDel(gomock.Any())
 	mockNetLink.EXPECT().RouteReplace(gomock.Any()).Return(nil)
 
-	mockNetLink.EXPECT().RouteDel(gomock.Any()).Return(nil)
+	// NOPREFIXROUTE means no kernel-generated connected route; cleanup gets ESRCH.
+	mockNetLink.EXPECT().RouteDel(gomock.Any()).Return(syscall.ESRCH)
 
 	ruleForPrimaryIPofENI := netlink.NewRule()
 	ruleForPrimaryIPofENI.Src = &net.IPNet{IP: net.ParseIP(testEniIP), Mask: net.CIDRMask(32, 32)}
@@ -172,14 +173,14 @@ func TestSetupENIV6Network(t *testing.T) {
 		Mask: testEniV6SubnetIPNet.Mask,
 	}
 	mockNetLink.EXPECT().AddrList(gomock.Any(), unix.AF_INET6).Return([]netlink.Addr{}, nil)
-	mockNetLink.EXPECT().AddrAdd(gomock.Any(), &netlink.Addr{IPNet: testEniAddr}).Return(nil)
+	mockNetLink.EXPECT().AddrAdd(gomock.Any(), &netlink.Addr{IPNet: testEniAddr, Flags: unix.IFA_F_NOPREFIXROUTE}).Return(nil)
 
 	mockNetLink.EXPECT().RouteDel(gomock.Any())
 	mockNetLink.EXPECT().RouteReplace(gomock.Any()).Return(nil)
 
 	mockNetLink.EXPECT().RouteDel(gomock.Any())
 	mockNetLink.EXPECT().RouteReplace(gomock.Any()).Return(nil)
-	mockNetLink.EXPECT().RouteDel(gomock.Any()).Return(nil)
+	mockNetLink.EXPECT().RouteDel(gomock.Any()).Return(syscall.ESRCH)
 
 	ruleForPrimaryIPofENI := netlink.NewRule()
 	ruleForPrimaryIPofENI.Src = &net.IPNet{IP: net.ParseIP(testEniIP6), Mask: net.CIDRMask(128, 128)}

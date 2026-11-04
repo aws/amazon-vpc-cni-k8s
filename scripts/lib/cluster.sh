@@ -2,6 +2,9 @@
 
 source "$SCRIPT_DIR"/lib/set_kubeconfig.sh
 
+# Time Ginkgo gives cleanup nodes to finish after a suite hits --timeout; override via env.
+: "${GINKGO_GRACE_PERIOD:=10m}"
+
 function load_cluster_details() {
   echo "loading cluster details $CLUSTER_NAME"
   DESCRIBE_CLUSTER_OP=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$REGION" $ENDPOINT_FLAG)
@@ -153,6 +156,8 @@ function deprovision_cluster() {
 
     if [[ "$RUN_KOPS_TEST" == true ]]; then
         down-kops-cluster || deprovision_status=$?
+    elif [[ "${RUN_HYPERPOD_TEST:-}" == true ]]; then
+        down-hyperpod-cluster || deprovision_status=$?
     elif [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
         eksctl delete cluster "$CLUSTER_NAME" --disable-nodegroup-eviction || deprovision_status=$?
     elif [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
