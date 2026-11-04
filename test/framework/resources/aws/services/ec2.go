@@ -32,7 +32,7 @@ type EC2 interface {
 	DescribeVPC(ctx context.Context, vpcID string) (*ec2.DescribeVpcsOutput, error)
 	DescribeNetworkInterface(ctx context.Context, interfaceIDs []string) (*ec2.DescribeNetworkInterfacesOutput, error)
 	DescribeCNINetworkInterfacesInSubnet(ctx context.Context, subnetID string) ([]types.NetworkInterface, error)
-	DetachNetworkInterface(ctx context.Context, attachmentID string, force bool) error
+	DetachNetworkInterface(ctx context.Context, attachmentID string) error
 	DeleteNetworkInterface(ctx context.Context, interfaceID string) error
 	AuthorizeSecurityGroupIngress(ctx context.Context, groupID string, protocol string, fromPort int, toPort int, cidrIP string, sourceSG bool) error
 	RevokeSecurityGroupIngress(ctx context.Context, groupID string, protocol string, fromPort int, toPort int, cidrIP string, sourceSG bool) error
@@ -333,10 +333,9 @@ func (d *defaultEC2) DescribeCNINetworkInterfacesInSubnet(ctx context.Context, s
 	return out.NetworkInterfaces, nil
 }
 
-func (d *defaultEC2) DetachNetworkInterface(ctx context.Context, attachmentID string, force bool) error {
+func (d *defaultEC2) DetachNetworkInterface(ctx context.Context, attachmentID string) error {
 	_, err := d.client.DetachNetworkInterface(ctx, &ec2.DetachNetworkInterfaceInput{
 		AttachmentId: aws.String(attachmentID),
-		Force:        aws.Bool(force),
 	})
 	return err
 }
