@@ -64,6 +64,10 @@ type TrafficTest struct {
 	ValidateClientPods func(list v1.PodList) error
 	// Boolean that indicates if IPv6 mode is enabled
 	IsV6Enabled bool
+	// If set, wait this long after the server pods are validated and before the client starts
+	// sending traffic. Newly attached network interfaces (e.g. branch ENIs) can take time after
+	// creation before they serve traffic.
+	PreTrafficDelay time.Duration
 }
 
 // Tests traffic by creating multiple server pods using a deployment and multiple client pods
@@ -143,6 +147,11 @@ func (t *TrafficTest) TestTraffic() (successRate float64, err error) {
 			return 0, fmt.Errorf("pod list validation failed %v", err)
 		}
 		fmt.Fprintln(GinkgoWriter, "successfully validated the server pod list")
+	}
+
+	if t.PreTrafficDelay > 0 {
+		fmt.Fprintf(GinkgoWriter, "waiting %s for server pod networking to be ready before sending traffic\n", t.PreTrafficDelay)
+		time.Sleep(t.PreTrafficDelay)
 	}
 
 	var serverIPs []string
