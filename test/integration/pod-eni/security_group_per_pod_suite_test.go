@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	awsUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws/utils"
@@ -53,6 +54,9 @@ var (
 	// Number of nodes in cluster
 	numNodes int
 )
+
+// podENIResource is the extended resource VPC Resource Controller advertises on a node once its trunk ENI is attached.
+const podENIResource = corev1.ResourceName("vpc.amazonaws.com/pod-eni")
 
 func TestSecurityGroupForPods(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -126,6 +130,24 @@ var _ = BeforeSuite(func() {
 	By("waiting for replacement nodes to be ready")
 	err = f.K8sResourceManagers.NodeManager().WaitTillNodesReady(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal, numNodes)
 	Expect(err).ToNot(HaveOccurred())
+
+	// A node can be Ready before VPC Resource Controller has attached its trunk ENI; branch ENI pods
+	// scheduled in that window can come up unreachable, so wait until every Linux node advertises pod-eni.
+	By("waiting for all Linux nodes to advertise the " + string(podENIResource) + " resource")
+	Eventually(func(g Gomega) {
+		nodes, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
+		g.Expect(err).ToNot(HaveOccurred())
+		linuxNodes := 0
+		for _, n := range nodes.Items {
+			if n.Labels[corev1.LabelOSStable] != "linux" {
+				continue
+			}
+			linuxNodes++
+			quantity, ok := n.Status.Allocatable[podENIResource]
+			g.Expect(ok && !quantity.IsZero()).To(BeTrue(), "node %s has no allocatable %s", n.Name, podENIResource)
+		}
+		g.Expect(linuxNodes).To(BeNumerically(">=", 1))
+	}).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 
 	By("getting target node")
 	nodeList, err = f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
