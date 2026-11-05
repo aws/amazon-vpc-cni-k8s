@@ -239,12 +239,20 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		var hostVethName string
 
 		ipAddr := getIPAddressFromIpAllocationMetadata(ipAllocMetadata)
+		// Empty parts would stamp a meaningless owner, so leave it unset and skip the stamp.
+		podIdentity := ""
+		if k8sArgs.K8S_POD_NAMESPACE != "" && k8sArgs.K8S_POD_NAME != "" {
+			podIdentity = string(k8sArgs.K8S_POD_NAMESPACE) + "/" + string(k8sArgs.K8S_POD_NAME)
+		}
+		altPrefix := sgpp.BuildHostVethNamePrefix(conf.VethPrefix, sgpp.EnforcingModeStrict)
 		if r.PodVlanId != 0 {
 			hostVethNamePrefix := sgpp.BuildHostVethNamePrefix(conf.VethPrefix, conf.PodSGEnforcingMode)
 			hostVethName = networkutils.GeneratePodHostVethName(hostVethNamePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME), index)
+			altPrefix = conf.VethPrefix
 		} else {
 			hostVethName = networkutils.GeneratePodHostVethName(conf.VethPrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME), index)
 		}
+		altHostVethName := networkutils.GeneratePodHostVethName(altPrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME), index)
 
 		containerVethName := networkutils.GenerateContainerVethName(args.IfName, containerVethNamePrefix, index)
 
@@ -254,6 +262,8 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			RouteTable:        getRouteTableIdFromIpAllocationMetadata(ipAllocMetadata),
 			HostVethName:      hostVethName,
 			ContainerVethName: containerVethName,
+			PodIdentity:       podIdentity,
+			AltHostVethName:   altHostVethName,
 		})
 		// CNI stores the route table ID in the MAC field of the interface. The Route table ID is on the host side
 		// and is used during cleanup to remove the ip rules when IPAMD is not reachable.

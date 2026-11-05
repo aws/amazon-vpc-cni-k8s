@@ -105,6 +105,21 @@ func (mr *MockNetLinkMockRecorder) LinkAdd(arg0 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LinkAdd", reflect.TypeOf((*MockNetLink)(nil).LinkAdd), arg0)
 }
 
+// LinkByIndex mocks base method.
+func (m *MockNetLink) LinkByIndex(arg0 int) (netlink.Link, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LinkByIndex", arg0)
+	ret0, _ := ret[0].(netlink.Link)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LinkByIndex indicates an expected call of LinkByIndex.
+func (mr *MockNetLinkMockRecorder) LinkByIndex(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LinkByIndex", reflect.TypeOf((*MockNetLink)(nil).LinkByIndex), arg0)
+}
+
 // LinkByName mocks base method.
 func (m *MockNetLink) LinkByName(arg0 string) (netlink.Link, error) {
 	m.ctrl.T.Helper()
@@ -147,6 +162,20 @@ func (m *MockNetLink) LinkList() ([]netlink.Link, error) {
 func (mr *MockNetLinkMockRecorder) LinkList() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LinkList", reflect.TypeOf((*MockNetLink)(nil).LinkList))
+}
+
+// LinkSetAlias mocks base method.
+func (m *MockNetLink) LinkSetAlias(arg0 netlink.Link, arg1 string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LinkSetAlias", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// LinkSetAlias indicates an expected call of LinkSetAlias.
+func (mr *MockNetLinkMockRecorder) LinkSetAlias(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LinkSetAlias", reflect.TypeOf((*MockNetLink)(nil).LinkSetAlias), arg0, arg1)
 }
 
 // LinkSetDown mocks base method.
