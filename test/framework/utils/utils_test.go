@@ -48,11 +48,12 @@ func TestProjectRootFrom(t *testing.T) {
 }
 
 func TestProjectRootFromFallsBackWithoutGoMod(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "repository", "vpc-cni", "test", "integration", "cni")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
+	base := filepath.Join(string(filepath.Separator), "projectroot-test-does-not-exist")
+	if _, err := os.Stat(base); !os.IsNotExist(err) {
+		t.Skipf("%s exists, cannot test the fallback with a clean ancestry", base)
 	}
-	want := dir[:len(dir)-len("/test/integration/cni")]
+	dir := filepath.Join(base, "repository", "vpc-cni", "test", "integration", "cni")
+	want := filepath.Join(base, "repository", "vpc-cni")
 	if got := projectRootFrom(dir); got != want {
 		t.Errorf("projectRootFrom(%q) = %q, want %q", dir, got, want)
 	}
