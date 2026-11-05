@@ -121,6 +121,16 @@ func GetInstance(instanceType string) (InstanceTypeLimits, bool) {
 	return instance, ok
 }
 
+// GetAllInstanceLimits returns a copy of the limits for every known instance type. It is used by
+// the limits generator to retain instance types that the EC2 API no longer returns.
+func GetAllInstanceLimits() map[string]InstanceTypeLimits {
+	limits := make(map[string]InstanceTypeLimits, len(instanceNetworkingLimits))
+	for instanceType, instanceLimits := range instanceNetworkingLimits {
+		limits[instanceType] = instanceLimits
+	}
+	return limits
+}
+
 func SetInstance(instanceType ec2types.InstanceType, eniLimit int, ipv4Limit int, defaultNetworkCardIndex int, networkCards []NetworkCard, hypervisorType ec2types.InstanceTypeHypervisor, isBareMetalInstance bool) {
 	instanceNetworkingLimits[string(instanceType)] = New(eniLimit, ipv4Limit, defaultNetworkCardIndex, networkCards,
 		string(hypervisorType), isBareMetalInstance)

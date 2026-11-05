@@ -17,6 +17,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"reflect"
@@ -46,6 +47,10 @@ func printPodLimit(instanceType string, l vpc.InstanceTypeLimits) string {
 }
 
 func main() {
+	skipRemovals := flag.Bool("skip-removals", false,
+		"retain instance types that the EC2 API no longer returns, so that this run only adds or updates entries. By default they are dropped.")
+	flag.Parse()
+
 	ctx := context.Background()
 
 	cfg, err := config.LoadDefaultConfig(ctx)
@@ -60,6 +65,12 @@ func main() {
 	eniLimitMap := make(map[string]vpc.InstanceTypeLimits)
 	for _, region := range regions {
 		describeInstanceTypes(ctx, cfg, region, eniLimitMap)
+	}
+
+	// When removals are skipped, retain instance types that the API no longer returns, so that this
+	// run only adds or updates entries
+	if *skipRemovals {
+		eniLimitMap = retainExistingLimits(eniLimitMap)
 	}
 
 	// Override faulty values and add missing instance types
@@ -193,6 +204,24 @@ func describeInstanceTypes(ctx context.Context, cfg aws.Config, region string, e
 			}
 		}
 	}
+}
+
+// retainExistingLimits copies over any instance type that is present in the already generated
+// limits but missing from the API response. An instance type can disappear from the response
+// because it was retired, or because the credentials in use are not opted in to the regions where
+// it is offered. Either way, dropping it can regress callers that still run on it, so passing
+// -skip-removals limits a run to adding and updating entries.
+func retainExistingLimits(describedLimits map[string]vpc.InstanceTypeLimits) map[string]vpc.InstanceTypeLimits {
+	for instanceType, existingLimits := range vpc.GetAllInstanceLimits() {
+		if _, ok := describedLimits[instanceType]; ok {
+			continue
+		}
+		// The template emits HypervisorType verbatim, so it has to be a quoted Go string literal
+		existingLimits.HypervisorType = strconv.Quote(existingLimits.HypervisorType)
+		log.Infof("Retaining %q: %v since it is missing from the API", instanceType, existingLimits)
+		describedLimits[instanceType] = existingLimits
+	}
+	return describedLimits
 }
 
 // addManualLimits has the list of faulty or missing instance types

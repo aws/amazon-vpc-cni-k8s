@@ -33,7 +33,10 @@ jobs:
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
       - name: Run generate-limits
-        run: make generate-limits
+        # Only add or update instance types. Removing a type the API stopped returning is left to a
+        # deliberate manual run, since the credentials here may simply not be opted in to the
+        # regions where it is offered.
+        run: make generate-limits GENERATE_LIMITS_ARGS=-skip-removals
 
       - name: Check for changes
         id: changes
@@ -60,7 +63,17 @@ jobs:
             - Updated VPC IP resource limits based on latest AWS instance types
             - Regenerated `pkg/vpc/vpc_ip_resource_limit.go`
             - Updated `eni-max-pods.txt` file for max pods per instance
-            
+
+            ## Instance types are never removed
+            This workflow runs with `-skip-removals`, so it only **adds** new instance types and **updates** the
+            limits of existing ones. An instance type that the EC2 API no longer returns keeps the values already
+            committed, because it may be absent only since this workflow's credentials are not opted in to the
+            regions where it is offered — removing it would break nodes still running on that type.
+
+            Retiring an instance type is therefore a deliberate manual change: edit the generated file, or run
+            `make generate-limits` without `GENERATE_LIMITS_ARGS=-skip-removals` using credentials opted in to all
+            regions.
+
             ## Testing
             Please verify that the generated limits are correct.
           branch: automated/update-vpc-limits
