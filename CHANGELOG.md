@@ -2,7 +2,7 @@
 
 ## v1.23.3
 
-* Bump the Network Policy Agent to `v1.4.4` ([#3954](https://github.com/aws/amazon-vpc-cni-k8s/pull/3954), @Issacwww)
+* Bump the Network Policy Agent to `v1.5.0` ([#3954](https://github.com/aws/amazon-vpc-cni-k8s/pull/3954), [#3966](https://github.com/aws/amazon-vpc-cni-k8s/pull/3966), @Issacwww)
 * Validate the ENI IPv4 inventory against EC2 to drop stale IMDS entries ([#3908](https://github.com/aws/amazon-vpc-cni-k8s/pull/3908), @ishani-das)
 * Preserve unrelated packet marks in the native nftables connmark restore ([#3875](https://github.com/aws/amazon-vpc-cni-k8s/pull/3875), @yash97)
 * Avoid a transient connected route during ENI setup ([#3858](https://github.com/aws/amazon-vpc-cni-k8s/pull/3858), @MrTolerant)
