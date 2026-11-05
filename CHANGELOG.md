@@ -2,7 +2,7 @@
 
 ## v1.23.3
 
-* Bump the Network Policy Agent to `v1.4.4` ([#3954](https://github.com/aws/amazon-vpc-cni-k8s/pull/3954), @Issacwww)
+* Bump the Network Policy Agent to `v1.5.0` ([#3954](https://github.com/aws/amazon-vpc-cni-k8s/pull/3954), [#3966](https://github.com/aws/amazon-vpc-cni-k8s/pull/3966), @Issacwww)
 * Validate the ENI IPv4 inventory against EC2 to drop stale IMDS entries ([#3908](https://github.com/aws/amazon-vpc-cni-k8s/pull/3908), @ishani-das)
 * Preserve unrelated packet marks in the native nftables connmark restore ([#3875](https://github.com/aws/amazon-vpc-cni-k8s/pull/3875), @yash97)
 * Avoid a transient connected route during ENI setup ([#3858](https://github.com/aws/amazon-vpc-cni-k8s/pull/3858), @MrTolerant)
@@ -24,6 +24,7 @@
 * Fix the flaky cni-metrics-helper `addReqCount` assertion ([#3919](https://github.com/aws/amazon-vpc-cni-k8s/pull/3919), @nakshah87)
 * Fix the traffic tester IPv6 metric URL ([#3905](https://github.com/aws/amazon-vpc-cni-k8s/pull/3905), @cdirubbio)
 * Add `SKIP_ADDON_INSTALLATION` to the IPv6 integration test script ([#3928](https://github.com/aws/amazon-vpc-cni-k8s/pull/3928), @emilyhuaa)
+* Bump `golang.org/x/net` from 0.60.0 to 0.62.0 for CVE-2026-78661 and CVE-2026-97045 ([#3964](https://github.com/aws/amazon-vpc-cni-k8s/pull/3964), @Issacwww)
 * Bump the `aws-dependencies` group with 13 updates ([#3901](https://github.com/aws/amazon-vpc-cni-k8s/pull/3901)) and 12 updates ([#3948](https://github.com/aws/amazon-vpc-cni-k8s/pull/3948))
 * Bump the `k8s-dependencies` group with 5 updates ([#3900](https://github.com/aws/amazon-vpc-cni-k8s/pull/3900))
 * Bump the `other-deps` group with 3 updates ([#3889](https://github.com/aws/amazon-vpc-cni-k8s/pull/3889))
