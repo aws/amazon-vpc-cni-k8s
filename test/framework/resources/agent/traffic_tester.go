@@ -73,6 +73,8 @@ type TrafficTest struct {
 	// responds or this timeout elapses, so a client only starts sending traffic once its own
 	// pod networking (e.g. a newly created branch ENI) passes traffic.
 	ClientNetworkReadyTimeout time.Duration
+	// If set, pin all client pods to this node.
+	ClientNodeName string
 }
 
 // Tests traffic by creating multiple server pods using a deployment and multiple client pods
@@ -247,7 +249,8 @@ func (t *TrafficTest) startTrafficClient(serverAddList string, metricServerIP st
 		Name("traffic-client-regular-pods").
 		Parallelism(t.ClientCount).
 		Container(trafficClientContainer).
-		PodLabels(t.ClientPodLabelKey, t.ClientPodLabelVal)
+		PodLabels(t.ClientPodLabelKey, t.ClientPodLabelVal).
+		NodeName(t.ClientNodeName)
 
 	if t.ClientNetworkReadyTimeout > 0 {
 		clientJobBuilder.InitContainer(t.clientNetworkReadyContainer(metricServerIP))
