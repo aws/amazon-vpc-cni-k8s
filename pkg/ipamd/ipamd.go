@@ -297,6 +297,24 @@ func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap) {
 	c.awsClient.SetUnmanagedENIs(unmanagedENIlist)
 }
 
+// applyNodeAddressingMode adopts a mode declared by the node, if there is one and
+// the node's IP family can run it. Requires enableIPv6 to be set.
+func (c *IPAMContext) applyNodeAddressingMode(mode *bool, source string) {
+	if mode == nil {
+		return
+	}
+	if c.enableIPv6 && !*mode {
+		log.Warnf("Ignoring %s=%s declared by node %s: IPv6 is supported only in prefix delegation mode, keeping %s=%t",
+			eniconfig.NodeAddressingModeKey, eniconfig.AddressingModeSecondary, source,
+			envEnableIpv4PrefixDelegation, c.enablePrefixDelegation)
+		return
+	}
+	log.Infof("Node declares addressing mode via %s: prefix delegation %t, overriding %s=%t",
+		source, *mode, envEnableIpv4PrefixDelegation, c.enablePrefixDelegation)
+	c.enablePrefixDelegation = *mode
+	c.addressingModeSource = source
+}
+
 // initHyperPod enables SageMaker attach delegation on HyperPod nodes. SageMaker can only attach ENIs to network card 0
 // there, so multi-NIC support is disabled for everything that reads enableMultiNICSupport.
 func (c *IPAMContext) initHyperPod(ctx context.Context, providerID string) error {
@@ -428,16 +446,14 @@ func New(ctx context.Context, k8sClient client.Client, withApiServer bool) (*IPA
 	c.manageENIsNonScheduleable = ManageENIsOnNonSchedulableNode()
 	c.useSubnetDiscovery = UseSubnetDiscovery()
 	c.enablePrefixDelegation = usePrefixDelegation()
-	if withApiServer {
-		if mode, source := eniconfig.ResolveNodeAddressingMode(ctx, c.k8sClient); mode != nil {
-			log.Infof("Node declares addressing mode via %s: prefix delegation %t, overriding %s=%t",
-				source, *mode, envEnableIpv4PrefixDelegation, c.enablePrefixDelegation)
-			c.enablePrefixDelegation = *mode
-			c.addressingModeSource = source
-		}
-	}
 	c.enableIPv4 = isIPv4Enabled()
 	c.enableIPv6 = isIPv6Enabled()
+	if withApiServer {
+		c.applyNodeAddressingMode(eniconfig.ResolveNodeAddressingMode(ctx, c.k8sClient))
+	} else {
+		log.Warnf("No API server connectivity at startup, so %s was not read on this node; keeping %s=%t for its lifetime",
+			eniconfig.NodeAddressingModeKey, envEnableIpv4PrefixDelegation, c.enablePrefixDelegation)
+	}
 	c.disableENIProvisioning = disableENIProvisioning()
 	client, err := awsutils.New(ctx, c.useSubnetDiscovery, c.useCustomNetworking, disableLeakedENICleanup(), c.enableIPv4, c.enableIPv6)
 	if err != nil {
