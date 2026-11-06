@@ -569,6 +569,65 @@ Please refer to [VPC CNI Feature Matrix](https://github.com/aws/amazon-vpc-cni-k
 
 **Note:** `ENABLE_PREFIX_DELEGATION` needs to be set to `true` when VPC CNI is configured to operate in IPv6 mode (supported in v1.10.0+). Prefix Delegation in IPv4 and IPv6 modes is supported on Nitro based Bare Metal instances as well from v1.11+. If you're using Prefix Delegation feature on Bare Metal instances, downgrading to an earlier version of VPC CNI from v1.11+ will be disruptive and not supported.
 
+#### Per-node override: `k8s.amazonaws.com/addressing-mode`
+
+Type: Node annotation or node label
+
+Values: `prefix`, `secondary`
+
+Default: unset, meaning the node follows `ENABLE_PREFIX_DELEGATION`
+
+`ENABLE_PREFIX_DELEGATION` is read from the DaemonSet environment, so it applies
+to every node in the cluster. A node carrying this annotation or label uses the
+address shape it names instead, which lets one cluster run `/28` prefixes on some
+nodes and `/32` secondary IPs on others with a single `aws-node` DaemonSet. The
+annotation takes precedence over the label. An unrecognised value is ignored and
+the node falls back to `ENABLE_PREFIX_DELEGATION`.
+
+The usual way to set it is a node label declared on the node group that owns the
+node, for example a Karpenter `NodePool`'s `spec.template.metadata.labels`, which
+reaches the Node as a kubelet bootstrap label before `aws-node` starts.
+
+The value is read once, when `aws-node` starts on the node, and resolving it
+needs API server connectivity at that moment. A node that starts without it falls
+back to `ENABLE_PREFIX_DELEGATION` and does not pick the declaration up later.
+Changing the annotation or label on a running node has no effect until the
+`aws-node` pod restarts; running pods keep the IPs they already have across such
+a restart, new pods draw from the new shape, and a clean change needs the node
+replaced.
+
+Prefix mode still requires a nitro instance. A node that asks for `prefix` on a
+non-nitro instance is downgraded to secondary IP mode by the existing instance
+capability check. In IPv6 mode prefix delegation is mandatory, so a node
+declaring `secondary` in an IPv6 cluster fails configuration validation and
+`aws-node` does not start on it. Do not declare `secondary` in an IPv6 cluster.
+
+On a node that declares a mode, `ipamd` skips its **startup** cleanup of CIDRs of
+the other shape. Addresses of the other shape are assumed to have been attached
+deliberately, for example by a launch template that sets `Ipv4PrefixCount`, so
+the startup pass adopts them rather than releasing them. Cleanup on pod deletion
+is unchanged, so a node moved from `prefix` to `secondary` releases its prefixes
+gradually as pods leave them. On a node declaring `prefix`, leftover `/32`
+secondary IPs from an earlier `ENABLE_PREFIX_DELEGATION=false` life are adopted
+and then never released, and they hold ENI IP slots until the node is replaced;
+labelling an existing node group is best paired with recycling its nodes.
+
+On a node declaring `prefix` with no `WARM_PREFIX_TARGET`, `WARM_IP_TARGET` or
+`MINIMUM_IP_TARGET` set, `ipamd` keeps exactly the prefixes the node was given
+and neither adds nor releases any until the pool runs out of addresses. Set
+`WARM_PREFIX_TARGET` or `WARM_IP_TARGET` to get the usual warm-pool scaling
+behaviour on such a node. Those targets remain DaemonSet-wide, and a value
+denominated in IPs means a different thing at `/28` granularity than at `/32`,
+so a value tuned for one mode may be wrong for the other.
+
+`kubelet`'s `maxPods` is not derived from this setting, exactly as it is not
+derived from `ENABLE_PREFIX_DELEGATION`. A node that moves to prefix mode and
+wants the higher pod density needs `maxPods` set accordingly by whatever
+configures kubelet. The reverse matters on a downgrade: a node whose `maxPods`
+was raised for prefix mode, running a CNI version that does not understand this
+setting, advertises pod capacity it has no addresses for. Remove the label and
+lower `maxPods` before rolling the image back, or replace the nodes.
+
 #### `WARM_PREFIX_TARGET` (v1.9.0+)
 
 Type: Integer
