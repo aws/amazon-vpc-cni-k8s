@@ -238,6 +238,7 @@ type IPAMContext struct {
 	warmIPTarget         int
 	minimumIPTarget      int
 	warmPrefixTarget     int
+	warmPrefixTargetSet  bool
 	primaryIP            map[string]string // primaryIP is a map from ENI ID to primary IP of that ENI
 	lastNodeIPPoolAction time.Time
 	lastDecreaseIPPool   time.Time
@@ -450,7 +451,7 @@ func New(ctx context.Context, k8sClient client.Client, withApiServer bool) (*IPA
 	c.warmENITarget = getWarmENITarget()
 	c.warmIPTarget = getWarmIPTarget()
 	c.minimumIPTarget = getMinimumIPTarget()
-	c.warmPrefixTarget = getWarmPrefixTarget()
+	c.warmPrefixTarget, c.warmPrefixTargetSet = getWarmPrefixTarget()
 	c.enablePodENI = EnablePodENI()
 	c.enableManageUntaggedMode = enableManageUntaggedMode()
 	c.enablePodIPAnnotation = EnablePodIPAnnotation()
@@ -1506,21 +1507,25 @@ func getWarmENITarget() int {
 	return defaultWarmENITarget
 }
 
-func getWarmPrefixTarget() int {
+// getWarmPrefixTarget returns the configured WARM_PREFIX_TARGET and whether it
+// was explicitly set to a usable value. An absent, unparseable or negative value
+// reports false, so a caller can tell an operator who asked for zero warm
+// prefixes apart from one who said nothing at all.
+func getWarmPrefixTarget() (int, bool) {
 	inputStr, found := os.LookupEnv(envWarmPrefixTarget)
 
 	if !found {
-		return defaultWarmPrefixTarget
+		return defaultWarmPrefixTarget, false
 	}
 
 	if input, err := strconv.Atoi(inputStr); err == nil {
 		if input < 0 {
-			return defaultWarmPrefixTarget
+			return defaultWarmPrefixTarget, false
 		}
 		log.Debugf("Using WARM_PREFIX_TARGET %v", input)
-		return input
+		return input, true
 	}
-	return defaultWarmPrefixTarget
+	return defaultWarmPrefixTarget, false
 }
 
 // logPoolStats logs usage information for allocated addresses/prefixes.
@@ -2757,6 +2762,9 @@ func (c *IPAMContext) isDatastorePoolTooHigh(stats *datastore.DataStoreStats, ne
 }
 
 func (c *IPAMContext) warmPrefixTargetDefined() bool {
+	if c.addressingModeSource != "" && !c.warmPrefixTargetSet {
+		return false
+	}
 	return c.warmPrefixTarget >= defaultWarmPrefixTarget && c.enablePrefixDelegation
 }
 

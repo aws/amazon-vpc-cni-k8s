@@ -1392,16 +1392,29 @@ func TestGetWarmPrefixTarget(t *testing.T) {
 	defer m.ctrl.Finish()
 
 	_ = os.Setenv("WARM_PREFIX_TARGET", "5")
-	warmPrefixTarget := getWarmPrefixTarget()
+	warmPrefixTarget, isSet := getWarmPrefixTarget()
 	assert.Equal(t, warmPrefixTarget, 5)
+	assert.True(t, isSet)
+
+	_ = os.Setenv("WARM_PREFIX_TARGET", "0")
+	warmPrefixTarget, isSet = getWarmPrefixTarget()
+	assert.Equal(t, warmPrefixTarget, 0)
+	assert.True(t, isSet)
 
 	_ = os.Unsetenv("WARM_PREFIX_TARGET")
-	warmPrefixTarget = getWarmPrefixTarget()
+	warmPrefixTarget, isSet = getWarmPrefixTarget()
 	assert.Equal(t, warmPrefixTarget, defaultWarmPrefixTarget)
+	assert.False(t, isSet)
 
 	_ = os.Setenv("WARM_PREFIX_TARGET", "non-integer-string")
-	warmPrefixTarget = getWarmPrefixTarget()
+	warmPrefixTarget, isSet = getWarmPrefixTarget()
 	assert.Equal(t, warmPrefixTarget, defaultWarmPrefixTarget)
+	assert.False(t, isSet)
+
+	_ = os.Setenv("WARM_PREFIX_TARGET", "-1")
+	warmPrefixTarget, isSet = getWarmPrefixTarget()
+	assert.Equal(t, warmPrefixTarget, defaultWarmPrefixTarget)
+	assert.False(t, isSet)
 }
 
 func TestGetWarmIPTargetState(t *testing.T) {
@@ -4714,4 +4727,92 @@ func TestNodeInitStartupCleanupRespectsPerNodeMode(t *testing.T) {
 			assert.NoError(t, mockContext.nodeInit(ctx))
 		})
 	}
+}
+
+func TestWarmPrefixTargetDefined(t *testing.T) {
+	for _, tt := range []struct {
+		name                 string
+		addressingModeSource string
+		warmPrefixTarget     int
+		warmPrefixTargetSet  bool
+		pdEnabled            bool
+		want                 bool
+	}{
+		{name: "env mode, target unset, is unchanged", warmPrefixTarget: 0, warmPrefixTargetSet: false, pdEnabled: true, want: true},
+		{name: "env mode, target set to 1, is unchanged", warmPrefixTarget: 1, warmPrefixTargetSet: true, pdEnabled: true, want: true},
+		{name: "env mode, secondary, is unchanged", warmPrefixTarget: 1, warmPrefixTargetSet: true, pdEnabled: false, want: false},
+		{name: "declared mode, target unset", addressingModeSource: "label", warmPrefixTarget: 0, warmPrefixTargetSet: false, pdEnabled: true, want: false},
+		{name: "declared mode, target explicitly 0", addressingModeSource: "label", warmPrefixTarget: 0, warmPrefixTargetSet: true, pdEnabled: true, want: true},
+		{name: "declared mode, target set to 2", addressingModeSource: "annotation", warmPrefixTarget: 2, warmPrefixTargetSet: true, pdEnabled: true, want: true},
+		{name: "declared secondary mode, target unset", addressingModeSource: "label", warmPrefixTarget: 0, warmPrefixTargetSet: false, pdEnabled: false, want: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &IPAMContext{
+				addressingModeSource:   tt.addressingModeSource,
+				warmPrefixTarget:       tt.warmPrefixTarget,
+				warmPrefixTargetSet:    tt.warmPrefixTargetSet,
+				enablePrefixDelegation: tt.pdEnabled,
+			}
+			assert.Equal(t, tt.want, c.warmPrefixTargetDefined())
+		})
+	}
+}
+
+func TestDeclaredPrefixNodeKeepsLaunchAttachedPrefixCount(t *testing.T) {
+	newCtx := func(addressingModeSource string, warmPrefixTarget int, warmPrefixTargetSet bool, prefixes int) (*IPAMContext, *datastore.DataStore) {
+		ds := datastore.NewDataStore(log, datastore.NullCheckpoint{}, true, defaultNetworkCard)
+		assert.NoError(t, ds.AddENI("eni-1", 1, true, false, false, defaultNetworkCard, ""))
+		for i := 0; i < prefixes; i++ {
+			cidr := net.IPNet{IP: net.IPv4(10, 0, 0, byte(i*16)), Mask: net.CIDRMask(28, 32)}
+			assert.NoError(t, ds.AddIPv4CidrToStore("eni-1", cidr, true))
+		}
+		return &IPAMContext{
+			dataStoreAccess:        &datastore.DataStoreAccess{DataStores: []*datastore.DataStore{ds}},
+			enablePrefixDelegation: true,
+			addressingModeSource:   addressingModeSource,
+			warmPrefixTarget:       warmPrefixTarget,
+			warmPrefixTargetSet:    warmPrefixTargetSet,
+			warmIPTarget:           noWarmIPTarget,
+			minimumIPTarget:        noMinimumIPTarget,
+			numNetworkCards:        1,
+			maxPods:                110,
+			maxPrefixesPerENI:      4,
+			maxENI:                 4,
+		}, ds
+	}
+
+	t.Run("three launch-attached prefixes survive with the chart defaults", func(t *testing.T) {
+		c, ds := newCtx("label", 0, false, 3)
+		stats := ds.GetIPStats(ipV4AddrFamily)
+
+		assert.Equal(t, 3, stats.TotalPrefixes)
+		assert.Equal(t, 3, ds.GetFreePrefixes())
+		assert.False(t, c.warmPrefixTargetDefined())
+		assert.Equal(t, 0, c.computeExtraPrefixesOverWarmTarget(defaultNetworkCard))
+		assert.False(t, c.isDatastorePoolTooHigh(stats, defaultNetworkCard))
+		assert.False(t, c.isDatastorePoolTooLow()[defaultNetworkCard].IsLow)
+
+		shortPrefixes, enabled := c.datastorePrefixTargetState(defaultNetworkCard)
+		assert.False(t, enabled)
+		assert.Equal(t, 0, shortPrefixes)
+		assert.Equal(t, 3, ds.GetIPStats(ipV4AddrFamily).TotalPrefixes)
+	})
+
+	t.Run("an explicit WARM_PREFIX_TARGET still scales the pool down", func(t *testing.T) {
+		c, ds := newCtx("label", 0, true, 3)
+		stats := ds.GetIPStats(ipV4AddrFamily)
+
+		assert.True(t, c.warmPrefixTargetDefined())
+		assert.Equal(t, 3, c.computeExtraPrefixesOverWarmTarget(defaultNetworkCard))
+		assert.True(t, c.isDatastorePoolTooHigh(stats, defaultNetworkCard))
+	})
+
+	t.Run("an unlabelled node is unaffected", func(t *testing.T) {
+		c, ds := newCtx("", 0, false, 3)
+		stats := ds.GetIPStats(ipV4AddrFamily)
+
+		assert.True(t, c.warmPrefixTargetDefined())
+		assert.Equal(t, 3, c.computeExtraPrefixesOverWarmTarget(defaultNetworkCard))
+		assert.True(t, c.isDatastorePoolTooHigh(stats, defaultNetworkCard))
+	})
 }
