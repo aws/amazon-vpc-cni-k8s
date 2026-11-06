@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	awsUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws/utils"
@@ -50,9 +51,21 @@ var (
 	v6Zero      = "::/0"
 
 	targetNode corev1.Node
+	// A Linux node other than targetNode, used by specs that need pods on different hosts. Empty if the
+	// node group has a single Linux node.
+	secondaryNode corev1.Node
 	// Number of nodes in cluster
 	numNodes int
+	// True when aws-node runs with POD_SECURITY_GROUP_ENFORCING_MODE=standard. In standard mode, traffic
+	// from another pod or a service (such as kubelet) on the same host is not enforced by security group
+	// rules, so specs that rely on strict-mode enforcement adjust their expectations.
+	isStandardMode bool
 )
+
+const podSecurityGroupEnforcingModeEnv = "POD_SECURITY_GROUP_ENFORCING_MODE"
+
+// podENIResource is the extended resource VPC Resource Controller advertises on a node once its trunk ENI is attached.
+const podENIResource = corev1.ResourceName("vpc.amazonaws.com/pod-eni")
 
 func TestSecurityGroupForPods(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -127,12 +140,58 @@ var _ = BeforeSuite(func() {
 	err = f.K8sResourceManagers.NodeManager().WaitTillNodesReady(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal, numNodes)
 	Expect(err).ToNot(HaveOccurred())
 
+	// A node can be Ready before VPC Resource Controller has attached its trunk ENI; branch ENI pods
+	// scheduled in that window can come up unreachable, so wait until every Linux node advertises pod-eni.
+	By("waiting for all Linux nodes to advertise the " + string(podENIResource) + " resource")
+	Eventually(func(g Gomega) {
+		nodes, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
+		g.Expect(err).ToNot(HaveOccurred())
+		linuxNodes := 0
+		for _, n := range nodes.Items {
+			if n.Labels[corev1.LabelOSStable] != "linux" {
+				continue
+			}
+			linuxNodes++
+			quantity, ok := n.Status.Allocatable[podENIResource]
+			g.Expect(ok && !quantity.IsZero()).To(BeTrue(), "node %s has no allocatable %s", n.Name, podENIResource)
+		}
+		g.Expect(linuxNodes).To(BeNumerically(">=", 1))
+	}).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+
 	By("getting target node")
 	nodeList, err = f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
 	Expect(err).ToNot(HaveOccurred())
 	Expect(nodeList.Items).ToNot(BeEmpty(), "expected at least one node after instance recycling")
 	targetNode = nodeList.Items[0]
+	for _, n := range nodeList.Items[1:] {
+		if n.Labels[corev1.LabelOSStable] == "linux" {
+			secondaryNode = n
+			break
+		}
+	}
+
+	By("reading " + podSecurityGroupEnforcingModeEnv + " from the aws-node DaemonSet")
+	isStandardMode = getPodSecurityGroupEnforcingMode() == "standard"
+	_, _ = fmt.Fprintf(GinkgoWriter, "pod security group enforcing mode is standard: %t\n", isStandardMode)
 })
+
+// getPodSecurityGroupEnforcingMode returns the mode configured on the aws-node container, defaulting to
+// strict when the variable is unset.
+func getPodSecurityGroupEnforcingMode() string {
+	ds, err := f.K8sResourceManagers.DaemonSetManager().GetDaemonSet(utils.AwsNodeNamespace, utils.AwsNodeName)
+	Expect(err).ToNot(HaveOccurred())
+	for _, c := range ds.Spec.Template.Spec.Containers {
+		if c.Name != utils.AwsNodeName {
+			continue
+		}
+		for _, env := range c.Env {
+			if env.Name == podSecurityGroupEnforcingModeEnv && env.Value != "" {
+				return env.Value
+			}
+		}
+	}
+	return "strict"
+}
 
 var _ = AfterSuite(func() {
 	var errs prometheus.MultiError
