@@ -1565,13 +1565,24 @@ func (c *IPAMContext) shouldRemoveExtraENIs(stats *datastore.DataStoreStats, net
 	var shouldRemoveExtra bool
 
 	// We need the +1 to make sure we are not going below the WARM_ENI_TARGET/WARM_PREFIX_TARGET
-	warmTarget := (c.warmENITarget + 1)
-
+	rank2Target := c.warmENITarget
 	if c.enablePrefixDelegation {
-		warmTarget = (c.warmPrefixTarget + 1)
+		rank2Target = c.warmPrefixTarget
 	}
+	warmTarget := rank2Target + 1
 
 	shouldRemoveExtra = available >= (warmTarget)*c.maxIPsPerENI
+
+	// At a rank-2 target of 0 the threshold above is exactly one interface's worth of addresses,
+	// and isDatastorePoolTooLow grows whenever nothing is available at all. The two windows touch,
+	// so freeing the interface that holds the node's whole supply makes the pool too low on the
+	// next tick and it is re-attached. That is the allocate/free loop in issue #1451. Keep the last
+	// interface's worth, which is the "do not go below the target" intent the +1 already encodes.
+	if shouldRemoveExtra && rank2Target == 0 && available <= c.maxIPsPerENI {
+		log.Debugf("Not removing extra ENIs: available (%d) is the last interface's worth and the pool would be refilled immediately", available)
+		shouldRemoveExtra = false
+	}
+
 	if shouldRemoveExtra {
 		c.logPoolStats(stats, networkCard)
 		log.Debugf("It might be possible to remove extra ENIs because available (%d) >= (ENI/Prefix target + 1 (%d) + 1) * addrsPerENI (%d)", available, warmTarget, c.maxIPsPerENI)
