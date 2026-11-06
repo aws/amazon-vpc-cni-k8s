@@ -729,7 +729,11 @@ Default: `30`
 Specifies the number of seconds an IP address is in cooldown after pod deletion. The cooldown period gives network proxies, such as kube-proxy, time to update node iptables rules when the IP was registered as a valid endpoint, such as for a service. Modify this value with caution, as kube-proxy update time scales with the number of nodes and services.
 
 **Note:** 0 is a supported value, however it is highly discouraged.
-**Note:** Higher cooldown periods may lead to a higher number of EC2 API calls as IPs are in cooldown cache.
+**Note:** An address in cooldown is retained for the next pod on the node. It is not counted as surplus, so the warm-target
+arithmetic will not release it to EC2 while it is cooling, and `getDeletableENI` will not detach an interface holding one. A longer
+cooldown therefore widens the window in which a pod can reuse an address without an EC2 call. It does not widen the window in which
+the address can be reassigned: a cooling address is unavailable to new pods for the whole period, so raising this value raises the
+number of free addresses the node must hold to serve the same churn.
 
 #### `DISABLE_POD_V6` (v1.15.0+)
 

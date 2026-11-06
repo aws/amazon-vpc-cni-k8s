@@ -2273,8 +2273,12 @@ func (c *IPAMContext) datastoreTargetState(stats *datastore.DataStoreStats, netw
 	// short is greater than the warm IP target alone when we have fewer total IPs than the minimum target
 	short = max(short, minimumIPTarget-stats.TotalIPs)
 
-	// over is the number of available IPs we have beyond the warm IP target
-	over = max(available-warmIPTarget, 0)
+	// over is the number of surplus IPs we have beyond the warm IP target. An address whose pod has
+	// just departed is in its cooldown period, which makes it neither assignable nor surplus: the
+	// next pod on this node takes it back without an EC2 call. Counting it as surplus spends one
+	// call to give it away and a second to get an address back. The allocate side above keeps using
+	// AvailableAddresses deliberately, see DataStoreStats.SurplusAddresses.
+	over = max(stats.SurplusAddresses()-warmIPTarget, 0)
 
 	// over is less than the warm IP target alone if it would imply reducing total IPs below the minimum target
 	over = max(min(over, stats.TotalIPs-minimumIPTarget), 0)
