@@ -376,13 +376,17 @@ func validateEnvVars() bool {
 	}
 
 	prefixDelegationEn := utils.GetBoolAsStringEnvVar(envEnPrefixDelegation, defaultEnPrefixDelegation)
-	warmIPTarget := utils.GetEnv(envWarmIPTarget, "0")
-	warmPrefixTarget := utils.GetEnv(envWarmPrefixTarget, "0")
-	minimumIPTarget := utils.GetEnv(envMinIPTarget, "0")
 
-	// Note that these string values should probably be cast to integers, but the comparison for values greater than 0 works either way
-	if prefixDelegationEn && (warmIPTarget <= "0" && warmPrefixTarget <= "0" && minimumIPTarget <= "0") {
-		log.Errorf("Setting WARM_PREFIX_TARGET = 0 is not supported while WARM_IP_TARGET/MINIMUM_IP_TARGET is not set. Please configure either one of the WARM_{PREFIX/IP}_TARGET or MINIMUM_IP_TARGET env variables")
+	// A warm target of zero is a legitimate request for no warm pool, so what matters here is
+	// whether a target was supplied at all, not what it was set to. Prefix delegation with no
+	// target of any kind is still refused, because it leaves the pool manager with nothing to
+	// size the node against.
+	_, warmIPTargetSet := os.LookupEnv(envWarmIPTarget)
+	_, warmPrefixTargetSet := os.LookupEnv(envWarmPrefixTarget)
+	_, minimumIPTargetSet := os.LookupEnv(envMinIPTarget)
+
+	if prefixDelegationEn && !warmIPTargetSet && !warmPrefixTargetSet && !minimumIPTargetSet {
+		log.Errorf("Prefix delegation requires a warm target. Please configure one of the WARM_{PREFIX/IP}_TARGET or MINIMUM_IP_TARGET env variables. Setting WARM_IP_TARGET=0 is supported and means the node holds no warm pool.")
 		return false
 	}
 	return true

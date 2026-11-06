@@ -149,6 +149,7 @@ func TestNodeInit(t *testing.T) {
 		maxENI:          4,
 		warmENITarget:   1,
 		warmIPTarget:    3,
+		warmIPTargetSet: true,
 		numNetworkCards: 1,
 		primaryIP:       make(map[string]string),
 		terminating:     int32(0),
@@ -255,6 +256,7 @@ func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 		warmENITarget:     1,
 		numNetworkCards:   1,
 		warmIPTarget:      3,
+		warmIPTargetSet:   true,
 		primaryIP:         make(map[string]string),
 		terminating:       int32(0),
 		networkClient:     m.network,
@@ -356,6 +358,7 @@ func TestNodeInitwithPDenabledIPv6Mode(t *testing.T) {
 		maxENI:            1,
 		warmENITarget:     1,
 		warmIPTarget:      1,
+		warmIPTargetSet:   true,
 		primaryIP:         make(map[string]string),
 		terminating:       int32(0),
 		networkClient:     m.network,
@@ -799,6 +802,7 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig, subnetDiscovery bool, en
 		maxENI:                    4,
 		warmENITarget:             1,
 		warmPrefixTarget:          1,
+		warmPrefixTargetSet:       true,
 		networkClient:             m.network,
 		useCustomNetworking:       UseCustomNetworkCfg(),
 		useSubnetDiscovery:        UseSubnetDiscovery(),
@@ -944,6 +948,7 @@ func TestDecreaseIPPool(t *testing.T) {
 	mockContext := &IPAMContext{
 		awsClient:          m.awsutils,
 		warmIPTarget:       1,
+		warmIPTargetSet:    true,
 		lastDecreaseIPPool: time.Now().Add(-60 * time.Second),
 	}
 	mockContext.reconcileCooldownCache.cache = make(map[string]time.Time)
@@ -1090,16 +1095,17 @@ func TestTryAddIPToENI(t *testing.T) {
 
 	warmIPTarget := 3
 	mockContext := &IPAMContext{
-		k8sClient:     m.k8sClient,
-		awsClient:     m.awsutils,
-		maxIPsPerENI:  14,
-		maxENI:        4,
-		warmENITarget: 1,
-		warmIPTarget:  warmIPTarget,
-		networkClient: m.network,
-		primaryIP:     make(map[string]string),
-		terminating:   int32(0),
-		unmanagedENI:  []int{0},
+		k8sClient:       m.k8sClient,
+		awsClient:       m.awsutils,
+		maxIPsPerENI:    14,
+		maxENI:          4,
+		warmENITarget:   1,
+		warmIPTarget:    warmIPTarget,
+		warmIPTargetSet: true,
+		networkClient:   m.network,
+		primaryIP:       make(map[string]string),
+		terminating:     int32(0),
+		unmanagedENI:    []int{0},
 	}
 
 	mockContext.dataStoreAccess = testDatastore()
@@ -1375,16 +1381,26 @@ func TestGetWarmENITarget(t *testing.T) {
 	defer m.ctrl.Finish()
 
 	_ = os.Setenv("WARM_IP_TARGET", "5")
-	warmIPTarget := getWarmIPTarget()
+	warmIPTarget, isSet := getWarmIPTarget()
 	assert.Equal(t, warmIPTarget, 5)
+	assert.True(t, isSet)
 
 	_ = os.Unsetenv("WARM_IP_TARGET")
-	warmIPTarget = getWarmIPTarget()
+	warmIPTarget, isSet = getWarmIPTarget()
 	assert.Equal(t, warmIPTarget, noWarmIPTarget)
+	assert.False(t, isSet)
 
 	_ = os.Setenv("WARM_IP_TARGET", "non-integer-string")
-	warmIPTarget = getWarmIPTarget()
+	warmIPTarget, isSet = getWarmIPTarget()
 	assert.Equal(t, warmIPTarget, noWarmIPTarget)
+	assert.False(t, isSet)
+
+	// An explicit zero is a request for no warm pool and must not look like unset.
+	_ = os.Setenv("WARM_IP_TARGET", "0")
+	warmIPTarget, isSet = getWarmIPTarget()
+	assert.Equal(t, warmIPTarget, 0)
+	assert.True(t, isSet)
+	_ = os.Unsetenv("WARM_IP_TARGET")
 }
 
 func TestGetWarmPrefixTarget(t *testing.T) {
@@ -1392,16 +1408,25 @@ func TestGetWarmPrefixTarget(t *testing.T) {
 	defer m.ctrl.Finish()
 
 	_ = os.Setenv("WARM_PREFIX_TARGET", "5")
-	warmPrefixTarget := getWarmPrefixTarget()
+	warmPrefixTarget, isSet := getWarmPrefixTarget()
 	assert.Equal(t, warmPrefixTarget, 5)
+	assert.True(t, isSet)
 
 	_ = os.Unsetenv("WARM_PREFIX_TARGET")
-	warmPrefixTarget = getWarmPrefixTarget()
+	warmPrefixTarget, isSet = getWarmPrefixTarget()
 	assert.Equal(t, warmPrefixTarget, defaultWarmPrefixTarget)
+	assert.False(t, isSet)
 
 	_ = os.Setenv("WARM_PREFIX_TARGET", "non-integer-string")
-	warmPrefixTarget = getWarmPrefixTarget()
+	warmPrefixTarget, isSet = getWarmPrefixTarget()
 	assert.Equal(t, warmPrefixTarget, defaultWarmPrefixTarget)
+	assert.False(t, isSet)
+
+	_ = os.Setenv("WARM_PREFIX_TARGET", "0")
+	warmPrefixTarget, isSet = getWarmPrefixTarget()
+	assert.Equal(t, warmPrefixTarget, 0)
+	assert.True(t, isSet)
+	_ = os.Unsetenv("WARM_PREFIX_TARGET")
 }
 
 func TestGetWarmIPTargetState(t *testing.T) {
@@ -1421,6 +1446,8 @@ func TestGetWarmIPTargetState(t *testing.T) {
 	assert.False(t, warmIPTargetDefined)
 
 	mockContext.warmIPTarget = 5
+
+	mockContext.warmIPTargetSet = true
 	short, over, warmIPTargetDefined := mockContext.datastoreTargetState(nil, defaultNetworkCard)
 	assert.True(t, warmIPTargetDefined)
 	assert.Equal(t, 5, short)
@@ -1471,6 +1498,8 @@ func TestGetWarmIPTargetStateWithPDenabled(t *testing.T) {
 	assert.False(t, warmIPTargetDefined)
 
 	mockContext.warmIPTarget = 5
+
+	mockContext.warmIPTargetSet = true
 	short, over, warmIPTargetDefined := mockContext.datastoreTargetState(nil, defaultNetworkCard)
 	assert.True(t, warmIPTargetDefined)
 	assert.Equal(t, 1, short)
@@ -1508,6 +1537,7 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 		maxEni          int
 		warmENITarget   int
 		warmIPTarget    int
+		warmIPTargetSet bool
 		datastoreAccess *datastore.DataStoreAccess
 		maxPods         int
 	}
@@ -1517,15 +1547,20 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 		fields fields
 		want   bool
 	}{
-		{"Test new ds, all defaults", fields{14, 4, 1, 0, testDatastore(), 500}, true},
-		{"Test new ds, 0 ENIs", fields{14, 4, 0, 0, testDatastore(), 500}, true},
-		{"Test new ds, 3 warm IPs", fields{14, 4, 0, 3, testDatastore(), 500}, true},
-		{"Test 3 unused IPs, 1 warm", fields{3, 4, 1, 1, datastoreWith3FreeIPs(), 500}, false},
-		{"Test 1 used, 1 warm ENI", fields{3, 4, 1, 0, datastoreWith1Pod1(), 500}, true},
-		{"Test 1 used, 0 warm ENI", fields{3, 4, 0, 0, datastoreWith1Pod1(), 500}, false},
-		{"Test 3 used, 1 warm ENI", fields{3, 4, 1, 0, datastoreWith3Pods(), 500}, true},
-		{"Test 3 used, 0 warm ENI", fields{3, 4, 0, 0, datastoreWith3Pods(), 500}, true},
-		{"Test max pods exceeded", fields{3, 4, 0, 5, datastoreWith3Pods(), 3}, false},
+		{"Test new ds, all defaults", fields{14, 4, 1, 0, false, testDatastore(), 500}, true},
+		{"Test new ds, 0 ENIs", fields{14, 4, 0, 0, false, testDatastore(), 500}, true},
+		{"Test new ds, 3 warm IPs", fields{14, 4, 0, 3, true, testDatastore(), 500}, true},
+		{"Test 3 unused IPs, 1 warm", fields{3, 4, 1, 1, true, datastoreWith3FreeIPs(), 500}, false},
+		{"Test 1 used, 1 warm ENI", fields{3, 4, 1, 0, false, datastoreWith1Pod1(), 500}, true},
+		{"Test 1 used, 0 warm ENI", fields{3, 4, 0, 0, false, datastoreWith1Pod1(), 500}, false},
+		{"Test 3 used, 1 warm ENI", fields{3, 4, 1, 0, false, datastoreWith3Pods(), 500}, true},
+		{"Test 3 used, 0 warm ENI", fields{3, 4, 0, 0, false, datastoreWith3Pods(), 500}, true},
+		{"Test max pods exceeded", fields{3, 4, 0, 5, true, datastoreWith3Pods(), 3}, false},
+		// An explicit WARM_IP_TARGET=0 must stop falling through to WARM_ENI_TARGET. With no
+		// pod waiting the pool is at target, so it is not low, whatever WARM_ENI_TARGET says.
+		{"Zero warm, 1 used, WARM_ENI_TARGET=1", fields{3, 4, 1, 0, true, datastoreWith1Pod1(), 500}, false},
+		{"Zero warm, 3 used, WARM_ENI_TARGET=1", fields{3, 4, 1, 0, true, datastoreWith3Pods(), 500}, false},
+		{"Zero warm, empty ds, WARM_ENI_TARGET=1", fields{14, 4, 1, 0, true, testDatastore(), 500}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1538,6 +1573,7 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 				maxENI:                 tt.fields.maxEni,
 				warmENITarget:          tt.fields.warmENITarget,
 				warmIPTarget:           tt.fields.warmIPTarget,
+				warmIPTargetSet:        tt.fields.warmIPTargetSet,
 				enablePrefixDelegation: false,
 				maxPods:                tt.fields.maxPods,
 				numNetworkCards:        1,
@@ -3069,6 +3105,7 @@ func TestNodeInitPrimarySubnetExclusionWithExistingPodIPs(t *testing.T) {
 		maxENI:             4,
 		warmENITarget:      1,
 		warmIPTarget:       3,
+		warmIPTargetSet:    true,
 		primaryIP:          make(map[string]string),
 		terminating:        int32(0),
 		networkClient:      m.network,
@@ -3180,6 +3217,7 @@ func TestNodeInitPrimarySubnetExclusionWithoutExistingPodIPs(t *testing.T) {
 		maxENI:             4,
 		warmENITarget:      1,
 		warmIPTarget:       3,
+		warmIPTargetSet:    true,
 		primaryIP:          make(map[string]string),
 		terminating:        int32(0),
 		networkClient:      m.network,
@@ -3732,6 +3770,7 @@ func TestNodeInit_IPv6_PrimaryENIExcluded(t *testing.T) {
 		maxENI:                 2,
 		warmENITarget:          1,
 		warmIPTarget:           1,
+		warmIPTargetSet:        true,
 		primaryIP:              make(map[string]string),
 		terminating:            int32(0),
 		networkClient:          m.network,
@@ -3838,15 +3877,16 @@ func TestDsBackingStorePath(t *testing.T) {
 
 func TestGetMinimumIPTarget(t *testing.T) {
 	tests := []struct {
-		name     string
-		envValue string
-		want     int
+		name      string
+		envValue  string
+		want      int
+		wantIsSet bool
 	}{
-		{"not set returns default", "", noMinimumIPTarget},
-		{"valid positive value", "10", 10},
-		{"zero value", "0", 0},
-		{"negative value returns default", "-5", noMinimumIPTarget},
-		{"invalid string returns default", "invalid", noMinimumIPTarget},
+		{"not set returns default", "", noMinimumIPTarget, false},
+		{"valid positive value", "10", 10, true},
+		{"zero value", "0", 0, true},
+		{"negative value returns default", "-5", noMinimumIPTarget, false},
+		{"invalid string returns default", "invalid", noMinimumIPTarget, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -3856,7 +3896,9 @@ func TestGetMinimumIPTarget(t *testing.T) {
 			} else {
 				os.Unsetenv(envMinimumIPTarget)
 			}
-			assert.Equal(t, tt.want, getMinimumIPTarget())
+			got, isSet := getMinimumIPTarget()
+			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.wantIsSet, isSet)
 		})
 	}
 }
@@ -4117,19 +4159,29 @@ func TestIPAMContext_SetTerminating(t *testing.T) {
 
 func TestIPAMContext_WarmIPTargetsDefined(t *testing.T) {
 	tests := []struct {
-		name            string
-		warmIPTarget    int
-		minimumIPTarget int
-		want            bool
+		name               string
+		warmIPTarget       int
+		warmIPTargetSet    bool
+		minimumIPTarget    int
+		minimumIPTargetSet bool
+		want               bool
 	}{
-		{"both not defined", noWarmIPTarget, noMinimumIPTarget, false},
-		{"warmIPTarget defined", 5, noMinimumIPTarget, true},
-		{"minimumIPTarget defined", noWarmIPTarget, 10, true},
-		{"both defined", 5, 10, true},
+		{"both not defined", noWarmIPTarget, false, noMinimumIPTarget, false, false},
+		{"warmIPTarget defined", 5, true, noMinimumIPTarget, false, true},
+		{"minimumIPTarget defined", noWarmIPTarget, false, 10, true, true},
+		{"both defined", 5, true, 10, true, true},
+		// A target of zero is a request for no warm pool. It must read as defined, otherwise the
+		// pool manager falls through to WARM_ENI_TARGET and reserves a whole spare ENI.
+		{"warmIPTarget explicitly zero", 0, true, noMinimumIPTarget, false, true},
+		{"minimumIPTarget explicitly zero", noWarmIPTarget, false, 0, true, true},
+		{"both explicitly zero", 0, true, 0, true, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &IPAMContext{warmIPTarget: tt.warmIPTarget, minimumIPTarget: tt.minimumIPTarget}
+			c := &IPAMContext{
+				warmIPTarget: tt.warmIPTarget, warmIPTargetSet: tt.warmIPTargetSet,
+				minimumIPTarget: tt.minimumIPTarget, minimumIPTargetSet: tt.minimumIPTargetSet,
+			}
 			assert.Equal(t, tt.want, c.warmIPTargetsDefined())
 		})
 	}
@@ -4139,16 +4191,25 @@ func TestIPAMContext_WarmPrefixTargetDefined(t *testing.T) {
 	tests := []struct {
 		name                   string
 		warmPrefixTarget       int
+		warmPrefixTargetSet    bool
 		enablePrefixDelegation bool
 		want                   bool
 	}{
-		{"not defined", 0, false, false},
-		{"defined with prefix delegation", 1, true, true},
-		{"defined without prefix delegation", 1, false, false},
+		{"not defined", 0, false, false, false},
+		{"defined with prefix delegation", 1, true, true, true},
+		{"defined without prefix delegation", 1, true, false, false},
+		// Unset in prefix mode used to read as defined, because the old predicate was
+		// `warmPrefixTarget >= defaultWarmPrefixTarget` and the default is 0, a tautology. It
+		// switched the prefix scale-down regime on with a warm target of zero.
+		{"unset with prefix delegation", 0, false, true, false},
+		{"explicitly zero with prefix delegation", 0, true, true, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &IPAMContext{warmPrefixTarget: tt.warmPrefixTarget, enablePrefixDelegation: tt.enablePrefixDelegation}
+			c := &IPAMContext{
+				warmPrefixTarget: tt.warmPrefixTarget, warmPrefixTargetSet: tt.warmPrefixTargetSet,
+				enablePrefixDelegation: tt.enablePrefixDelegation,
+			}
 			assert.Equal(t, tt.want, c.warmPrefixTargetDefined())
 		})
 	}
