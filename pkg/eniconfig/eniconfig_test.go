@@ -270,3 +270,87 @@ func TestGetEniConfigLabelDefCustom(t *testing.T) {
 	eniConfigLabelDef := getEniConfigLabelDef()
 	assert.Equal(t, eniConfigLabelDef, "k8s.amazonaws.com/eniConfigCustom")
 }
+
+func TestResolveNodeAddressingMode(t *testing.T) {
+	enabled, disabled := true, false
+
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		labels      map[string]string
+		noNode      bool
+		want        *bool
+		wantSource  string
+	}{
+		{
+			name: "no declaration leaves the cluster-wide value alone",
+			want: nil, wantSource: "",
+		},
+		{
+			name:   "label prefix",
+			labels: map[string]string{NodeAddressingModeKey: AddressingModePrefix},
+			want:   &enabled, wantSource: SourceLabel,
+		},
+		{
+			name:   "label secondary",
+			labels: map[string]string{NodeAddressingModeKey: AddressingModeSecondary},
+			want:   &disabled, wantSource: SourceLabel,
+		},
+		{
+			name:        "annotation prefix",
+			annotations: map[string]string{NodeAddressingModeKey: AddressingModePrefix},
+			want:        &enabled, wantSource: SourceAnnotation,
+		},
+		{
+			name:        "annotation wins over label",
+			annotations: map[string]string{NodeAddressingModeKey: AddressingModeSecondary},
+			labels:      map[string]string{NodeAddressingModeKey: AddressingModePrefix},
+			want:        &disabled, wantSource: SourceAnnotation,
+		},
+		{
+			name:        "unrecognised annotation falls through to the label",
+			annotations: map[string]string{NodeAddressingModeKey: "Prefix"},
+			labels:      map[string]string{NodeAddressingModeKey: AddressingModePrefix},
+			want:        &enabled, wantSource: SourceLabel,
+		},
+		{
+			name:   "unrecognised value is ignored",
+			labels: map[string]string{NodeAddressingModeKey: "prefixes-please"},
+			want:   nil, wantSource: "",
+		},
+		{
+			name:   "empty value is not a declaration",
+			labels: map[string]string{NodeAddressingModeKey: ""},
+			want:   nil, wantSource: "",
+		},
+		{
+			name:   "missing node is not a declaration",
+			noNode: true,
+			labels: map[string]string{NodeAddressingModeKey: AddressingModePrefix},
+			want:   nil, wantSource: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			k8sSchema := runtime.NewScheme()
+			clientgoscheme.AddToScheme(k8sSchema)
+			k8sClient := testclient.NewClientBuilder().WithScheme(k8sSchema).Build()
+
+			t.Setenv("MY_NODE_NAME", "test-node")
+			if !tt.noNode {
+				node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-node",
+					Labels:      tt.labels,
+					Annotations: tt.annotations,
+				}}
+				assert.NoError(t, k8sClient.Create(ctx, node))
+			}
+
+			got, source := ResolveNodeAddressingMode(ctx, k8sClient)
+			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.wantSource, source)
+		})
+	}
+}

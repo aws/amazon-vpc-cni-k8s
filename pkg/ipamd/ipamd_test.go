@@ -4609,3 +4609,109 @@ func TestInitHyperPodDisablesMultiNIC(t *testing.T) {
 	assert.False(t, c.enableMultiNICSupport)
 	assert.Equal(t, []bool{false, true, true}, c.markUnmanagedNetworkCards(efaOnly, enisByCard))
 }
+
+// A node that declares its own addressing mode keeps the CIDRs it was given.
+// Variant A is today's behaviour with no declaration, and is the regression
+// guard for the default path: the startup cleanup still unassigns the prefixes.
+// Variant B declares secondary mode on a node that nevertheless has prefixes
+// attached, which is what a launch-time prefix attachment looks like. Nothing
+// may be unassigned there, and gomock fails the test on any call to
+// DeallocPrefixAddresses because no expectation is declared for it.
+func TestNodeInitStartupCleanupRespectsPerNodeMode(t *testing.T) {
+	for _, tt := range []struct {
+		name                string
+		addressingModeSrc   string
+		wantPrefixUnassigns bool
+	}{
+		{name: "no declaration, prefixes are unassigned as before", addressingModeSrc: "", wantPrefixUnassigns: true},
+		{name: "declared per node, prefixes are adopted", addressingModeSrc: "label", wantPrefixUnassigns: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			m := setup(t)
+			defer m.ctrl.Finish()
+			ctx := context.Background()
+
+			mockContext := &IPAMContext{
+				awsClient:         m.awsutils,
+				k8sClient:         m.k8sClient,
+				maxIPsPerENI:      14,
+				maxPrefixesPerENI: 1,
+				maxENI:            4,
+				warmENITarget:     1,
+				numNetworkCards:   1,
+				primaryIP:         make(map[string]string),
+				terminating:       int32(0),
+				networkClient:     m.network,
+				dataStoreAccess: &datastore.DataStoreAccess{
+					DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NullCheckpoint{}, false, defaultNetworkCard)},
+				},
+				myNodeName:             myNodeName,
+				enablePrefixDelegation: false,
+				addressingModeSource:   tt.addressingModeSrc,
+				enableIPv4:             true,
+				withApiServer:          true,
+			}
+			mockContext.unmanagedENI = make([]int, mockContext.numNetworkCards)
+
+			eni1, eni2 := getDummyENIMetadataWithPrefix()
+			var cidrs []string
+			m.awsutils.EXPECT().GetENILimit().Return(4)
+			m.awsutils.EXPECT().GetENIIPv4Limit().Return(14)
+			m.awsutils.EXPECT().GetNetworkCards().Return([]vpc.NetworkCard{{NetworkCardIndex: 0, MaximumNetworkInterfaces: 4}}).AnyTimes()
+			m.awsutils.EXPECT().SetUnmanagedNetworkCards(gomock.Any()).AnyTimes()
+			m.awsutils.EXPECT().SetUnmanagedENIs(gomock.Any()).AnyTimes()
+			m.awsutils.EXPECT().IsUnmanagedNIC(gomock.Any()).Return(false).AnyTimes()
+			m.awsutils.EXPECT().IsUnmanagedENI(gomock.Any()).Return(false).AnyTimes()
+			m.awsutils.EXPECT().IsEfaOnlyENI(gomock.Any(), gomock.Any()).Return(false).AnyTimes()
+			m.awsutils.EXPECT().GetIPv4PrefixesFromEC2(gomock.Any(), gomock.Any()).AnyTimes().Return(eni1.IPv4Prefixes, nil)
+			m.awsutils.EXPECT().GetIPv4sFromEC2(gomock.Any(), gomock.Any()).AnyTimes().Return(eni1.IPv4Addresses, nil)
+			m.awsutils.EXPECT().TagENI(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+			m.network.EXPECT().GetRouteTableNumberForENI(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), false).AnyTimes()
+
+			primaryIP := net.ParseIP(ipaddr01)
+			m.awsutils.EXPECT().GetVPCIPv4CIDRs().AnyTimes().Return(cidrs, nil)
+			m.awsutils.EXPECT().GetPrimaryENImac().Return("")
+			m.network.EXPECT().SetupHostNetwork(cidrs, "", &primaryIP, false, false).Return(nil)
+			m.network.EXPECT().CleanUpStaleAWSChains(true, false).Return(nil)
+			m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
+			m.awsutils.EXPECT().RefreshSGIDs(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+			m.awsutils.EXPECT().GetLocalIPv4().Return(primaryIP).AnyTimes()
+			m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, defaultNetworkCard, secSubnet, maxENIPerNIC, false, gomock.Any(), gomock.Any()).AnyTimes()
+
+			var rules []netlink.Rule
+			m.network.EXPECT().GetRuleList(false).Return(rules, nil).AnyTimes()
+			m.network.EXPECT().UpdateRuleListBySrc(gomock.Any(), gomock.Any()).AnyTimes()
+			m.network.EXPECT().GetExternalServiceCIDRs().Return(nil).AnyTimes()
+			m.network.EXPECT().UpdateExternalServiceIpRules(gomock.Any(), gomock.Any()).AnyTimes()
+
+			resp := awsutils.DescribeAllENIsResult{
+				ENIMetadata:             []awsutils.ENIMetadata{eni1, eni2},
+				TagMap:                  map[string]awsutils.TagMap{},
+				EFAENIs:                 make(map[string]bool),
+				EFAOnlyENIByNetworkCard: []string{""},
+				ENIsByNetworkCard:       [][]string{defaultNetworkCard: {eni1.ENIID, eni2.ENIID}},
+			}
+			m.awsutils.EXPECT().DescribeAllENIs(gomock.Any()).Return(resp, nil)
+			m.awsutils.EXPECT().SetEFAOnlyENIs(resp.EFAOnlyENIByNetworkCard).Times(1)
+
+			// maxPods 0 keeps the pool from ever looking too low, so the only AWS
+			// mutation this test can observe is the startup cleanup itself.
+			maxPods, _ := resource.ParseQuantity("0")
+			fakeNode := v1.Node{
+				TypeMeta:   metav1.TypeMeta{Kind: "Node"},
+				ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
+				Spec:       v1.NodeSpec{ProviderID: testNodeProviderID},
+				Status:     v1.NodeStatus{Capacity: v1.ResourceList{v1.ResourcePods: maxPods}},
+			}
+			m.k8sClient.Create(ctx, &fakeNode)
+			m.awsutils.EXPECT().InitHyperPodFromProviderID(gomock.Any(), testNodeProviderID).Return(nil).Times(1)
+
+			if tt.wantPrefixUnassigns {
+				m.awsutils.EXPECT().DeallocPrefixAddresses(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).MinTimes(1)
+			}
+
+			os.Setenv("MY_NODE_NAME", myNodeName)
+			assert.NoError(t, mockContext.nodeInit(ctx))
+		})
+	}
+}

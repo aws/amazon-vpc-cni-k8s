@@ -249,6 +249,7 @@ type IPAMContext struct {
 	enablePodENI              bool
 	myNodeName                string
 	enablePrefixDelegation    bool
+	addressingModeSource      string
 	lastInsufficientCidrError time.Time
 	enableManageUntaggedMode  bool
 	enablePodIPAnnotation     bool
@@ -426,6 +427,14 @@ func New(ctx context.Context, k8sClient client.Client, withApiServer bool) (*IPA
 	c.manageENIsNonScheduleable = ManageENIsOnNonSchedulableNode()
 	c.useSubnetDiscovery = UseSubnetDiscovery()
 	c.enablePrefixDelegation = usePrefixDelegation()
+	if withApiServer {
+		if mode, source := eniconfig.ResolveNodeAddressingMode(ctx, c.k8sClient); mode != nil {
+			log.Infof("Node declares addressing mode via %s: prefix delegation %t, overriding %s=%t",
+				source, *mode, envEnableIpv4PrefixDelegation, c.enablePrefixDelegation)
+			c.enablePrefixDelegation = *mode
+			c.addressingModeSource = source
+		}
+	}
 	c.enableIPv4 = isIPv4Enabled()
 	c.enableIPv6 = isIPv6Enabled()
 	c.disableENIProvisioning = disableENIProvisioning()
@@ -619,7 +628,9 @@ func (c *IPAMContext) nodeInit(ctx context.Context) error {
 	c.checkAndHandleAllENIExclusion(ctx)
 
 	if c.enableIPv4 {
-		if c.enablePrefixDelegation {
+		if c.addressingModeSource != "" {
+			log.Infof("Skipping startup CIDR cleanup: addressing mode declared by node %s", c.addressingModeSource)
+		} else if c.enablePrefixDelegation {
 			// During upgrade or if prefix delgation knob is disabled to enabled then we
 			// might have secondary IPs attached to ENIs so doing a cleanup if not used before moving on
 			c.tryUnassignIPsFromENIs(ctx)
