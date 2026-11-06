@@ -157,8 +157,7 @@ func ResolveNodeAddressingMode(ctx context.Context, k8sClient client.Client) (*b
 }
 
 // parseAddressingMode maps a declared mode onto the prefix delegation boolean.
-// An empty value is "not declared"; any other unrecognised value is ignored so
-// a typo degrades to the cluster-wide default rather than to an unintended mode.
+// An empty value is "not declared"; any other unrecognised value is ignored.
 func parseAddressingMode(value string) (*bool, bool) {
 	switch value {
 	case "":

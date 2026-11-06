@@ -49,6 +49,7 @@ import (
 	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	mock_awsutils "github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/mocks"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	mock_eniconfig "github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
@@ -4623,13 +4624,6 @@ func TestInitHyperPodDisablesMultiNIC(t *testing.T) {
 	assert.Equal(t, []bool{false, true, true}, c.markUnmanagedNetworkCards(efaOnly, enisByCard))
 }
 
-// A node that declares its own addressing mode keeps the CIDRs it was given.
-// Variant A is today's behaviour with no declaration, and is the regression
-// guard for the default path: the startup cleanup still unassigns the prefixes.
-// Variant B declares secondary mode on a node that nevertheless has prefixes
-// attached, which is what a launch-time prefix attachment looks like. Nothing
-// may be unassigned there, and gomock fails the test on any call to
-// DeallocPrefixAddresses because no expectation is declared for it.
 func TestNodeInitStartupCleanupRespectsPerNodeMode(t *testing.T) {
 	for _, tt := range []struct {
 		name                string
@@ -4707,8 +4701,6 @@ func TestNodeInitStartupCleanupRespectsPerNodeMode(t *testing.T) {
 			m.awsutils.EXPECT().DescribeAllENIs(gomock.Any()).Return(resp, nil)
 			m.awsutils.EXPECT().SetEFAOnlyENIs(resp.EFAOnlyENIByNetworkCard).Times(1)
 
-			// maxPods 0 keeps the pool from ever looking too low, so the only AWS
-			// mutation this test can observe is the startup cleanup itself.
 			maxPods, _ := resource.ParseQuantity("0")
 			fakeNode := v1.Node{
 				TypeMeta:   metav1.TypeMeta{Kind: "Node"},
@@ -4815,4 +4807,169 @@ func TestDeclaredPrefixNodeKeepsLaunchAttachedPrefixCount(t *testing.T) {
 		assert.Equal(t, 3, c.computeExtraPrefixesOverWarmTarget(defaultNetworkCard))
 		assert.True(t, c.isDatastorePoolTooHigh(stats, defaultNetworkCard))
 	})
+}
+
+func TestApplyNodeAddressingMode(t *testing.T) {
+	enabled, disabled := true, false
+
+	for _, tt := range []struct {
+		name       string
+		enableIPv6 bool
+		envPD      bool
+		mode       *bool
+		source     string
+		wantPD     bool
+		wantSource string
+	}{
+		{name: "no declaration leaves both alone", envPD: false, mode: nil, source: "", wantPD: false, wantSource: ""},
+		{name: "prefix on an ipv4 node", envPD: false, mode: &enabled, source: "label", wantPD: true, wantSource: "label"},
+		{name: "secondary on an ipv4 node", envPD: true, mode: &disabled, source: "annotation", wantPD: false, wantSource: "annotation"},
+		{name: "redundant prefix does not flip the mode", envPD: true, mode: &enabled, source: "label", wantPD: true, wantSource: "label"},
+		{name: "redundant secondary does not flip the mode", envPD: false, mode: &disabled, source: "label", wantPD: false, wantSource: "label"},
+		{name: "prefix on an ipv6 node still applies", enableIPv6: true, envPD: true, mode: &enabled, source: "label", wantPD: true, wantSource: "label"},
+		{name: "secondary on an ipv6 node is refused", enableIPv6: true, envPD: true, mode: &disabled, source: "label", wantPD: true, wantSource: ""},
+		{name: "secondary on an ipv6 node does not rescue a bad env", enableIPv6: true, envPD: false, mode: &disabled, source: "label", wantPD: false, wantSource: ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &IPAMContext{enableIPv6: tt.enableIPv6, enablePrefixDelegation: tt.envPD}
+			c.applyNodeAddressingMode(tt.mode, tt.source)
+			assert.Equal(t, tt.wantPD, c.enablePrefixDelegation)
+			assert.Equal(t, tt.wantSource, c.addressingModeSource)
+		})
+	}
+}
+
+func TestApplyNodeAddressingModeIsIdempotent(t *testing.T) {
+	enabled := true
+	c := &IPAMContext{enablePrefixDelegation: true}
+
+	c.applyNodeAddressingMode(&enabled, "label")
+	firstPD, firstSource := c.enablePrefixDelegation, c.addressingModeSource
+	c.applyNodeAddressingMode(&enabled, "label")
+
+	assert.Equal(t, firstPD, c.enablePrefixDelegation)
+	assert.Equal(t, firstSource, c.addressingModeSource)
+	assert.True(t, c.enablePrefixDelegation)
+	assert.Equal(t, "label", c.addressingModeSource)
+}
+
+func TestRedundantPrefixDeclarationStillSkipsStartupCleanup(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+	ctx := context.Background()
+
+	mockContext := &IPAMContext{
+		awsClient:         m.awsutils,
+		k8sClient:         m.k8sClient,
+		maxIPsPerENI:      224,
+		maxPrefixesPerENI: 14,
+		maxENI:            4,
+		warmENITarget:     1,
+		numNetworkCards:   1,
+		primaryIP:         make(map[string]string),
+		terminating:       int32(0),
+		networkClient:     m.network,
+		dataStoreAccess: &datastore.DataStoreAccess{
+			DataStores: []*datastore.DataStore{datastore.NewDataStore(log, datastore.NullCheckpoint{}, true, defaultNetworkCard)},
+		},
+		myNodeName:             myNodeName,
+		enablePrefixDelegation: true,
+		addressingModeSource:   "label",
+		enableIPv4:             true,
+		withApiServer:          true,
+	}
+	mockContext.unmanagedENI = make([]int, mockContext.numNetworkCards)
+
+	eni1, eni2 := getDummyENIMetadataWithPrefix()
+	var cidrs []string
+	m.awsutils.EXPECT().GetENILimit().Return(4)
+	m.awsutils.EXPECT().GetENIIPv4Limit().Return(14)
+	m.awsutils.EXPECT().GetNetworkCards().Return([]vpc.NetworkCard{{NetworkCardIndex: 0, MaximumNetworkInterfaces: 4}}).AnyTimes()
+	m.awsutils.EXPECT().SetUnmanagedNetworkCards(gomock.Any()).AnyTimes()
+	m.awsutils.EXPECT().SetUnmanagedENIs(gomock.Any()).AnyTimes()
+	m.awsutils.EXPECT().IsUnmanagedNIC(gomock.Any()).Return(false).AnyTimes()
+	m.awsutils.EXPECT().IsUnmanagedENI(gomock.Any()).Return(false).AnyTimes()
+	m.awsutils.EXPECT().IsEfaOnlyENI(gomock.Any(), gomock.Any()).Return(false).AnyTimes()
+	m.awsutils.EXPECT().GetIPv4PrefixesFromEC2(gomock.Any(), gomock.Any()).AnyTimes().Return(eni1.IPv4Prefixes, nil)
+	m.awsutils.EXPECT().GetIPv4sFromEC2(gomock.Any(), gomock.Any()).AnyTimes().Return(eni1.IPv4Addresses, nil)
+	m.awsutils.EXPECT().TagENI(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	m.network.EXPECT().GetRouteTableNumberForENI(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), false).AnyTimes()
+
+	primaryIP := net.ParseIP(ipaddr01)
+	m.awsutils.EXPECT().GetVPCIPv4CIDRs().AnyTimes().Return(cidrs, nil)
+	m.awsutils.EXPECT().GetPrimaryENImac().Return("")
+	m.network.EXPECT().SetupHostNetwork(cidrs, "", &primaryIP, false, false).Return(nil)
+	m.network.EXPECT().CleanUpStaleAWSChains(true, false).Return(nil)
+	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
+	m.awsutils.EXPECT().RefreshSGIDs(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+	m.awsutils.EXPECT().GetLocalIPv4().Return(primaryIP).AnyTimes()
+	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, defaultNetworkCard, secSubnet, maxENIPerNIC, false, gomock.Any(), gomock.Any()).AnyTimes()
+
+	var rules []netlink.Rule
+	m.network.EXPECT().GetRuleList(false).Return(rules, nil).AnyTimes()
+	m.network.EXPECT().UpdateRuleListBySrc(gomock.Any(), gomock.Any()).AnyTimes()
+	m.network.EXPECT().GetExternalServiceCIDRs().Return(nil).AnyTimes()
+	m.network.EXPECT().UpdateExternalServiceIpRules(gomock.Any(), gomock.Any()).AnyTimes()
+
+	resp := awsutils.DescribeAllENIsResult{
+		ENIMetadata:             []awsutils.ENIMetadata{eni1, eni2},
+		TagMap:                  map[string]awsutils.TagMap{},
+		EFAENIs:                 make(map[string]bool),
+		EFAOnlyENIByNetworkCard: []string{""},
+		ENIsByNetworkCard:       [][]string{defaultNetworkCard: {eni1.ENIID, eni2.ENIID}},
+	}
+	m.awsutils.EXPECT().DescribeAllENIs(gomock.Any()).Return(resp, nil)
+	m.awsutils.EXPECT().SetEFAOnlyENIs(resp.EFAOnlyENIByNetworkCard).Times(1)
+
+	maxPods, _ := resource.ParseQuantity("0")
+	fakeNode := v1.Node{
+		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
+		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
+		Spec:       v1.NodeSpec{ProviderID: testNodeProviderID},
+		Status:     v1.NodeStatus{Capacity: v1.ResourceList{v1.ResourcePods: maxPods}},
+	}
+	m.k8sClient.Create(ctx, &fakeNode)
+	m.awsutils.EXPECT().InitHyperPodFromProviderID(gomock.Any(), testNodeProviderID).Return(nil).Times(1)
+
+	os.Setenv("MY_NODE_NAME", myNodeName)
+	assert.NoError(t, mockContext.nodeInit(ctx))
+	assert.True(t, mockContext.enablePrefixDelegation)
+	assert.Equal(t, "label", mockContext.addressingModeSource)
+}
+
+func TestSetAPIServerConnectivityDoesNotResolveAddressingMode(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+	ctx := context.Background()
+
+	nodeMaxPods, _ := resource.ParseQuantity("58")
+	node := v1.Node{
+		TypeMeta: metav1.TypeMeta{Kind: "Node"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        myNodeName,
+			Labels:      map[string]string{eniconfig.NodeAddressingModeKey: eniconfig.AddressingModePrefix},
+			Annotations: map[string]string{eniconfig.NodeAddressingModeKey: eniconfig.AddressingModePrefix},
+		},
+		Spec:   v1.NodeSpec{ProviderID: testNodeProviderID},
+		Status: v1.NodeStatus{Capacity: v1.ResourceList{v1.ResourcePods: nodeMaxPods}},
+	}
+	assert.NoError(t, m.k8sClient.Create(ctx, &node))
+	m.awsutils.EXPECT().InitHyperPodFromProviderID(gomock.Any(), testNodeProviderID).Return(nil).AnyTimes()
+	m.awsutils.EXPECT().IsHyperPod().Return(false).AnyTimes()
+
+	c := &IPAMContext{
+		awsClient:              m.awsutils,
+		k8sClient:              m.k8sClient,
+		withApiServer:          false,
+		enablePrefixDelegation: false,
+		addressingModeSource:   "",
+		maxPods:                17,
+	}
+
+	os.Setenv("MY_NODE_NAME", myNodeName)
+	c.SetAPIServerConnectivity(true)
+
+	assert.True(t, c.withApiServer)
+	assert.False(t, c.enablePrefixDelegation)
+	assert.Equal(t, "", c.addressingModeSource)
 }

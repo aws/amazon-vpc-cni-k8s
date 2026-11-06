@@ -2346,10 +2346,6 @@ func TestDataStore_FindFreeableCidrs(t *testing.T) {
 	assert.Len(t, cidrs, 1)
 }
 
-// A node can hold both shapes at once: a /28 attached at launch plus /32s added
-// later, or leftovers from a prefix delegation toggle. The excess count that
-// drives the release path comes from GetIPStats, which counts one shape only, so
-// FindFreeableCidrs must offer only that shape.
 func TestFindFreeableCidrsOnlyOffersTheModesOwnShape(t *testing.T) {
 	prefix := net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.CIDRMask(28, 32)}
 	secondary := net.IPNet{IP: net.ParseIP("10.0.1.1"), Mask: net.CIDRMask(32, 32)}
@@ -2376,8 +2372,6 @@ func TestFindFreeableCidrsOnlyOffersTheModesOwnShape(t *testing.T) {
 	}
 }
 
-// Nothing in use is still nothing to free, and an in-use CIDR of the mode's own
-// shape stays out of the freeable set.
 func TestFindFreeableCidrsSkipsInUseCidrs(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
 	assert.NoError(t, ds.AddENI("eni-1", 1, true, false, false, 0, ""))
