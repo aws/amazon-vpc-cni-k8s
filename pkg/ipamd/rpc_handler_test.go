@@ -616,6 +616,7 @@ func TestServer_GetNetworkPolicyConfigs(t *testing.T) {
 				networkPolicyMode:     "standard",
 				enableMultiNICSupport: true,
 				enableIPv6:            tt.enableIPv6,
+				vethPrefix:            "veth",
 			}
 			// Only the branch matching enableIPv6 is exercised by the handler.
 			if tt.enableIPv6 {
@@ -638,6 +639,7 @@ func TestServer_GetNetworkPolicyConfigs(t *testing.T) {
 			assert.Equal(t, tt.wantNodeIPv6, resp.NodeIPv6)
 			assert.Equal(t, "i-0123456789abcdef0", resp.InstanceID)
 			assert.Equal(t, "us-west-2", resp.Region)
+			assert.Equal(t, "veth", resp.VethPrefix)
 		})
 	}
 }
