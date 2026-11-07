@@ -238,6 +238,7 @@ type IPAMContext struct {
 	warmIPTarget         int
 	minimumIPTarget      int
 	warmPrefixTarget     int
+	warmPrefixTargetSet  bool
 	primaryIP            map[string]string // primaryIP is a map from ENI ID to primary IP of that ENI
 	lastNodeIPPoolAction time.Time
 	lastDecreaseIPPool   time.Time
@@ -249,6 +250,7 @@ type IPAMContext struct {
 	enablePodENI              bool
 	myNodeName                string
 	enablePrefixDelegation    bool
+	addressingModeSource      string
 	lastInsufficientCidrError time.Time
 	enableManageUntaggedMode  bool
 	enablePodIPAnnotation     bool
@@ -293,6 +295,24 @@ func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap) {
 	}
 
 	c.awsClient.SetUnmanagedENIs(unmanagedENIlist)
+}
+
+// applyNodeAddressingMode adopts a mode declared by the node, if there is one and
+// the node's IP family can run it. Requires enableIPv6 to be set.
+func (c *IPAMContext) applyNodeAddressingMode(mode *bool, source string) {
+	if mode == nil {
+		return
+	}
+	if c.enableIPv6 && !*mode {
+		log.Warnf("Ignoring %s=%s declared by node %s: IPv6 is supported only in prefix delegation mode, keeping %s=%t",
+			eniconfig.NodeAddressingModeKey, eniconfig.AddressingModeSecondary, source,
+			envEnableIpv4PrefixDelegation, c.enablePrefixDelegation)
+		return
+	}
+	log.Infof("Node declares addressing mode via %s: prefix delegation %t, overriding %s=%t",
+		source, *mode, envEnableIpv4PrefixDelegation, c.enablePrefixDelegation)
+	c.enablePrefixDelegation = *mode
+	c.addressingModeSource = source
 }
 
 // initHyperPod enables SageMaker attach delegation on HyperPod nodes. SageMaker can only attach ENIs to network card 0
@@ -428,6 +448,12 @@ func New(ctx context.Context, k8sClient client.Client, withApiServer bool) (*IPA
 	c.enablePrefixDelegation = usePrefixDelegation()
 	c.enableIPv4 = isIPv4Enabled()
 	c.enableIPv6 = isIPv6Enabled()
+	if withApiServer {
+		c.applyNodeAddressingMode(eniconfig.ResolveNodeAddressingMode(ctx, c.k8sClient))
+	} else {
+		log.Warnf("No API server connectivity at startup, so %s was not read on this node; keeping %s=%t for its lifetime",
+			eniconfig.NodeAddressingModeKey, envEnableIpv4PrefixDelegation, c.enablePrefixDelegation)
+	}
 	c.disableENIProvisioning = disableENIProvisioning()
 	client, err := awsutils.New(ctx, c.useSubnetDiscovery, c.useCustomNetworking, disableLeakedENICleanup(), c.enableIPv4, c.enableIPv6)
 	if err != nil {
@@ -441,7 +467,7 @@ func New(ctx context.Context, k8sClient client.Client, withApiServer bool) (*IPA
 	c.warmENITarget = getWarmENITarget()
 	c.warmIPTarget = getWarmIPTarget()
 	c.minimumIPTarget = getMinimumIPTarget()
-	c.warmPrefixTarget = getWarmPrefixTarget()
+	c.warmPrefixTarget, c.warmPrefixTargetSet = getWarmPrefixTarget()
 	c.enablePodENI = EnablePodENI()
 	c.enableManageUntaggedMode = enableManageUntaggedMode()
 	c.enablePodIPAnnotation = EnablePodIPAnnotation()
@@ -619,7 +645,9 @@ func (c *IPAMContext) nodeInit(ctx context.Context) error {
 	c.checkAndHandleAllENIExclusion(ctx)
 
 	if c.enableIPv4 {
-		if c.enablePrefixDelegation {
+		if c.addressingModeSource != "" {
+			log.Infof("Skipping startup CIDR cleanup: addressing mode declared by node %s", c.addressingModeSource)
+		} else if c.enablePrefixDelegation {
 			// During upgrade or if prefix delgation knob is disabled to enabled then we
 			// might have secondary IPs attached to ENIs so doing a cleanup if not used before moving on
 			c.tryUnassignIPsFromENIs(ctx)
@@ -1495,21 +1523,25 @@ func getWarmENITarget() int {
 	return defaultWarmENITarget
 }
 
-func getWarmPrefixTarget() int {
+// getWarmPrefixTarget returns the configured WARM_PREFIX_TARGET and whether it
+// was explicitly set to a usable value. An absent, unparseable or negative value
+// reports false, so a caller can tell an operator who asked for zero warm
+// prefixes apart from one who said nothing at all.
+func getWarmPrefixTarget() (int, bool) {
 	inputStr, found := os.LookupEnv(envWarmPrefixTarget)
 
 	if !found {
-		return defaultWarmPrefixTarget
+		return defaultWarmPrefixTarget, false
 	}
 
 	if input, err := strconv.Atoi(inputStr); err == nil {
 		if input < 0 {
-			return defaultWarmPrefixTarget
+			return defaultWarmPrefixTarget, false
 		}
 		log.Debugf("Using WARM_PREFIX_TARGET %v", input)
-		return input
+		return input, true
 	}
-	return defaultWarmPrefixTarget
+	return defaultWarmPrefixTarget, false
 }
 
 // logPoolStats logs usage information for allocated addresses/prefixes.
@@ -2746,6 +2778,9 @@ func (c *IPAMContext) isDatastorePoolTooHigh(stats *datastore.DataStoreStats, ne
 }
 
 func (c *IPAMContext) warmPrefixTargetDefined() bool {
+	if c.addressingModeSource != "" && !c.warmPrefixTargetSet {
+		return false
+	}
 	return c.warmPrefixTarget >= defaultWarmPrefixTarget && c.enablePrefixDelegation
 }
 

@@ -1571,6 +1571,9 @@ func (ds *DataStore) FindFreeableCidrs(eniID string) []CidrInfo {
 
 	var freeable []CidrInfo
 	for _, assignedaddr := range eni.AvailableIPv4Cidrs {
+		if (ds.isPDEnabled && !assignedaddr.IsPrefix) || (!ds.isPDEnabled && assignedaddr.IsPrefix) {
+			continue
+		}
 		if assignedaddr.AssignedIPAddressesInCidr() == 0 {
 			tempFreeable := CidrInfo{
 				Cidr:          assignedaddr.Cidr,

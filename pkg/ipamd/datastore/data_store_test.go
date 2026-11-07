@@ -2345,3 +2345,53 @@ func TestDataStore_FindFreeableCidrs(t *testing.T) {
 	cidrs := ds.FindFreeableCidrs(eniID)
 	assert.Len(t, cidrs, 1)
 }
+
+func TestFindFreeableCidrsOnlyOffersTheModesOwnShape(t *testing.T) {
+	prefix := net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.CIDRMask(28, 32)}
+	secondary := net.IPNet{IP: net.ParseIP("10.0.1.1"), Mask: net.CIDRMask(32, 32)}
+
+	for _, tt := range []struct {
+		name      string
+		pdEnabled bool
+		want      net.IPNet
+	}{
+		{name: "prefix mode offers the prefix", pdEnabled: true, want: prefix},
+		{name: "secondary mode offers the secondary IP", pdEnabled: false, want: secondary},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ds := NewDataStore(Testlog, NullCheckpoint{}, tt.pdEnabled, defaultNetworkCard)
+			assert.NoError(t, ds.AddENI("eni-1", 1, true, false, false, 0, ""))
+			assert.NoError(t, ds.AddIPv4CidrToStore("eni-1", prefix, true))
+			assert.NoError(t, ds.AddIPv4CidrToStore("eni-1", secondary, false))
+
+			freeable := ds.FindFreeableCidrs("eni-1")
+			assert.Equal(t, 1, len(freeable))
+			assert.Equal(t, tt.want.String(), freeable[0].Cidr.String())
+			assert.Equal(t, tt.pdEnabled, freeable[0].IsPrefix)
+		})
+	}
+}
+
+func TestFindFreeableCidrsSkipsInUseCidrs(t *testing.T) {
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
+	assert.NoError(t, ds.AddENI("eni-1", 1, true, false, false, 0, ""))
+	first := net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.CIDRMask(28, 32)}
+	second := net.IPNet{IP: net.ParseIP("10.0.0.16"), Mask: net.CIDRMask(28, 32)}
+	assert.NoError(t, ds.AddIPv4CidrToStore("eni-1", first, true))
+	assert.NoError(t, ds.AddIPv4CidrToStore("eni-1", second, true))
+
+	assigned, _, _, err := ds.AssignPodIPv4Address(
+		IPAMKey{"net0", "sandbox-1", "eth0"},
+		IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "pod-1"})
+	assert.NoError(t, err)
+
+	inUse, free := first, second
+	if second.Contains(net.ParseIP(assigned)) {
+		inUse, free = second, first
+	}
+
+	freeable := ds.FindFreeableCidrs("eni-1")
+	assert.Equal(t, 1, len(freeable))
+	assert.Equal(t, free.String(), freeable[0].Cidr.String())
+	assert.NotEqual(t, inUse.String(), freeable[0].Cidr.String())
+}
