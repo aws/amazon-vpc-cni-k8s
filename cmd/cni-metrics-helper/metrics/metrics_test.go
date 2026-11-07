@@ -104,7 +104,6 @@ func TestAPIServerMetric(t *testing.T) {
 	// verify apiserver_request_latencies_bucket
 	assert.Equal(t, "awsAPILatency", actions[0].cwMetricName)
 	assert.Equal(t, 1.0, actions[0].data.curSingleDataPoint)
-	assert.Equal(t, 0.0, actions[0].data.lastSingleDataPoint)
 }
 
 func TestAPIServerMetricwithPDenabled(t *testing.T) {
