@@ -15,6 +15,7 @@ package ipamd
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"testing"
@@ -938,4 +939,51 @@ func TestServer_DelNetwork_PodNotFound(t *testing.T) {
 	// The fix in GetPod() returns raw Kubernetes errors so k8serror.IsNotFound() works correctly.
 	assert.NoError(t, err)
 	assert.True(t, resp.Success, "DelNetwork should return success when pod is not found")
+}
+
+func TestServer_DelNetwork_ForceRemovedENI(t *testing.T) {
+	for _, pd := range []bool{false, true} {
+		t.Run(fmt.Sprintf("pd=%v", pd), func(t *testing.T) {
+			m := setup(t)
+			defer m.ctrl.Finish()
+
+			ds := datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), pd, defaultNetworkCard)
+			cidr := net.IPNet{IP: net.ParseIP("10.0.0.5"), Mask: net.IPv4Mask(255, 255, 255, 255)}
+			if pd {
+				_, prefix, _ := net.ParseCIDR("10.0.0.0/28")
+				cidr = *prefix
+			}
+			require.NoError(t, ds.AddENI(secENIid, 1, false, false, false, 3, ""))
+			require.NoError(t, ds.AddIPv4CidrToStore(secENIid, cidr, pd))
+			key := datastore.IPAMKey{NetworkName: "net0", ContainerID: "cid", IfName: "eth0"}
+			ip, _, _, err := ds.AssignPodIPv4Address(key, datastore.IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "victim"})
+			require.NoError(t, err)
+			require.NoError(t, ds.RemoveENIFromDataStore(secENIid, true))
+
+			rpcServer := server{
+				version: "1.2.3",
+				ipamContext: &IPAMContext{
+					awsClient:              m.awsutils,
+					networkClient:          m.network,
+					dataStoreAccess:        &datastore.DataStoreAccess{DataStores: []*datastore.DataStore{ds}},
+					enableIPv4:             true,
+					enablePrefixDelegation: pd,
+				},
+			}
+			resp, err := rpcServer.DelNetwork(context.TODO(), &pb.DelNetworkRequest{
+				ClientVersion:     "1.2.3",
+				NetworkName:       key.NetworkName,
+				ContainerID:       key.ContainerID,
+				IfName:            key.IfName,
+				K8S_POD_NAME:      "victim",
+				K8S_POD_NAMESPACE: "default",
+			})
+			assert.NoError(t, err)
+			assert.True(t, resp.Success)
+			require.Len(t, resp.IPAllocationMetadata, 1)
+			assert.Equal(t, ip, resp.IPAllocationMetadata[0].IPv4Addr)
+			assert.Equal(t, int32(1), resp.IPAllocationMetadata[0].DeviceNumber)
+			assert.Equal(t, int32(3), resp.IPAllocationMetadata[0].RouteTableId)
+		})
+	}
 }

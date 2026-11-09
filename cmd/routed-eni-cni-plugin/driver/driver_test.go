@@ -313,6 +313,8 @@ func Test_linuxNetwork_SetupPodNetwork(t *testing.T) {
 
 			netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
 			netLink.EXPECT().NewRule().DoAndReturn(func() *netlink.Rule { return netlink.NewRule() }).AnyTimes()
+			// Each IP-based route setup lists routes once before its RouteReplace.
+			netLink.EXPECT().RouteList(nil, gomock.Any()).Return(nil, nil).Times(len(tt.fields.routeReplaceCalls))
 			for _, call := range tt.fields.linkByNameCalls {
 				netLink.EXPECT().LinkByName(call.linkName).Return(call.link, call.err)
 			}
@@ -630,6 +632,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 		linkDelCalls       []linkDelCall
 		linkSetupCalls     []linkSetupCall
 		routeReplaceCalls  []routeReplaceCall
+		routeListCalls     int
 		ruleAddCalls       []ruleAddCall
 		ruleDelCalls       []ruleDelCall
 		withNetNSPathCalls []withNetNSPathCall
@@ -860,6 +863,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 		{
 			name: "successfully setup pod network - traffic enforced with standard mode",
 			fields: fields{
+				routeListCalls: 1,
 				linkByNameCalls: []linkByNameCall{
 					{
 						linkName: "eni8ea2c11fe35",
@@ -962,6 +966,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 		{
 			name: "successfully setup v6 pod network - traffic enforced with standard mode",
 			fields: fields{
+				routeListCalls: 1,
 				linkByNameCalls: []linkByNameCall{
 					{
 						linkName: "eni8ea2c11fe35",
@@ -1182,6 +1187,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 		{
 			name: "failed to setup IP based container route",
 			fields: fields{
+				routeListCalls: 1,
 				linkByNameCalls: []linkByNameCall{
 					{
 						linkName: "eni8ea2c11fe35",
@@ -1435,6 +1441,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 
 			netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
 			netLink.EXPECT().NewRule().DoAndReturn(func() *netlink.Rule { return netlink.NewRule() }).AnyTimes()
+			netLink.EXPECT().RouteList(nil, gomock.Any()).Return(nil, nil).Times(tt.fields.routeListCalls)
 			for _, call := range tt.fields.linkByNameCalls {
 				netLink.EXPECT().LinkByName(call.linkName).Return(call.link, call.err)
 			}
@@ -4491,7 +4498,13 @@ func Test_linuxNetwork_setupIPBasedContainerRouteRules(t *testing.T) {
 		rule *netlink.Rule
 		err  error
 	}
+	type linkByIndexCall struct {
+		index int
+		link  netlink.Link
+	}
 	type fields struct {
+		existingRoutes    []netlink.Route
+		linkByIndexCalls  []linkByIndexCall
 		routeReplaceCalls []routeReplaceCall
 		ruleAddCalls      []ruleAddCall
 	}
@@ -4749,6 +4762,21 @@ func Test_linuxNetwork_setupIPBasedContainerRouteRules(t *testing.T) {
 			},
 			wantErr: errors.New("failed to setup fromContainer rule, containerAddr=192.168.100.42/32, rtTable=101: some error"),
 		},
+		{
+			name: "refuses an address still routed to another pod's hostVeth",
+			fields: fields{
+				existingRoutes: []netlink.Route{{LinkIndex: 9, Dst: containerAddr}},
+				linkByIndexCalls: []linkByIndexCall{
+					{index: 9, link: &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Name: "enivictim", Index: 9}}},
+				},
+			},
+			args: args{
+				hostVethAttrs: hostVethAttrs,
+				containerAddr: containerAddr,
+				rtTable:       101,
+			},
+			wantErr: errors.New("containerAddr=192.168.100.42/32 is still routed to hostVeth enivictim of another pod, refusing to take it over"),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -4760,6 +4788,10 @@ func Test_linuxNetwork_setupIPBasedContainerRouteRules(t *testing.T) {
 
 			netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
 			netLink.EXPECT().NewRule().DoAndReturn(func() *netlink.Rule { return netlink.NewRule() }).AnyTimes()
+			netLink.EXPECT().RouteList(nil, gomock.Any()).Return(tt.fields.existingRoutes, nil)
+			for _, call := range tt.fields.linkByIndexCalls {
+				netLink.EXPECT().LinkByIndex(call.index).Return(call.link, nil)
+			}
 			for _, call := range tt.fields.routeReplaceCalls {
 				netLink.EXPECT().RouteReplace(call.route).Return(call.err)
 			}
@@ -5891,4 +5923,134 @@ func TestHostVethAlias_FitsIfAlias(t *testing.T) {
 	assert.Less(t, len(alias), ifAliasMax, "the stamp must fit IFLA_IFALIAS")
 	assert.Equal(t, len(hostVethAlias("ns/pod")), len(alias), "the stamp must be fixed width")
 	assert.NotEqual(t, hostVethAlias("a/b"), hostVethAlias("a/c"), "distinct pods must stamp differently")
+}
+
+func Test_linuxNetwork_ensureAddrNotRoutedToOtherPod(t *testing.T) {
+	hostVethAttrs := netlink.LinkAttrs{Name: "eninew", Index: 7}
+	containerAddr := &net.IPNet{IP: net.ParseIP("192.168.100.42"), Mask: net.CIDRMask(32, 32)}
+	containerV6Addr := &net.IPNet{IP: net.ParseIP("2600::2"), Mask: net.CIDRMask(128, 128)}
+	routeTo := func(addr *net.IPNet, index int) netlink.Route {
+		return netlink.Route{LinkIndex: index, Dst: addr, Table: unix.RT_TABLE_MAIN}
+	}
+	veth := func(index int, alias string) netlink.Link {
+		return &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Name: fmt.Sprintf("eniold%d", index), Index: index, Alias: alias}}
+	}
+	type linkByIndexCall struct {
+		index int
+		link  netlink.Link
+		err   error
+	}
+	tests := []struct {
+		name             string
+		containerAddr    *net.IPNet
+		routes           []netlink.Route
+		routeListErr     error
+		linkByIndexCalls []linkByIndexCall
+		wantErr          string
+	}{
+		{
+			name:          "no existing route",
+			containerAddr: containerAddr,
+		},
+		{
+			name:          "route already on this hostVeth",
+			containerAddr: containerAddr,
+			routes:        []netlink.Route{routeTo(containerAddr, 7)},
+		},
+		{
+			name:          "route to another pod's live hostVeth",
+			containerAddr: containerAddr,
+			// The kernel reports IPv4 routes in 4-byte form.
+			routes: []netlink.Route{routeTo(&net.IPNet{IP: containerAddr.IP.To4(), Mask: containerAddr.Mask}, 9)},
+			linkByIndexCalls: []linkByIndexCall{
+				{index: 9, link: veth(9, hostVethAlias("default/victim"))},
+			},
+			wantErr: "containerAddr=192.168.100.42/32 is still routed to hostVeth eniold9 of another pod, refusing to take it over",
+		},
+		{
+			name:          "route to an unstamped live hostVeth",
+			containerAddr: containerAddr,
+			routes:        []netlink.Route{routeTo(containerAddr, 9)},
+			linkByIndexCalls: []linkByIndexCall{
+				{index: 9, link: veth(9, "")},
+			},
+			wantErr: "containerAddr=192.168.100.42/32 is still routed to hostVeth eniold9 of another pod, refusing to take it over",
+		},
+		{
+			name:          "route to a hostVeth that no longer exists",
+			containerAddr: containerAddr,
+			routes:        []netlink.Route{routeTo(containerAddr, 9)},
+			linkByIndexCalls: []linkByIndexCall{
+				{index: 9, err: netlink.LinkNotFoundError{}},
+			},
+		},
+		{
+			name:          "route to a non-veth link",
+			containerAddr: containerAddr,
+			routes:        []netlink.Route{routeTo(containerAddr, 2)},
+			linkByIndexCalls: []linkByIndexCall{
+				{index: 2, link: &netlink.Device{LinkAttrs: netlink.LinkAttrs{Name: "eth1", Index: 2}}},
+			},
+		},
+		{
+			name:          "unrelated routes are ignored",
+			containerAddr: containerAddr,
+			routes: []netlink.Route{
+				routeTo(&net.IPNet{IP: net.ParseIP("192.168.100.43"), Mask: net.CIDRMask(32, 32)}, 9),
+				routeTo(&net.IPNet{IP: net.ParseIP("192.168.100.42"), Mask: net.CIDRMask(31, 32)}, 9),
+				{LinkIndex: 0, Dst: containerAddr},
+				{LinkIndex: 9},
+			},
+		},
+		{
+			name:          "IPv6 route to another pod's live hostVeth",
+			containerAddr: containerV6Addr,
+			routes:        []netlink.Route{routeTo(containerV6Addr, 9)},
+			linkByIndexCalls: []linkByIndexCall{
+				{index: 9, link: veth(9, hostVethAlias("default/victim"))},
+			},
+			wantErr: "containerAddr=2600::2/128 is still routed to hostVeth eniold9 of another pod, refusing to take it over",
+		},
+		{
+			name:          "route list fails",
+			containerAddr: containerAddr,
+			routeListErr:  errors.New("some error"),
+			wantErr:       "failed to list routes for containerAddr=192.168.100.42/32: some error",
+		},
+		{
+			name:          "link lookup fails",
+			containerAddr: containerAddr,
+			routes:        []netlink.Route{routeTo(containerAddr, 9)},
+			linkByIndexCalls: []linkByIndexCall{
+				{index: 9, err: errors.New("some error")},
+			},
+			wantErr: "failed to look up link 9 routing containerAddr=192.168.100.42/32: some error",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			family := unix.AF_INET
+			if tt.containerAddr.IP.To4() == nil {
+				family = unix.AF_INET6
+			}
+			hostVeth := mock_netlink.NewMockLink(ctrl)
+			hostVeth.EXPECT().Attrs().Return(&hostVethAttrs).AnyTimes()
+			netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
+			netLink.EXPECT().RouteList(nil, family).Return(tt.routes, tt.routeListErr)
+			for _, call := range tt.linkByIndexCalls {
+				netLink.EXPECT().LinkByIndex(call.index).Return(call.link, call.err)
+			}
+
+			n := &linuxNetwork{netLink: netLink}
+			err := n.ensureAddrNotRoutedToOtherPod(hostVeth, tt.containerAddr)
+			if tt.wantErr != "" {
+				assert.EqualError(t, err, tt.wantErr)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }

@@ -37,6 +37,9 @@ const (
 	// minENILifeTime is the shortest time before we consider deleting a newly created ENI
 	minENILifeTime = 1 * time.Minute
 
+	// vethCreationGracePeriod covers a pod whose IP was assigned but whose CNI ADD has not created the host veth yet.
+	vethCreationGracePeriod = 1 * time.Minute
+
 	// envIPCooldownPeriod (default 30 seconds) specifies the time after pod deletion before an IP can be assigned to a new pod
 	envIPCooldownPeriod = "IP_COOLDOWN_PERIOD"
 
@@ -275,6 +278,23 @@ func (p *ENIPool) FindAddressForSandbox(ipamKey IPAMKey) (*ENI, *CidrInfo, *Addr
 	return nil, nil, nil
 }
 
+// orphanedAddress is an assignment whose IP left the pool through a forced removal. It is kept so the IP is not
+// handed to another pod while the original pod may still be running, and is restored if the IP comes back.
+type orphanedAddress struct {
+	AddressInfo
+	deviceNumber int
+	routeTableID int
+}
+
+func ipv4CheckpointEntry(addr *AddressInfo) CheckpointEntry {
+	return CheckpointEntry{
+		IPAMKey:             addr.IPAMKey,
+		IPv4:                addr.Address,
+		AllocationTimestamp: addr.AssignedTime.UnixNano(),
+		Metadata:            addr.IPAMMetadata,
+	}
+}
+
 // PodIPInfo contains pod's IP and the device number of the ENI
 type PodIPInfo struct {
 	IPAMKey IPAMKey
@@ -297,6 +317,7 @@ type DataStore struct {
 	isPDEnabled      bool
 	ipCooldownPeriod time.Duration
 	networkCard      int
+	orphans          map[string]*orphanedAddress
 }
 
 // ENIInfos contains ENI IP information
@@ -319,7 +340,13 @@ func NewDataStore(log logger.Logger, backingStore Checkpointer, isPDEnabled bool
 		isPDEnabled:      isPDEnabled,
 		ipCooldownPeriod: getCooldownPeriod(),
 		networkCard:      networkCard,
+		orphans:          make(map[string]*orphanedAddress),
 	}
+}
+
+// SetNetLink replaces the netlink client used to look up host veths, for tests outside this package.
+func (ds *DataStore) SetNetLink(netLink netlinkwrapper.NetLink) {
+	ds.netLink = netLink
 }
 
 // CheckpointFormatVersion is the version stamp used on stored checkpoints.
@@ -373,18 +400,17 @@ func (ds *DataStore) ReadBackingStore(isv6Enabled bool) error {
 	defer ds.lock.Unlock()
 
 	for _, allocation := range data.Allocations {
-		ipv4Addr := net.ParseIP(allocation.IPv4)
-		ipv6Addr := net.ParseIP(allocation.IPv6)
-		var ipAddr net.IP
+		ipAddr := net.ParseIP(allocation.IPv4)
+		if isv6Enabled {
+			ipAddr = net.ParseIP(allocation.IPv6)
+		}
 		found := false
 	eniloop:
 		for _, eni := range ds.eniPool {
 			eniCidrs := eni.AvailableIPv4Cidrs
-			ipAddr = ipv4Addr
 			if isv6Enabled {
 				ds.log.Debugf("v6 is enabled")
 				eniCidrs = eni.IPv6Cidrs
-				ipAddr = ipv6Addr
 			}
 			for _, cidr := range eniCidrs {
 				ds.log.Debugf("Checking if IP: %v belongs to CIDR: %v", ipAddr, cidr.Cidr)
@@ -408,8 +434,20 @@ func (ds *DataStore) ReadBackingStore(isv6Enabled bool) error {
 			}
 		}
 		if !found {
-			ds.log.Infof("datastore: Sandbox %s uses unknown IP Address %s - presuming stale/dead",
+			// IPv6 prefixes are never force-removed, so only an IPv4 allocation can be missing from the pool.
+			if isv6Enabled || ipAddr == nil {
+				ds.log.Infof("datastore: Sandbox %s uses unknown IP Address %s - presuming stale/dead",
+					allocation.IPAMKey, ipAddr.String())
+				continue
+			}
+			ds.log.Warnf("datastore: Sandbox %s uses IP %s that is not on any attached ENI, keeping it reserved until the pod is deleted",
 				allocation.IPAMKey, ipAddr.String())
+			ds.orphans[ipAddr.String()] = &orphanedAddress{AddressInfo: AddressInfo{
+				Address:      ipAddr.String(),
+				IPAMKey:      allocation.IPAMKey,
+				IPAMMetadata: allocation.Metadata,
+				AssignedTime: time.Unix(0, allocation.AllocationTimestamp),
+			}}
 		}
 	}
 
@@ -430,13 +468,7 @@ func (ds *DataStore) writeBackingStoreUnsafe() error {
 		for _, assignedAddr := range eni.AvailableIPv4Cidrs {
 			for _, addr := range assignedAddr.IPAddresses {
 				if addr.Assigned() {
-					entry := CheckpointEntry{
-						IPAMKey:             addr.IPAMKey,
-						IPv4:                addr.Address,
-						AllocationTimestamp: addr.AssignedTime.UnixNano(),
-						Metadata:            addr.IPAMMetadata,
-					}
-					allocations = append(allocations, entry)
+					allocations = append(allocations, ipv4CheckpointEntry(addr))
 				}
 			}
 		}
@@ -453,6 +485,11 @@ func (ds *DataStore) writeBackingStoreUnsafe() error {
 					allocations = append(allocations, entry)
 				}
 			}
+		}
+	}
+	for _, orphan := range ds.orphans {
+		if orphan.Assigned() {
+			allocations = append(allocations, ipv4CheckpointEntry(&orphan.AddressInfo))
 		}
 	}
 
@@ -553,6 +590,7 @@ func (ds *DataStore) AddIPv4CidrToStore(eniID string, ipv4Cidr net.IPNet, isPref
 	}
 
 	curENI.AvailableIPv4Cidrs[strIPv4Cidr] = newCidrInfo
+	ds.restoreOrphansUnsafe(curENI, newCidrInfo)
 
 	ds.total += newCidrInfo.Size()
 	if isPrefix {
@@ -586,21 +624,13 @@ func (ds *DataStore) DelIPv4CidrFromStore(eniID string, cidr net.IPNet, force bo
 	// SIP case : This runs just once
 	// PD case : if (force is false) then if there are any unassigned IPs, those will get freed but the first assigned IP will
 	//  break the loop, should be fine since freed IPs will be reused for new pods.
-	updateBackingStore := false
 	for _, addr := range deletableCidr.IPAddresses {
 		if addr.Assigned() {
 			if !force {
 				return errors.New(IPInUseError)
 			}
 			prometheusmetrics.ForceRemovedIPs.Inc()
-			ds.unassignPodIPAddressUnsafe(addr)
-			updateBackingStore = true
-		}
-	}
-	if updateBackingStore {
-		if err := ds.writeBackingStoreUnsafe(); err != nil {
-			ds.log.Warnf("Unable to update backing store: %v", err)
-			// Continuing because 'force'
+			ds.orphanAddressUnsafe(curENI, deletableCidr, addr)
 		}
 	}
 	ds.total -= deletableCidr.Size()
@@ -789,6 +819,8 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 		ds.log.Infof("AssignPodIPv4Address: duplicate pod assign for sandbox %s", ipamKey)
 		return addr.Address, eni.DeviceNumber, eni.RouteTableID, nil
 	}
+	// A new ADD for this sandbox replaces any IP it lost to a forced removal.
+	replacedOrphan := ds.findOrphanForSandboxUnsafe(ipamKey)
 
 	for _, eni := range ds.eniPool {
 		// Skip ENIs that are excluded from pod IP allocation
@@ -836,16 +868,24 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 
 			availableCidr.IPAddresses[strPrivateIPv4] = addr
 			ds.assignPodIPAddressUnsafe(addr, ipamKey, ipamMetadata, time.Now())
+			undoOrphanRelease := func() {}
+			if replacedOrphan != nil {
+				undoOrphanRelease = ds.releaseOrphanUnsafe(replacedOrphan)
+			}
 
 			if err := ds.writeBackingStoreUnsafe(); err != nil {
 				ds.log.Warnf("Failed to update backing store: %v", err)
 				// Important! Unwind assignment
 				ds.unassignPodIPAddressUnsafe(addr)
+				undoOrphanRelease()
 				// Remove the IP from eni DB
 				delete(availableCidr.IPAddresses, addr.Address)
 				// Update prometheus for ips per cidr
 				prometheusmetrics.IpsPerCidr.With(prometheus.Labels{"cidr": availableCidr.Cidr.String()}).Dec()
 				return "", -1, 0, err
+			}
+			if replacedOrphan != nil {
+				ds.log.Infof("AssignPodIPv4Address: sandbox %s re-added, released its force-removed IP %s", ipamKey, replacedOrphan.Address)
 			}
 			// Increment ENI IP usage on pod IPv4 allocation
 			prometheusmetrics.EniIPsInUse.WithLabelValues(eni.ID).Inc()
@@ -1186,25 +1226,20 @@ func (ds *DataStore) RemoveENIFromDataStore(eniID string, force bool) error {
 			return errors.New(ENIInUseError)
 		}
 		// This scenario can occur if the reconciliation process discovered this ENI was detached
-		// from the EC2 instance outside of the control of ipamd. If this happens, there's nothing
-		// we can do other than force all pods to be unassigned from the IPs on this ENI.
+		// from the EC2 instance outside of the control of ipamd.
 		ds.log.Warnf("Force removing eni %s with %d assigned pods", eniID, eni.AssignedIPv4Addresses())
 		prometheusmetrics.ForceRemovedENIs.Inc()
 		prometheusmetrics.ForceRemovedIPs.Add(float64(eni.AssignedIPv4Addresses()))
 		for _, assignedaddr := range eni.AvailableIPv4Cidrs {
 			for _, addr := range assignedaddr.IPAddresses {
 				if addr.Assigned() {
-					ds.unassignPodIPAddressUnsafe(addr)
+					ds.orphanAddressUnsafe(eni, assignedaddr, addr)
 				}
 			}
 			ds.total -= assignedaddr.Size()
 			if assignedaddr.IsPrefix {
 				ds.allocatedPrefix--
 			}
-		}
-		if err := ds.writeBackingStoreUnsafe(); err != nil {
-			ds.log.Warnf("Unable to update backing store: %v", err)
-			// Continuing, because 'force'
 		}
 	}
 
@@ -1243,6 +1278,7 @@ func (ds *DataStore) UnassignPodIPAddress(ipamKey IPAMKey) (e *ENI, ip string, d
 
 	eni, availableCidr, addr := ds.eniPool.FindAddressForSandbox(ipamKey)
 	if addr == nil {
+		requestedKey := ipamKey
 		// If the entry is not present in state file, check if it is present under placeholder value.
 		// This scenario could happen if the pod was created by an older CNI version back when CRI read was done.
 		ds.log.Debugf("UnassignPodIPAddress: Failed to find IPAM entry under full key, trying CRI-migrated version")
@@ -1252,6 +1288,9 @@ func (ds *DataStore) UnassignPodIPAddress(ipamKey IPAMKey) (e *ENI, ip string, d
 
 		// If entry is still not found, IPAMD has no knowledge of this pod, so there is nothing to do.
 		if addr == nil {
+			if orphan := ds.findOrphanForSandboxUnsafe(requestedKey, ipamKey); orphan != nil {
+				return ds.unassignOrphanedPodIPUnsafe(orphan)
+			}
 			ds.log.Warnf("UnassignPodIPAddress: Failed to find sandbox %s", ipamKey)
 			return nil, "", 0, -1, 0, ErrUnknownPod
 		}
@@ -1272,11 +1311,6 @@ func (ds *DataStore) UnassignPodIPAddress(ipamKey IPAMKey) (e *ENI, ip string, d
 	ds.log.Debugf("IP %s entering cooldown period of %v (available after %v)",
 		addr.Address, ds.ipCooldownPeriod, cooldownExpiry.Format(time.RFC3339))
 
-	// Interfaces Count 0 means this property did not exist in the datastore when we restored. A Pod entry always have atleast one interface
-	if originalIPAMMetadata.InterfacesCount == 0 {
-		originalIPAMMetadata.InterfacesCount += 1
-	}
-
 	//Update prometheus for ips per cidr
 	prometheusmetrics.IpsPerCidr.With(prometheus.Labels{"cidr": availableCidr.Cidr.String()}).Dec()
 	ds.log.Infof("UnassignPodIPAddress: sandbox %s's ipAddr %s, DeviceNumber %d",
@@ -1291,7 +1325,139 @@ func (ds *DataStore) UnassignPodIPAddress(ipamKey IPAMKey) (e *ENI, ip string, d
 		go ds.deallocateEmptyCIDR(eni.ID, availableCidr)
 	}
 
-	return eni, addr.Address, eni.DeviceNumber, originalIPAMMetadata.InterfacesCount, eni.RouteTableID, nil
+	return eni, addr.Address, eni.DeviceNumber, podInterfacesCount(originalIPAMMetadata), eni.RouteTableID, nil
+}
+
+// podInterfacesCount treats 0 as 1: the property did not exist in the datastore when we restored, and a pod
+// always has at least one interface.
+func podInterfacesCount(metadata IPAMMetadata) int {
+	if metadata.InterfacesCount == 0 {
+		return 1
+	}
+	return metadata.InterfacesCount
+}
+
+// orphanAddressUnsafe moves an assigned address that is leaving the pool with its CIDR into ds.orphans.
+func (ds *DataStore) orphanAddressUnsafe(eni *ENI, cidr *CidrInfo, addr *AddressInfo) {
+	ds.log.Warnf("Force removing IP %s on ENI %s still assigned to sandbox %s (pod %s/%s), keeping it reserved until the pod is deleted",
+		addr.Address, eni.ID, addr.IPAMKey, addr.IPAMMetadata.K8SPodNamespace, addr.IPAMMetadata.K8SPodName)
+	ds.orphans[addr.Address] = &orphanedAddress{AddressInfo: *addr, deviceNumber: eni.DeviceNumber, routeTableID: eni.RouteTableID}
+	ds.assigned--
+	prometheusmetrics.AssignedIPs.Set(float64(ds.assigned))
+	prometheusmetrics.EniIPsInUse.WithLabelValues(eni.ID).Dec()
+	prometheusmetrics.IpsPerCidr.With(prometheus.Labels{"cidr": cidr.Cidr.String()}).Dec()
+}
+
+// restoreOrphansUnsafe puts orphaned addresses that fall inside a newly added CIDR back into it, so they are
+// not handed out while their pod may still be using them.
+func (ds *DataStore) restoreOrphansUnsafe(eni *ENI, cidr *CidrInfo) {
+	for ip, orphan := range ds.orphans {
+		if !cidr.Cidr.Contains(net.ParseIP(ip)) {
+			continue
+		}
+		delete(ds.orphans, ip)
+		addr := &AddressInfo{Address: ip, UnassignedTime: orphan.UnassignedTime}
+		cidr.IPAddresses[ip] = addr
+		if !orphan.Assigned() {
+			continue
+		}
+		ds.assignPodIPAddressUnsafe(addr, orphan.IPAMKey, orphan.IPAMMetadata, orphan.AssignedTime)
+		prometheusmetrics.EniIPsInUse.WithLabelValues(eni.ID).Inc()
+		prometheusmetrics.IpsPerCidr.With(prometheus.Labels{"cidr": cidr.Cidr.String()}).Inc()
+		ds.log.Infof("Restored force-removed IP %s to sandbox %s on ENI %s", ip, addr.IPAMKey, eni.ID)
+	}
+}
+
+func (ds *DataStore) findOrphanForSandboxUnsafe(ipamKeys ...IPAMKey) *orphanedAddress {
+	for _, orphan := range ds.orphans {
+		for _, ipamKey := range ipamKeys {
+			if orphan.IPAMKey == ipamKey {
+				return orphan
+			}
+		}
+	}
+	return nil
+}
+
+// releaseOrphanUnsafe frees an orphaned address but keeps it, unassigned, so that the cooldown still applies
+// if its CIDR is added back. The returned func undoes the release.
+func (ds *DataStore) releaseOrphanUnsafe(orphan *orphanedAddress) (undo func()) {
+	original := *orphan
+	orphan.IPAMKey = IPAMKey{}
+	orphan.IPAMMetadata = IPAMMetadata{}
+	orphan.UnassignedTime = time.Now()
+	return func() { *orphan = original }
+}
+
+func (ds *DataStore) unassignOrphanedPodIPUnsafe(orphan *orphanedAddress) (*ENI, string, int, int, int, error) {
+	ipamKey, metadata := orphan.IPAMKey, orphan.IPAMMetadata
+	undo := ds.releaseOrphanUnsafe(orphan)
+	if err := ds.writeBackingStoreUnsafe(); err != nil {
+		undo()
+		return nil, "", 0, -1, 0, err
+	}
+	ds.log.Infof("UnassignPodIPAddress: sandbox %s's force-removed ipAddr %s, DeviceNumber %d", ipamKey, orphan.Address, orphan.deviceNumber)
+	return nil, orphan.Address, orphan.deviceNumber, podInterfacesCount(metadata), orphan.routeTableID, nil
+}
+
+// PruneOrphanedAddresses releases orphaned addresses whose pod no longer has a host veth, and forgets released
+// ones once their cooldown is over. A pod can outlive any fixed timeout, so liveness is the only bound.
+func (ds *DataStore) PruneOrphanedAddresses() {
+	if !ds.hasOrphans() {
+		return
+	}
+	links, err := ds.netLink.LinkList()
+	if err != nil {
+		ds.log.Warnf("Unable to list links to check force-removed IPs: %v", err)
+		return
+	}
+
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+	ds.forgetCooledDownOrphansUnsafe()
+	if !ds.releaseStaleOrphansUnsafe(links) {
+		return
+	}
+	if err := ds.writeBackingStoreUnsafe(); err != nil {
+		ds.log.Warnf("Unable to update backing store: %v", err)
+	}
+}
+
+func (ds *DataStore) hasOrphans() bool {
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+	return len(ds.orphans) > 0
+}
+
+func (ds *DataStore) forgetCooledDownOrphansUnsafe() {
+	for ip, orphan := range ds.orphans {
+		if !orphan.Assigned() && !orphan.inCoolingPeriod(ds.ipCooldownPeriod) {
+			delete(ds.orphans, ip)
+		}
+	}
+}
+
+func (ds *DataStore) releaseStaleOrphansUnsafe(links []netlink.Link) (released bool) {
+	for ip, orphan := range ds.orphans {
+		if !orphan.Assigned() || time.Since(orphan.AssignedTime) < vethCreationGracePeriod || ds.orphanPodHasVeth(orphan, links) {
+			continue
+		}
+		ds.log.Warnf("Releasing force-removed IP %s of sandbox %s (pod %s/%s): host veth not found",
+			ip, orphan.IPAMKey, orphan.IPAMMetadata.K8SPodNamespace, orphan.IPAMMetadata.K8SPodName)
+		ds.releaseOrphanUnsafe(orphan)
+		released = true
+	}
+	return released
+}
+
+// orphanPodHasVeth reports whether the orphan's pod still has a host veth. Unlike validateAllocationByPodVethExistence,
+// which keeps such entries for backwards compatibility, an entry without pod metadata counts as gone: there is
+// no veth name to check it against.
+func (ds *DataStore) orphanPodHasVeth(orphan *orphanedAddress, links []netlink.Link) bool {
+	if orphan.IPAMMetadata.K8SPodNamespace == "" || orphan.IPAMMetadata.K8SPodName == "" {
+		return false
+	}
+	return ds.validateAllocationByPodVethExistence(ipv4CheckpointEntry(&orphan.AddressInfo), links) == nil
 }
 
 // AllocatedIPs returns a recent snapshot of allocated sandbox<->IPs.

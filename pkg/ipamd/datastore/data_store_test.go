@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var logConfig = logger.Configuration{
@@ -2344,4 +2345,344 @@ func TestDataStore_FindFreeableCidrs(t *testing.T) {
 	assert.NoError(t, err)
 	cidrs := ds.FindFreeableCidrs(eniID)
 	assert.Len(t, cidrs, 1)
+}
+
+func assignTestPod(ds *DataStore, sandbox, name string) (string, error) {
+	ip, _, _, err := ds.AssignPodIPv4Address(IPAMKey{"net0", sandbox, "eth0"}, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: name})
+	return ip, err
+}
+
+func ipv4Host(s string) net.IPNet {
+	return net.IPNet{IP: net.ParseIP(s), Mask: net.CIDRMask(32, 32)}
+}
+
+func hostVethFor(namespace, name string) netlink.Link {
+	return &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Name: "eni" + networkutils.GeneratePodHostVethNameSuffix(namespace, name)}}
+}
+
+func checkpointIPs(t *testing.T, cp *TestCheckpoint) map[string]IPAMKey {
+	var data CheckpointData
+	assert.NoError(t, cp.Restore(&data))
+	ips := make(map[string]IPAMKey)
+	for _, a := range data.Allocations {
+		ips[a.IPv4] = a.IPAMKey
+	}
+	return ips
+}
+
+func TestForceRemovedAssignmentRestoredOnReAdd(t *testing.T) {
+	victimKey := IPAMKey{"net0", "sandbox-victim", "eth0"}
+	_, pfx, _ := net.ParseCIDR("10.0.2.16/28")
+	sip := ipv4Host("10.0.0.5")
+
+	tests := []struct {
+		name        string
+		pd          bool
+		cidr        net.IPNet
+		remove      func(ds *DataStore) error
+		readd       func(ds *DataStore) error
+		wantNextErr error
+	}{
+		{
+			name:   "ENI force removed",
+			cidr:   sip,
+			remove: func(ds *DataStore) error { return ds.RemoveENIFromDataStore("eni-2", true) },
+			readd: func(ds *DataStore) error {
+				if err := ds.AddENI("eni-2", 1, false, false, false, 2, ""); err != nil {
+					return err
+				}
+				return ds.AddIPv4CidrToStore("eni-2", sip, false)
+			},
+			wantNextErr: ErrNoAvailableIPInDataStore,
+		},
+		{
+			name:        "secondary IP force deleted",
+			cidr:        sip,
+			remove:      func(ds *DataStore) error { return ds.DelIPv4CidrFromStore("eni-2", sip, true) },
+			readd:       func(ds *DataStore) error { return ds.AddIPv4CidrToStore("eni-2", sip, false) },
+			wantNextErr: ErrNoAvailableIPInDataStore,
+		},
+		{
+			name:   "prefix force deleted",
+			pd:     true,
+			cidr:   *pfx,
+			remove: func(ds *DataStore) error { return ds.DelIPv4CidrFromStore("eni-2", *pfx, true) },
+			readd:  func(ds *DataStore) error { return ds.AddIPv4CidrToStore("eni-2", *pfx, true) },
+		},
+		{
+			name:   "ENI with prefix force removed",
+			pd:     true,
+			cidr:   *pfx,
+			remove: func(ds *DataStore) error { return ds.RemoveENIFromDataStore("eni-2", true) },
+			readd: func(ds *DataStore) error {
+				if err := ds.AddENI("eni-2", 1, false, false, false, 2, ""); err != nil {
+					return err
+				}
+				return ds.AddIPv4CidrToStore("eni-2", *pfx, true)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cp := NewTestCheckpoint(CheckpointData{Version: CheckpointFormatVersion})
+			ds := NewDataStore(Testlog, cp, tt.pd, defaultNetworkCard)
+			assert.NoError(t, ds.AddENI("eni-2", 1, false, false, false, 2, ""))
+			assert.NoError(t, ds.AddIPv4CidrToStore("eni-2", tt.cidr, tt.pd))
+			victim, err := assignTestPod(ds, victimKey.ContainerID, "victim")
+			assert.NoError(t, err)
+
+			assert.NoError(t, tt.remove(ds))
+			assert.Equal(t, 0, ds.GetIPStats("4").AssignedIPs)
+			assert.Equal(t, victimKey, checkpointIPs(t, cp)[victim], "checkpoint must keep the force-removed assignment")
+
+			assert.NoError(t, tt.readd(ds))
+			eni, _, addr := ds.eniPool.FindAddressForSandbox(victimKey)
+			require.NotNil(t, addr)
+			assert.Equal(t, "eni-2", eni.ID)
+			assert.Equal(t, victim, addr.Address)
+			assert.Equal(t, "victim", addr.IPAMMetadata.K8SPodName)
+			assert.Equal(t, 1, ds.GetIPStats("4").AssignedIPs)
+			assert.Empty(t, ds.orphans)
+
+			next, err := assignTestPod(ds, "sandbox-next", "next")
+			if tt.wantNextErr != nil {
+				assert.ErrorIs(t, err, tt.wantNextErr)
+			} else {
+				assert.NoError(t, err)
+				assert.NotEqual(t, victim, next)
+			}
+		})
+	}
+}
+
+func TestUnassignForceRemovedAssignment(t *testing.T) {
+	cp := NewTestCheckpoint(CheckpointData{Version: CheckpointFormatVersion})
+	ds := NewDataStore(Testlog, cp, false, defaultNetworkCard)
+	assert.NoError(t, ds.AddENI("eni-2", 3, false, false, false, 4, ""))
+	ip := ipv4Host("10.0.0.5")
+	assert.NoError(t, ds.AddIPv4CidrToStore("eni-2", ip, false))
+	key := IPAMKey{"net0", "sandbox-victim", "eth0"}
+	_, err := assignTestPod(ds, key.ContainerID, "victim")
+	assert.NoError(t, err)
+	assert.NoError(t, ds.RemoveENIFromDataStore("eni-2", true))
+
+	eni, addr, device, interfaces, table, err := ds.UnassignPodIPAddress(key)
+	assert.NoError(t, err)
+	assert.Nil(t, eni)
+	assert.Equal(t, "10.0.0.5", addr)
+	assert.Equal(t, 3, device)
+	assert.Equal(t, 1, interfaces)
+	assert.Equal(t, 4, table)
+	assert.Empty(t, checkpointIPs(t, cp))
+
+	_, _, _, _, _, err = ds.UnassignPodIPAddress(key)
+	assert.ErrorIs(t, err, ErrUnknownPod)
+
+	// The released IP still cools down when it comes back.
+	assert.NoError(t, ds.AddENI("eni-2", 3, false, false, false, 4, ""))
+	assert.NoError(t, ds.AddIPv4CidrToStore("eni-2", ip, false))
+	assert.Equal(t, 1, ds.GetIPStats("4").CooldownIPs)
+	_, err = assignTestPod(ds, "sandbox-next", "next")
+	assert.ErrorIs(t, err, ErrNoAvailableIPInDataStore)
+}
+
+func TestUnassignForceRemovedAssignmentBackingStoreError(t *testing.T) {
+	cp := NewTestCheckpoint(CheckpointData{Version: CheckpointFormatVersion})
+	ds := NewDataStore(Testlog, cp, false, defaultNetworkCard)
+	assert.NoError(t, ds.AddENI("eni-2", 1, false, false, false, 2, ""))
+	ip := ipv4Host("10.0.0.5")
+	assert.NoError(t, ds.AddIPv4CidrToStore("eni-2", ip, false))
+	key := IPAMKey{"net0", "sandbox-victim", "eth0"}
+	_, err := assignTestPod(ds, key.ContainerID, "victim")
+	assert.NoError(t, err)
+	assert.NoError(t, ds.DelIPv4CidrFromStore("eni-2", ip, true))
+
+	cp.Error = errors.New("disk full")
+	_, _, _, _, _, err = ds.UnassignPodIPAddress(key)
+	assert.Error(t, err)
+	assert.Equal(t, key, ds.orphans["10.0.0.5"].IPAMKey)
+}
+
+func TestAssignSameSandboxReleasesForceRemovedAssignment(t *testing.T) {
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
+	assert.NoError(t, ds.AddENI("eni-1", 0, true, false, false, 254, ""))
+	assert.NoError(t, ds.AddIPv4CidrToStore("eni-1", ipv4Host("10.0.0.5"), false))
+	assert.NoError(t, ds.AddIPv4CidrToStore("eni-1", ipv4Host("10.0.0.6"), false))
+	key := IPAMKey{"net0", "sandbox-victim", "eth0"}
+	ip1, err := assignTestPod(ds, key.ContainerID, "victim")
+	assert.NoError(t, err)
+	assert.NoError(t, ds.DelIPv4CidrFromStore("eni-1", ipv4Host(ip1), true))
+
+	ip2, err := assignTestPod(ds, key.ContainerID, "victim")
+	assert.NoError(t, err)
+	assert.NotEqual(t, ip1, ip2)
+	assert.False(t, ds.orphans[ip1].Assigned())
+}
+
+func TestFailedReAddKeepsForceRemovedAssignment(t *testing.T) {
+	diskFull := errors.New("disk full")
+	tests := []struct {
+		name          string
+		spareIP       bool
+		checkpointErr error
+		wantErr       error
+	}{
+		{name: "no free IP", wantErr: ErrNoAvailableIPInDataStore},
+		{name: "checkpoint write fails", spareIP: true, checkpointErr: diskFull, wantErr: diskFull},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cp := NewTestCheckpoint(CheckpointData{Version: CheckpointFormatVersion})
+			ds := NewDataStore(Testlog, cp, false, defaultNetworkCard)
+			assert.NoError(t, ds.AddENI("eni-1", 0, true, false, false, 254, ""))
+			assert.NoError(t, ds.AddIPv4CidrToStore("eni-1", ipv4Host("10.0.0.5"), false))
+			key := IPAMKey{"net0", "sandbox-victim", "eth0"}
+			_, err := assignTestPod(ds, key.ContainerID, "victim")
+			assert.NoError(t, err)
+			assert.NoError(t, ds.DelIPv4CidrFromStore("eni-1", ipv4Host("10.0.0.5"), true))
+			if tt.spareIP {
+				assert.NoError(t, ds.AddIPv4CidrToStore("eni-1", ipv4Host("10.0.0.6"), false))
+			}
+
+			cp.Error = tt.checkpointErr
+			_, err = assignTestPod(ds, key.ContainerID, "victim")
+			assert.ErrorIs(t, err, tt.wantErr)
+			cp.Error = nil
+			assert.Equal(t, map[string]IPAMKey{"10.0.0.5": key}, checkpointIPs(t, cp))
+
+			_, ip, _, _, _, err := ds.UnassignPodIPAddress(key)
+			assert.NoError(t, err)
+			assert.Equal(t, "10.0.0.5", ip)
+			assert.Empty(t, checkpointIPs(t, cp))
+		})
+	}
+}
+
+func TestForceRemovedAssignmentCheckpointRoundTrip(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	cp := NewTestCheckpoint(CheckpointData{Version: CheckpointFormatVersion})
+	ds := NewDataStore(Testlog, cp, false, defaultNetworkCard)
+	assert.NoError(t, ds.AddENI("eni-1", 0, true, false, false, 254, ""))
+	assert.NoError(t, ds.AddENI("eni-2", 1, false, false, false, 2, ""))
+	keep := ipv4Host("10.0.1.1")
+	gone := ipv4Host("10.0.0.5")
+	assert.NoError(t, ds.AddIPv4CidrToStore("eni-1", keep, false))
+	assert.NoError(t, ds.AddIPv4CidrToStore("eni-2", gone, false))
+	_, err := assignTestPod(ds, "sandbox-a", "a")
+	assert.NoError(t, err)
+	_, err = assignTestPod(ds, "sandbox-b", "b")
+	assert.NoError(t, err)
+	victimKey := checkpointIPs(t, cp)["10.0.0.5"]
+	assert.NoError(t, ds.RemoveENIFromDataStore("eni-2", true))
+	assert.Len(t, checkpointIPs(t, cp), 2)
+
+	restart := func() *DataStore {
+		netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
+		netLink.EXPECT().LinkList().Return([]netlink.Link{hostVethFor("default", "a"), hostVethFor("default", "b")}, nil)
+		restarted := NewDataStore(Testlog, cp, false, defaultNetworkCard)
+		restarted.netLink = netLink
+		assert.NoError(t, restarted.AddENI("eni-1", 0, true, false, false, 254, ""))
+		assert.NoError(t, restarted.AddIPv4CidrToStore("eni-1", keep, false))
+		return restarted
+	}
+
+	// Restart while the ENI is still missing keeps the assignment reserved.
+	restarted := restart()
+	assert.NoError(t, restarted.ReadBackingStore(false))
+	assert.Equal(t, 1, restarted.GetIPStats("4").AssignedIPs)
+	assert.Equal(t, victimKey, restarted.orphans["10.0.0.5"].IPAMKey)
+	assert.Len(t, checkpointIPs(t, cp), 2)
+
+	assert.NoError(t, restarted.AddENI("eni-2", 1, false, false, false, 2, ""))
+	assert.NoError(t, restarted.AddIPv4CidrToStore("eni-2", gone, false))
+	assert.Equal(t, 2, restarted.GetIPStats("4").AssignedIPs)
+
+	// Restart after the ENI came back restores it as a normal assignment.
+	restarted = restart()
+	assert.NoError(t, restarted.AddENI("eni-2", 1, false, false, false, 2, ""))
+	assert.NoError(t, restarted.AddIPv4CidrToStore("eni-2", gone, false))
+	assert.NoError(t, restarted.ReadBackingStore(false))
+	assert.Equal(t, 2, restarted.GetIPStats("4").AssignedIPs)
+	assert.Empty(t, restarted.orphans)
+}
+
+func TestPruneOrphanedAddresses(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	old := time.Now().Add(-2 * vethCreationGracePeriod)
+	orphan := func(ip, name string, assigned time.Time) *orphanedAddress {
+		return &orphanedAddress{AddressInfo: AddressInfo{
+			Address:      ip,
+			IPAMKey:      IPAMKey{"net0", "sandbox-" + ip, "eth0"},
+			IPAMMetadata: IPAMMetadata{K8SPodNamespace: "default", K8SPodName: name},
+			AssignedTime: assigned,
+		}}
+	}
+
+	cp := NewTestCheckpoint(CheckpointData{Version: CheckpointFormatVersion})
+	ds := NewDataStore(Testlog, cp, false, defaultNetworkCard)
+	// Any RuleDel would fail the mock: another pod may own the IP's rules by now.
+	netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
+	ds.netLink = netLink
+	ds.orphans = map[string]*orphanedAddress{
+		"10.0.0.1": orphan("10.0.0.1", "alive", old),
+		"10.0.0.2": orphan("10.0.0.2", "gone", old),
+		"10.0.0.3": orphan("10.0.0.3", "starting", time.Now()),
+		"10.0.0.4": orphan("10.0.0.4", "", old),
+		"10.0.0.5": {AddressInfo: AddressInfo{Address: "10.0.0.5", UnassignedTime: time.Now()}},
+		"10.0.0.6": {AddressInfo: AddressInfo{Address: "10.0.0.6", UnassignedTime: old}},
+	}
+	netLink.EXPECT().LinkList().Return([]netlink.Link{hostVethFor("default", "alive")}, nil)
+
+	ds.PruneOrphanedAddresses()
+
+	assert.True(t, ds.orphans["10.0.0.1"].Assigned())
+	assert.False(t, ds.orphans["10.0.0.2"].Assigned())
+	assert.True(t, ds.orphans["10.0.0.3"].Assigned())
+	assert.False(t, ds.orphans["10.0.0.4"].Assigned())
+	assert.Contains(t, ds.orphans, "10.0.0.5")
+	assert.NotContains(t, ds.orphans, "10.0.0.6")
+	assert.Equal(t, map[string]IPAMKey{
+		"10.0.0.1": ds.orphans["10.0.0.1"].IPAMKey,
+		"10.0.0.3": ds.orphans["10.0.0.3"].IPAMKey,
+	}, checkpointIPs(t, cp))
+}
+
+func TestPruneOrphanedAddressesWithoutOrphansSkipsLinkList(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
+	ds.netLink = mock_netlinkwrapper.NewMockNetLink(ctrl)
+	ds.PruneOrphanedAddresses()
+}
+
+func TestReadBackingStoreWithNoENIsKeepsAssignment(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	cp := NewTestCheckpoint(CheckpointData{
+		Version: CheckpointFormatVersion,
+		Allocations: []CheckpointEntry{{
+			IPAMKey:             IPAMKey{"net0", "sandbox-victim", "eth0"},
+			IPv4:                "10.0.0.5",
+			AllocationTimestamp: time.Now().UnixNano(),
+			Metadata:            IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "victim"},
+		}},
+	})
+	ds := NewDataStore(Testlog, cp, false, defaultNetworkCard)
+	netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
+	netLink.EXPECT().LinkList().Return([]netlink.Link{hostVethFor("default", "victim")}, nil)
+	ds.netLink = netLink
+
+	assert.NoError(t, ds.ReadBackingStore(false))
+	assert.Contains(t, ds.orphans, "10.0.0.5")
+
+	assert.NoError(t, ds.AddENI("eni-1", 0, true, false, false, 254, ""))
+	assert.NoError(t, ds.AddIPv4CidrToStore("eni-1", ipv4Host("10.0.0.5"), false))
+	_, err := assignTestPod(ds, "sandbox-next", "next")
+	assert.ErrorIs(t, err, ErrNoAvailableIPInDataStore)
 }
