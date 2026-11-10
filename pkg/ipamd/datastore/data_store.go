@@ -773,7 +773,6 @@ func (ds *DataStore) AssignPodIPv6Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 			return addr.Address, eni.DeviceNumber, eni.RouteTableID, nil
 		}
 	}
-	prometheusmetrics.NoAvailableIPAddrs.Inc()
 	return "", -1, 0, ErrNoAvailableIPInDataStore
 }
 
@@ -854,8 +853,6 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 		ds.log.Debugf("AssignPodIPv4Address: ENI %s does not have available addresses", eni.ID)
 	}
 
-	prometheusmetrics.NoAvailableIPAddrs.Inc()
-	ds.log.Errorf("DataStore has no available IP/Prefix addresses")
 	return "", -1, 0, ErrNoAvailableIPInDataStore
 }
 

@@ -567,6 +567,59 @@ func TestServer_AddNetwork(t *testing.T) {
 	}
 }
 
+func TestNoAvailableIPAddrsIncrementsOncePerAdd(t *testing.T) {
+	eniIDs := []string{"eni-0", "eni-1", "eni-2", "eni-3"}
+	tests := []struct {
+		name         string
+		networkCards int
+	}{
+		{"single network card", 1},
+		{"four network cards", 4},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prometheusmetrics.NoAvailableIPAddrs = prometheus.NewCounter(prometheus.CounterOpts{
+				Name: "awscni_no_available_ip_addresses",
+				Help: "The number of pod IP assignments that fail due to no available IP addresses",
+			})
+
+			m := setup(t)
+			defer m.ctrl.Finish()
+
+			var dsList []*datastore.DataStore
+			for i := 0; i < tt.networkCards; i++ {
+				ds := datastore.NewDataStore(log, datastore.NullCheckpoint{}, false, i)
+				ds.AddENI(eniIDs[i], i, i == 0, false, false, networkutils.CalculateRouteTableId(i, i), "")
+				dsList = append(dsList, ds)
+			}
+
+			s := &server{
+				version: "1.2.3",
+				ipamContext: &IPAMContext{
+					awsClient:       m.awsutils,
+					maxIPsPerENI:    14,
+					maxENI:          4,
+					networkClient:   m.network,
+					enableIPv4:      true,
+					dataStoreAccess: &datastore.DataStoreAccess{DataStores: dsList},
+				},
+			}
+
+			resp, err := s.AddNetwork(context.Background(), &pb.AddNetworkRequest{
+				ClientVersion: "1.2.3",
+				Netns:         "netns",
+				NetworkName:   "net0",
+				ContainerID:   "cid",
+				IfName:        "eni",
+			})
+			require.NoError(t, err)
+			assert.False(t, resp.Success)
+			assert.Equal(t, float64(1), testutil.ToFloat64(prometheusmetrics.NoAvailableIPAddrs),
+				"the counter must advance once per ADD, not once per network card")
+		})
+	}
+}
+
 func TestServer_GetNetworkPolicyConfigs(t *testing.T) {
 	tests := []struct {
 		name         string
