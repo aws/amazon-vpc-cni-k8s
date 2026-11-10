@@ -2,13 +2,14 @@
 
 ## v1.23.3
 
-* Bump the Network Policy Agent to `v1.4.4` ([#3954](https://github.com/aws/amazon-vpc-cni-k8s/pull/3954), @Issacwww)
+* Bump the Network Policy Agent to `v1.5.0` ([#3954](https://github.com/aws/amazon-vpc-cni-k8s/pull/3954), [#3966](https://github.com/aws/amazon-vpc-cni-k8s/pull/3966), @Issacwww)
 * Validate the ENI IPv4 inventory against EC2 to drop stale IMDS entries ([#3908](https://github.com/aws/amazon-vpc-cni-k8s/pull/3908), @ishani-das)
 * Preserve unrelated packet marks in the native nftables connmark restore ([#3875](https://github.com/aws/amazon-vpc-cni-k8s/pull/3875), @yash97)
 * Avoid a transient connected route during ENI setup ([#3858](https://github.com/aws/amazon-vpc-cni-k8s/pull/3858), @MrTolerant)
 * Handle the pod-not-found error in `DelNetwork` ([#3831](https://github.com/aws/amazon-vpc-cni-k8s/pull/3831), @Rajkaran-122)
 * Account for the HyperPod reserved ENI slot when checking ENI capacity ([#3895](https://github.com/aws/amazon-vpc-cni-k8s/pull/3895), @AshwinS27)
 * Call `SetupSignalHandler` only once for the kube client cache ([#3910](https://github.com/aws/amazon-vpc-cni-k8s/pull/3910), @Pitchfork-and-Torch)
+* Validate host-veth ownership before reclaiming the name in routed-eni ([#3924](https://github.com/aws/amazon-vpc-cni-k8s/pull/3924), @haouc)
 * Avoid building the ipamd-default logger in CNI plugins at `init()` ([#3929](https://github.com/aws/amazon-vpc-cni-k8s/pull/3929), @ishani-das)
 * Add an optional `minReadySeconds` to the aws-node DaemonSet ([#3915](https://github.com/aws/amazon-vpc-cni-k8s/pull/3915), @nakshah87)
 * Bump to Go 1.26.10 for CVE-2026-111943 ([#3940](https://github.com/aws/amazon-vpc-cni-k8s/pull/3940), @younsl)
@@ -21,9 +22,12 @@
 * Bound UDP traffic client reads and the job completion wait in tests to prevent hangs ([#3955](https://github.com/aws/amazon-vpc-cni-k8s/pull/3955), @cdirubbio)
 * Fix integration test teardown leaks of subnets and security groups ([#3959](https://github.com/aws/amazon-vpc-cni-k8s/pull/3959), @cdirubbio)
 * Add `--grace-period=10m` to ginkgo test runs so `AfterSuite` cleanup completes on timeout ([#3958](https://github.com/aws/amazon-vpc-cni-k8s/pull/3958), @cdirubbio)
+* Wait 30s before sending traffic to Security Groups for Pods pods in tests ([#3963](https://github.com/aws/amazon-vpc-cni-k8s/pull/3963), @cdirubbio)
+* Bump the test agent image to `aws-vpc-cni-test-helper:20261105` ([#3969](https://github.com/aws/amazon-vpc-cni-k8s/pull/3969), @cdirubbio)
 * Fix the flaky cni-metrics-helper `addReqCount` assertion ([#3919](https://github.com/aws/amazon-vpc-cni-k8s/pull/3919), @nakshah87)
 * Fix the traffic tester IPv6 metric URL ([#3905](https://github.com/aws/amazon-vpc-cni-k8s/pull/3905), @cdirubbio)
 * Add `SKIP_ADDON_INSTALLATION` to the IPv6 integration test script ([#3928](https://github.com/aws/amazon-vpc-cni-k8s/pull/3928), @emilyhuaa)
+* Bump `golang.org/x/net` from 0.60.0 to 0.62.0 for CVE-2026-78661 and CVE-2026-97045 ([#3964](https://github.com/aws/amazon-vpc-cni-k8s/pull/3964), @Issacwww)
 * Bump the `aws-dependencies` group with 13 updates ([#3901](https://github.com/aws/amazon-vpc-cni-k8s/pull/3901)) and 12 updates ([#3948](https://github.com/aws/amazon-vpc-cni-k8s/pull/3948))
 * Bump the `k8s-dependencies` group with 5 updates ([#3900](https://github.com/aws/amazon-vpc-cni-k8s/pull/3900))
 * Bump the `other-deps` group with 3 updates ([#3889](https://github.com/aws/amazon-vpc-cni-k8s/pull/3889))
