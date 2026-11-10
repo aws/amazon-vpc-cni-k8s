@@ -1009,6 +1009,16 @@ func (c *IPAMContext) increaseDatastorePool(ctx context.Context, networkCard int
 	increasedPool, err := c.tryAssignCidrs(ctx, networkCard)
 	if err != nil {
 		if containsInsufficientCIDRsOrSubnetIPs(err) {
+			// With subnet discovery a new ENI may land in another subnet that still has room.
+			// Only start the cooldown if that ENI allocation fails as well.
+			if c.useSubnetDiscovery && c.hasRoomForEni(networkCard) {
+				allocErr := c.tryAllocateENI(ctx, networkCard)
+				if allocErr == nil {
+					c.updateLastNodeIPPoolAction(networkCard)
+					return nil
+				}
+				log.Debugf("Error trying to allocate ENI after insufficient IPs/Prefixes on existing ENIs: %v", allocErr)
+			}
 			log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
 			c.lastInsufficientCidrError = time.Now()
 			return nil
@@ -1153,6 +1163,7 @@ func (c *IPAMContext) tryAssignIPs(ctx context.Context, networkCard int) (increa
 
 	// Find an ENI where we can add more IPs
 	enis := c.dataStoreAccess.GetDataStore(networkCard).GetAllocatableENIs(c.maxIPsPerENI, c.useCustomNetworking)
+	var insufficientErr error
 	for _, eni := range enis {
 		if len(eni.AvailableIPv4Cidrs) < c.maxIPsPerENI {
 			currentNumberOfAllocatedIPs := len(eni.AvailableIPv4Cidrs)
@@ -1166,6 +1177,7 @@ func (c *IPAMContext) tryAssignIPs(ctx context.Context, networkCard int) (increa
 				if err != nil && !containsPrivateIPAddressLimitExceededError(err) {
 					ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
 					if c.useSubnetDiscovery && containsInsufficientCIDRsOrSubnetIPs(err) {
+						insufficientErr = errors.Wrap(err, fmt.Sprintf("failed to allocate one IP addresses on ENI %s", eni.ID))
 						continue
 					}
 					return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IP addresses on ENI %s, err ", eni.ID))
@@ -1197,7 +1209,9 @@ func (c *IPAMContext) tryAssignIPs(ctx context.Context, networkCard int) (increa
 			return true, nil
 		}
 	}
-	return false, nil
+	// If ENIs were skipped because their subnet is out of addresses, return that error so the caller
+	// can try a new ENI before it enters the InsufficientCidr cooldown.
+	return false, insufficientErr
 }
 
 func (c *IPAMContext) assignIPv6Prefix(ctx context.Context, eniID string, networkCard int) (err error) {
@@ -1269,6 +1283,7 @@ func (c *IPAMContext) tryAssignPrefixes(ctx context.Context, networkCard int) (i
 	// Returns an ENI which has space for more prefixes to be attached, but this
 	// ENI might not suffice the WARM_IP_TARGET/WARM_PREFIX_TARGET
 	enis := c.dataStoreAccess.GetDataStore(networkCard).GetAllocatableENIs(c.maxPrefixesPerENI, c.useCustomNetworking)
+	var insufficientErr error
 	for _, eni := range enis {
 		currentNumberOfAllocatedPrefixes := len(eni.AvailableIPv4Cidrs)
 		resourcesToAllocate := min((c.maxPrefixesPerENI - currentNumberOfAllocatedPrefixes), toAllocate)
@@ -1280,6 +1295,7 @@ func (c *IPAMContext) tryAssignPrefixes(ctx context.Context, networkCard int) (i
 			if err != nil && !containsPrivateIPAddressLimitExceededError(err) {
 				ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
 				if c.useSubnetDiscovery && containsInsufficientCIDRsOrSubnetIPs(err) {
+					insufficientErr = errors.Wrap(err, fmt.Sprintf("failed to allocate one IPv4 prefix on ENI %s", eni.ID))
 					continue
 				}
 				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IPv4 prefix on ENI %s, err: %v", eni.ID, err))
@@ -1306,7 +1322,9 @@ func (c *IPAMContext) tryAssignPrefixes(ctx context.Context, networkCard int) (i
 		c.addENIv4prefixesToDataStore(ec2Prefixes, eni.ID, networkCard)
 		return true, nil
 	}
-	return false, nil
+	// If ENIs were skipped because their subnet is out of prefixes, return that error so the caller
+	// can try a new ENI before it enters the InsufficientCidr cooldown.
+	return false, insufficientErr
 }
 
 // setupENI does following:
