@@ -41,10 +41,34 @@ func GetEnvValueForKeyFromDaemonSet(key string, ds *appsV1.DaemonSet) string {
 	return ""
 }
 
+// moduleRoot is the module path declared in the repository's root go.mod.
+const moduleRoot = "github.com/aws/amazon-vpc-cni-k8s"
+
+// GetProjectRoot returns the root of the amazon-vpc-cni-k8s checkout that the running test binary was built in.
 func GetProjectRoot() string {
 	dir, _ := filepath.Abs(filepath.Dir(os.Args[0]))
-	projectRoot := strings.SplitAfter(dir, "amazon-vpc-cni-k8s")[0]
+	return projectRootFrom(dir)
+}
 
+// projectRootFrom walks up from dir to the directory whose go.mod declares moduleRoot. That works whatever
+// the checkout directory is called, including paths where "vpc-cni" also appears in a parent directory
+// name (for example a Hydra workspace such as /workspace/<acct>-Hydra-vpc-cni-release-<id>/repository/vpc-cni).
+// If no such go.mod is found, it falls back to the previous name-based lookup.
+func projectRootFrom(dir string) string {
+	for d := dir; ; d = filepath.Dir(d) {
+		if goMod, err := os.ReadFile(filepath.Join(d, "go.mod")); err == nil {
+			for _, line := range strings.Split(string(goMod), "\n") {
+				if strings.TrimSpace(line) == "module "+moduleRoot {
+					return d
+				}
+			}
+		}
+		if parent := filepath.Dir(d); parent == d {
+			break
+		}
+	}
+
+	projectRoot := strings.SplitAfter(dir, "amazon-vpc-cni-k8s")[0]
 	if dir == projectRoot {
 		// in prow tests, the repository name is "vpc-cni"
 		projectRoot = strings.SplitAfter(dir, "vpc-cni")[0]

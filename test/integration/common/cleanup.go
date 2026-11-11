@@ -7,10 +7,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
+	. "github.com/onsi/ginkgo/v2"
 )
 
 // Subnet deletes get the longest bound because they must wait out the CNI's async
@@ -18,6 +21,7 @@ import (
 // not pin the VPC (eksctl delete force-drops it), so it gets a shorter bound.
 const (
 	subnetPollTimeout       = 5 * time.Minute
+	eniReleaseGracePeriod   = 2 * time.Minute
 	sgPollTimeout           = 2 * time.Minute
 	cidrDisassociateTimeout = 90 * time.Second
 	pollInterval            = 15 * time.Second
@@ -68,14 +72,49 @@ func EnsureSecurityGroupDeleted(f *framework.Framework, groupID string) error {
 }
 
 // EnsureSubnetDeleted retries DeleteSubnet until it succeeds or the subnet is
-// already gone.
+// already gone. Only pass subnets the test created: if CNI ENIs still block the
+// delete after eniReleaseGracePeriod, it detaches and deletes them.
 func EnsureSubnetDeleted(f *framework.Framework, subnetID string) error {
 	if subnetID == "" {
 		return nil
 	}
+	start := time.Now()
 	return pollUntilDeleted(subnetPollTimeout,
 		fmt.Sprintf("subnet %s could not be deleted (it will leak and pin the VPC stack)", subnetID),
-		func() error { return f.CloudServices.EC2().DeleteSubnet(context.TODO(), subnetID) })
+		func() error {
+			err := f.CloudServices.EC2().DeleteSubnet(context.TODO(), subnetID)
+			if isDependencyViolation(err) && time.Since(start) >= eniReleaseGracePeriod {
+				releaseCNIENIsInSubnet(f, subnetID)
+			}
+			return err
+		})
+}
+
+func isDependencyViolation(err error) bool {
+	var apiErr smithy.APIError
+	return errors.As(err, &apiErr) && apiErr.ErrorCode() == "DependencyViolation"
+}
+
+func releaseCNIENIsInSubnet(f *framework.Framework, subnetID string) {
+	enis, err := f.CloudServices.EC2().DescribeCNINetworkInterfacesInSubnet(context.TODO(), subnetID)
+	if err != nil {
+		_, _ = fmt.Fprintf(GinkgoWriter, "failed to describe CNI ENIs in subnet %s: %v\n", subnetID, err)
+		return
+	}
+	for _, eni := range enis {
+		eniID := aws.ToString(eni.NetworkInterfaceId)
+		if eni.Status == ec2types.NetworkInterfaceStatusAvailable {
+			_, _ = fmt.Fprintf(GinkgoWriter, "deleting CNI ENI %s in subnet %s\n", eniID, subnetID)
+			if err := f.CloudServices.EC2().DeleteNetworkInterface(context.TODO(), eniID); err != nil {
+				_, _ = fmt.Fprintf(GinkgoWriter, "failed to delete CNI ENI %s: %v\n", eniID, err)
+			}
+		} else if eni.Attachment != nil && eni.Attachment.AttachmentId != nil {
+			_, _ = fmt.Fprintf(GinkgoWriter, "detaching CNI ENI %s in subnet %s\n", eniID, subnetID)
+			if err := f.CloudServices.EC2().DetachNetworkInterface(context.TODO(), *eni.Attachment.AttachmentId); err != nil {
+				_, _ = fmt.Fprintf(GinkgoWriter, "failed to detach CNI ENI %s: %v\n", eniID, err)
+			}
+		}
+	}
 }
 
 // EnsureVPCCIDRDisassociated retries DisAssociateVPCCIDRBlock until it succeeds or

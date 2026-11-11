@@ -50,7 +50,7 @@ func (d *defaultJobManager) CreateAndWaitTillJobCompleted(job *v1.Job) (*v1.Job,
 	time.Sleep(utils.PollIntervalShort)
 
 	observedJob := &v1.Job{}
-	return observedJob, wait.PollImmediateUntil(utils.PollIntervalShort, func() (bool, error) {
+	err = wait.PollUntilContextTimeout(ctx, utils.PollIntervalShort, utils.DefaultJobCompletionTimeout, true, func(ctx context.Context) (bool, error) {
 		if err := d.k8sClient.Get(ctx, utils.NamespacedName(job), observedJob); err != nil {
 			return false, err
 		}
@@ -60,7 +60,12 @@ func (d *defaultJobManager) CreateAndWaitTillJobCompleted(job *v1.Job) (*v1.Job,
 			return true, nil
 		}
 		return false, nil
-	}, ctx.Done())
+	})
+	if wait.Interrupted(err) {
+		return observedJob, fmt.Errorf("job %s/%s did not complete within %v, status: %+v",
+			job.Namespace, job.Name, utils.DefaultJobCompletionTimeout, observedJob.Status)
+	}
+	return observedJob, err
 }
 
 func (d *defaultJobManager) DeleteAndWaitTillJobIsDeleted(job *v1.Job) error {
