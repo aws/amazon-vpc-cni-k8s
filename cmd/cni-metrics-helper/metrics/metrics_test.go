@@ -25,6 +25,7 @@ import (
 )
 
 type testMetricsTarget struct {
+	metricsPollState
 	metricFile         string
 	interestingMetrics map[string]metricsConvert
 }
@@ -66,66 +67,67 @@ func (target *testMetricsTarget) submitPrometheus() bool {
 }
 
 func TestAPIServerMetric(t *testing.T) {
-	testTarget := newTestMetricsTarget("cni_test1.data", InterestingCNIMetrics)
+	interestingMetrics := newCNIMetrics()
+	testTarget := newTestMetricsTarget("cni_test1.data", interestingMetrics)
 	ctx := context.Background()
 	_, _, resetDetected, err := metricsListGrabAggregateConvert(ctx, testTarget)
 	assert.NoError(t, err)
-	assert.True(t, resetDetected)
+	assert.False(t, resetDetected)
 
-	actions := InterestingCNIMetrics["awscni_assigned_ip_addresses"].actions
+	actions := interestingMetrics["awscni_assigned_ip_addresses"].actions
 	// verify awscni_assigned_ip_addresses value
 	assert.Equal(t, 1.0, actions[0].data.curSingleDataPoint)
 
 	// verify awscni_ec2api_req_count value
-	actions = InterestingCNIMetrics["awscni_ec2api_req_count"].actions
-	assert.Equal(t, 21.0, actions[0].data.curSingleDataPoint)
+	actions = interestingMetrics["awscni_ec2api_req_count"].actions
+	assert.Zero(t, actions[0].data.curSingleDataPoint)
 
 	// verify awscni_ec2api_error_count value
-	actions = InterestingCNIMetrics["awscni_ec2api_error_count"].actions
+	actions = interestingMetrics["awscni_ec2api_error_count"].actions
 	assert.Equal(t, 0.0, actions[0].data.curSingleDataPoint)
 
-	actions = InterestingCNIMetrics["awscni_total_ip_addresses"].actions
+	actions = interestingMetrics["awscni_total_ip_addresses"].actions
 	// verify awscni_total_ip_addresses value
 	assert.Equal(t, 10.0, actions[0].data.curSingleDataPoint)
 
-	actions = InterestingCNIMetrics["awscni_aws_api_error_count"].actions
+	actions = interestingMetrics["awscni_aws_api_error_count"].actions
 	// verify awscni_aws_api_error_count value
-	assert.Equal(t, 14.0, actions[0].data.curSingleDataPoint)
+	assert.Zero(t, actions[0].data.curSingleDataPoint)
 
-	actions = InterestingCNIMetrics["awscni_eni_allocated"].actions
+	actions = interestingMetrics["awscni_eni_allocated"].actions
 	// verify awscni_eni_allocated value
 	assert.Equal(t, 2.0, actions[0].data.curSingleDataPoint)
 
-	actions = InterestingCNIMetrics["awscni_add_ip_req_count"].actions
+	actions = interestingMetrics["awscni_add_ip_req_count"].actions
 	// verify awscni_add_ip_req_count value
-	assert.Equal(t, 100.0, actions[0].data.curSingleDataPoint)
+	assert.Zero(t, actions[0].data.curSingleDataPoint)
 
-	actions = InterestingCNIMetrics["awscni_aws_api_latency_ms"].actions
+	actions = interestingMetrics["awscni_aws_api_latency_ms"].actions
 	// verify apiserver_request_latencies_bucket
 	assert.Equal(t, "awsAPILatency", actions[0].cwMetricName)
 	assert.Equal(t, 1.0, actions[0].data.curSingleDataPoint)
-	assert.Equal(t, 0.0, actions[0].data.lastSingleDataPoint)
 }
 
 func TestAPIServerMetricwithPDenabled(t *testing.T) {
-	testTarget := newTestMetricsTarget("cni_test2.data", InterestingCNIMetrics)
+	interestingMetrics := newCNIMetrics()
+	testTarget := newTestMetricsTarget("cni_test2.data", interestingMetrics)
 	ctx := context.Background()
 	_, _, _, err := metricsListGrabAggregateConvert(ctx, testTarget)
 	assert.NoError(t, err)
 
-	actions := InterestingCNIMetrics["awscni_assigned_ip_addresses"].actions
+	actions := interestingMetrics["awscni_assigned_ip_addresses"].actions
 	// verify awscni_assigned_ip_addresses value
 	assert.Equal(t, 1.0, actions[0].data.curSingleDataPoint)
 
-	actions = InterestingCNIMetrics["awscni_total_ip_addresses"].actions
+	actions = interestingMetrics["awscni_total_ip_addresses"].actions
 	// verify awscni_total_ip_addresses value
 	assert.Equal(t, 16.0, actions[0].data.curSingleDataPoint)
 
-	actions = InterestingCNIMetrics["awscni_total_ipv4_prefixes"].actions
+	actions = interestingMetrics["awscni_total_ipv4_prefixes"].actions
 	// verify awscni_total_ipv4_prefixes value
 	assert.Equal(t, 1.0, actions[0].data.curSingleDataPoint)
 
-	actions = InterestingCNIMetrics["awscni_assigned_ip_per_cidr"].actions
+	actions = interestingMetrics["awscni_assigned_ip_per_cidr"].actions
 	// verify awscni_assigned_ip_per_cidr value
 	assert.Equal(t, 1.0, actions[0].data.curSingleDataPoint)
 }

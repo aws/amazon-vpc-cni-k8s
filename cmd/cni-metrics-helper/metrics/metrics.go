@@ -44,6 +44,18 @@ type metricsTarget interface {
 	submitCloudWatch() bool
 	submitPrometheus() bool
 	getLogger() logger.Logger
+	finishPoll() (firstPoll bool)
+}
+
+// metricsPollState tracks startup for the helper, across all counter families.
+type metricsPollState struct {
+	started bool
+}
+
+func (s *metricsPollState) finishPoll() bool {
+	firstPoll := !s.started
+	s.started = true
+	return firstPoll
 }
 
 type metricsConvert struct {
@@ -60,8 +72,17 @@ type metricsAction struct {
 }
 
 type dataPoints struct {
-	lastSingleDataPoint float64
-	curSingleDataPoint  float64
+	curSingleDataPoint float64
+
+	// lastTargetValues and curTargetValues are used only for COUNTER metrics. A
+	// Prometheus counter is cumulative, so the value published to CloudWatch is
+	// the increase since the previous poll, summed across every node. Keeping
+	// the last-seen value per scrape target (keyed by pod name) -- instead of a
+	// single cluster-wide scalar -- makes that sum independent of scrape order
+	// and lets us tell a node restarting (its counter goes backwards) apart from
+	// a node leaving the cluster (its target disappears). See issue #3844.
+	lastTargetValues map[string]float64 // previous poll's cumulative value per target
+	curTargetValues  map[string]float64 // this poll's cumulative value per target
 }
 
 type bucketPoint struct {
@@ -107,8 +128,18 @@ func processGauge(metric *dto.Metric, act *metricsAction) {
 	act.actionFunc(&act.data.curSingleDataPoint, metric.GetGauge().GetValue())
 }
 
-func processCounter(metric *dto.Metric, act *metricsAction) {
-	act.actionFunc(&act.data.curSingleDataPoint, metric.GetCounter().GetValue())
+func processCounter(metric *dto.Metric, act *metricsAction, target string) {
+	if act.data.curTargetValues == nil {
+		act.data.curTargetValues = make(map[string]float64)
+	}
+	// Accumulate this target's cumulative counter value, summing the metric's
+	// label series within the target. actionFunc is metricsAdd for every counter
+	// in InterestingCNIMetrics, matching the per-node "Sum" contract documented
+	// in cmd/cni-metrics-helper/README.md. The cross-target aggregation into a
+	// per-poll delta happens later, once, in postProcessingCounter.
+	v := act.data.curTargetValues[target]
+	act.actionFunc(&v, metric.GetCounter().GetValue())
+	act.data.curTargetValues[target] = v
 }
 
 func processPercentile(metric *dto.Metric, act *metricsAction) {
@@ -151,35 +182,37 @@ func processHistogram(metric *dto.Metric, act *metricsAction, log logger.Logger)
 	}
 }
 
-func postProcessingCounter(convert metricsConvert, log logger.Logger) bool {
-	resetDetected := false
-	noPreviousDataPoint := true
-	noCurrentDataPoint := true
-	for _, action := range convert.actions {
-		currentTotal := action.data.curSingleDataPoint
-		// Only do delta if metric target did NOT restart
-		if action.data.curSingleDataPoint < action.data.lastSingleDataPoint {
-			resetDetected = true
+// postProcessingCounter sums the increase since the last scrape of each target.
+// A new target or a reset contributes its full value after the helper's first
+// poll. Keep baselines for live targets even when their scrape or series is
+// missing this poll.
+func postProcessingCounter(data *dataPoints, liveTargets map[string]bool, firstPoll bool) {
+	if data.lastTargetValues == nil {
+		data.lastTargetValues = make(map[string]float64)
+	}
+
+	var delta float64
+	for target, cur := range data.curTargetValues {
+		last := data.lastTargetValues[target]
+		if cur >= last {
+			delta += cur - last
 		} else {
-			action.data.curSingleDataPoint -= action.data.lastSingleDataPoint
+			delta += cur
 		}
-
-		if action.data.lastSingleDataPoint != 0 {
-			noPreviousDataPoint = false
-		}
-
-		if action.data.curSingleDataPoint != 0 {
-			noCurrentDataPoint = false
-		}
-
-		action.data.lastSingleDataPoint = currentTotal
+		data.lastTargetValues[target] = cur
+	}
+	if firstPoll {
+		delta = 0
+	}
+	if len(data.curTargetValues) > 0 {
+		data.curSingleDataPoint = delta
 	}
 
-	if resetDetected || (noPreviousDataPoint && !noCurrentDataPoint) {
-		log.Debugf("Reset detected resetDetected: %v, noPreviousDataPoint: %v, noCurrentDataPoint: %v",
-			resetDetected, noPreviousDataPoint, noCurrentDataPoint)
+	for target := range data.lastTargetValues {
+		if !liveTargets[target] {
+			delete(data.lastTargetValues, target)
+		}
 	}
-	return resetDetected || (noPreviousDataPoint && !noCurrentDataPoint)
 }
 
 func postProcessingHistogram(convert metricsConvert, log logger.Logger) bool {
@@ -239,22 +272,23 @@ func postProcessingHistogram(convert metricsConvert, log logger.Logger) bool {
 	return resetDetected || noLastBucket
 }
 
-func processMetric(family *dto.MetricFamily, convert metricsConvert, log logger.Logger) (bool, error) {
+func processMetric(family *dto.MetricFamily, convert metricsConvert, target string, log logger.Logger) (bool, error) {
 	resetDetected := false
 
 	metricType := family.GetType()
 	for _, metric := range family.GetMetric() {
-		for _, act := range convert.actions {
+		for i := range convert.actions {
+			act := &convert.actions[i]
 			if act.matchFunc(metric) {
 				switch metricType {
 				case dto.MetricType_GAUGE:
-					processGauge(metric, &act)
+					processGauge(metric, act)
 				case dto.MetricType_HISTOGRAM:
-					processHistogram(metric, &act, log)
+					processHistogram(metric, act, log)
 				case dto.MetricType_COUNTER:
-					processCounter(metric, &act)
+					processCounter(metric, act, target)
 				case dto.MetricType_SUMMARY:
-					processPercentile(metric, &act)
+					processPercentile(metric, act)
 				}
 			}
 		}
@@ -262,10 +296,9 @@ func processMetric(family *dto.MetricFamily, convert metricsConvert, log logger.
 
 	switch metricType {
 	case dto.MetricType_COUNTER:
-		curResetDetected := postProcessingCounter(convert, log)
-		if curResetDetected {
-			resetDetected = true
-		}
+		// Counters are aggregated into a cluster-wide delta once, after every
+		// target has been scraped (postProcessingCounter in
+		// metricsListGrabAggregateConvert), so there is no per-target work here.
 	case dto.MetricType_GAUGE:
 	// no addition work needs for GAUGE
 	case dto.MetricType_SUMMARY:
@@ -302,19 +335,6 @@ func produceHistogram(act metricsAction, cw publisher.Publisher) {
 			cw.Publish(dataPoint)
 		}
 	}
-}
-
-func filterMetrics(originalMetrics map[string]*dto.MetricFamily,
-	interestingMetrics map[string]metricsConvert,
-) (map[string]*dto.MetricFamily, error) {
-	result := map[string]*dto.MetricFamily{}
-
-	for metric := range interestingMetrics {
-		if family, found := originalMetrics[metric]; found {
-			result[metric] = family
-		}
-	}
-	return result, nil
 }
 
 func produceCloudWatchMetrics(t metricsTarget, families map[string]*dto.MetricFamily, convertDef map[string]metricsConvert, cw publisher.Publisher) error {
@@ -388,6 +408,7 @@ func resetMetrics(interestingMetrics map[string]metricsConvert) {
 		for _, act := range convert.actions {
 			if act.data != nil {
 				act.data.curSingleDataPoint = 0
+				clear(act.data.curTargetValues)
 			}
 
 			if act.bucket != nil {
@@ -398,48 +419,53 @@ func resetMetrics(interestingMetrics map[string]metricsConvert) {
 }
 
 func metricsListGrabAggregateConvert(ctx context.Context, t metricsTarget) (map[string]*dto.MetricFamily, map[string]metricsConvert, bool, error) {
-	var resetDetected = false
-	var families map[string]*dto.MetricFamily
-
+	var resetDetected bool
+	families := make(map[string]*dto.MetricFamily)
 	interestingMetrics := t.getInterestingMetrics()
-	resetMetrics(interestingMetrics)
 
-	targetList, _ := t.getTargetList(ctx)
+	targetList, err := t.getTargetList(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
 	t.getLogger().Debugf("Total TargetList pod count: %d", len(targetList))
+
+	resetMetrics(interestingMetrics)
+	liveTargets := make(map[string]bool, len(targetList))
 	for _, target := range targetList {
+		liveTargets[target] = true
 		rawOutput, err := t.grabMetricsFromTarget(ctx, target)
 		if err != nil {
-			// it may take times to remove some metric targets
+			// Keep the baseline for a live target if its scrape fails.
 			continue
 		}
 
 		parser := expfmt.NewTextParser(model.UTF8Validation)
 		origFamilies, err := parser.TextToMetricFamilies(bytes.NewReader(rawOutput))
-
 		if err != nil {
-			return nil, nil, true, err
+			return nil, nil, false, err
 		}
-
-		families, err = filterMetrics(origFamilies, interestingMetrics)
-		if err != nil {
-			return nil, nil, true, err
-		}
-
-		for _, family := range families {
-			convert := interestingMetrics[family.GetName()]
-			curReset, err := processMetric(family, convert, t.getLogger())
+		for name, convert := range interestingMetrics {
+			family, found := origFamilies[name]
+			if !found {
+				continue
+			}
+			families[name] = family
+			curReset, err := processMetric(family, convert, target, t.getLogger())
 			if err != nil {
-				return nil, nil, true, err
+				return nil, nil, false, err
 			}
-			if curReset {
-				resetDetected = true
-			}
+			resetDetected = resetDetected || curReset
 		}
 	}
 
-	// TODO resetDetected is NOT right for cniMetrics, so force it for now
-	if len(targetList) > 1 {
-		resetDetected = false
+	firstPoll := len(families) > 0 && t.finishPoll()
+	for _, convert := range interestingMetrics {
+		for _, action := range convert.actions {
+			data := action.data
+			if data != nil && (data.curTargetValues != nil || data.lastTargetValues != nil) {
+				postProcessingCounter(data, liveTargets, firstPoll)
+			}
+		}
 	}
 
 	return families, interestingMetrics, resetDetected, nil
@@ -449,8 +475,12 @@ func metricsListGrabAggregateConvert(ctx context.Context, t metricsTarget) (map[
 func Handler(ctx context.Context, t metricsTarget) {
 	families, interestingMetrics, resetDetected, err := metricsListGrabAggregateConvert(ctx, t)
 
-	if err != nil || resetDetected {
-		t.getLogger().Infof("Skipping 1st poll after reset, error: %v", err)
+	if err != nil {
+		t.getLogger().Infof("Skipping metrics poll: %v", err)
+		return
+	}
+	if resetDetected {
+		t.getLogger().Info("Histogram baseline initialized or reset")
 	}
 
 	if t.submitCloudWatch() {

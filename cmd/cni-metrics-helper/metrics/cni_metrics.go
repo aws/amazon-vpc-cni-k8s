@@ -15,6 +15,8 @@
 package metrics
 
 import (
+	"slices"
+
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"golang.org/x/net/context"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -163,8 +165,27 @@ var InterestingCNIMetrics = map[string]metricsConvert{
 				logToFile:  true}}},
 }
 
+// Each helper owns its baselines and scratch data.
+func newCNIMetrics() map[string]metricsConvert {
+	metrics := make(map[string]metricsConvert, len(InterestingCNIMetrics))
+	for name, convert := range InterestingCNIMetrics {
+		actions := slices.Clone(convert.actions)
+		for i := range actions {
+			if actions[i].data != nil {
+				actions[i].data = &dataPoints{}
+			}
+			if actions[i].bucket != nil {
+				actions[i].bucket = &bucketPoints{}
+			}
+		}
+		metrics[name] = metricsConvert{actions: actions}
+	}
+	return metrics
+}
+
 // CNIMetricsTarget defines data structure for kube-state-metric target
 type CNIMetricsTarget struct {
+	metricsPollState
 	interestingMetrics      map[string]metricsConvert
 	cwMetricsPublisher      publisher.Publisher
 	kubeClient              kubernetes.Interface
@@ -178,7 +199,7 @@ type CNIMetricsTarget struct {
 func CNIMetricsNew(k8sClient kubernetes.Interface, cw publisher.Publisher, submitCW bool, submitPrometheus bool, l logger.Logger,
 	watcher *defaultPodWatcher) *CNIMetricsTarget {
 	return &CNIMetricsTarget{
-		interestingMetrics:      InterestingCNIMetrics,
+		interestingMetrics:      newCNIMetrics(),
 		cwMetricsPublisher:      cw,
 		kubeClient:              k8sClient,
 		podWatcher:              watcher,
@@ -200,7 +221,7 @@ func (t *CNIMetricsTarget) grabMetricsFromTarget(ctx context.Context, cniPod str
 }
 
 func (t *CNIMetricsTarget) getInterestingMetrics() map[string]metricsConvert {
-	return InterestingCNIMetrics
+	return t.interestingMetrics
 }
 
 func (t *CNIMetricsTarget) getCWMetricsPublisher() publisher.Publisher {
