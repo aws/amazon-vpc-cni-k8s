@@ -40,12 +40,6 @@
 #
 # NOTE: For multi-card instance types (p5.48xlarge) the max limits is calculated only against the default network card at index (0).
 #
-a1.2xlarge 58
-a1.4xlarge 234
-a1.large 29
-a1.medium 8
-a1.metal 234
-a1.xlarge 58
 bmn-sf1.metal 737
 c1.medium 12
 c1.xlarge 58
@@ -397,11 +391,6 @@ f1.4xlarge 234
 f2.12xlarge 234
 f2.48xlarge 737
 f2.6xlarge 234
-g4ad.16xlarge 234
-g4ad.2xlarge 8
-g4ad.4xlarge 29
-g4ad.8xlarge 58
-g4ad.xlarge 8
 g4dn.12xlarge 234
 g4dn.16xlarge 58
 g4dn.2xlarge 29
