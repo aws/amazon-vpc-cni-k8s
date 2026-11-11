@@ -15,327 +15,249 @@ package metrics
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	cloudwatchtypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/publisher"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 )
 
-// These tests exercise counter aggregation across more than one scrape target,
-// which the existing single-target tests never do. They are the regression
-// coverage for issue #3844: on a multi-node cluster the per-poll delta that
-// cni-metrics-helper publishes for Prometheus counters must be the sum of each
-// node's own increase, independent of the order pods are scraped in, and robust
-// to node restarts, nodes joining or leaving, and transient scrape failures.
-
-const testCounterMetric = "awscni_add_ip_req_count"
-
-// newCounterMetrics returns a fresh, isolated conversion definition for a single
-// counter metric so each test keeps its own per-target state instead of sharing
-// the global InterestingCNIMetrics map.
-func newCounterMetrics() map[string]metricsConvert {
-	return map[string]metricsConvert{
-		testCounterMetric: {actions: []metricsAction{{
-			cwMetricName: "addReqCount",
-			matchFunc:    matchAny,
-			actionFunc:   metricsAdd,
-			data:         &dataPoints{},
-		}}},
-	}
+type recordingMetricsPublisher struct {
+	datums []cloudwatchtypes.MetricDatum
 }
 
-// counterExposition renders a Prometheus text exposition for the test counter.
-// Passing more than one value emits several label series for the same metric on
-// one target, which must be summed within that target.
-func counterExposition(values ...float64) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "# HELP %s test counter\n# TYPE %s counter\n", testCounterMetric, testCounterMetric)
-	if len(values) == 1 {
-		fmt.Fprintf(&b, "%s %g\n", testCounterMetric, values[0])
-		return b.String()
-	}
-	for i, v := range values {
-		fmt.Fprintf(&b, "%s{series=\"%d\"} %g\n", testCounterMetric, i, v)
-	}
-	return b.String()
+func (p *recordingMetricsPublisher) Publish(datums ...cloudwatchtypes.MetricDatum) {
+	p.datums = append(p.datums, datums...)
 }
 
-// multiNodeTarget is a metricsTarget backed by an in-memory map of scrape
-// targets to their exposition text. A target that is listed in order but absent
-// from raw simulates a target that exists in the cluster but fails to scrape
-// this poll.
+func (*recordingMetricsPublisher) Start(int) {}
+func (*recordingMetricsPublisher) Stop()     {}
+
 type multiNodeTarget struct {
+	metricsPollState
 	interesting map[string]metricsConvert
-	order       []string
-	raw         map[string]string
+	targets     []string
+	scrapes     map[string]string
+	listError   bool
+	cw          recordingMetricsPublisher
 }
 
 func (m *multiNodeTarget) grabMetricsFromTarget(_ context.Context, target string) ([]byte, error) {
-	text, ok := m.raw[target]
+	raw, ok := m.scrapes[target]
 	if !ok {
 		return nil, fmt.Errorf("scrape failed for target %q", target)
 	}
-	return []byte(text), nil
+	return []byte(raw), nil
+}
+
+func (m *multiNodeTarget) getTargetList(context.Context) ([]string, error) {
+	if m.listError {
+		return m.targets, errors.New("target list failed")
+	}
+	return m.targets, nil
 }
 
 func (m *multiNodeTarget) getInterestingMetrics() map[string]metricsConvert { return m.interesting }
-func (m *multiNodeTarget) getCWMetricsPublisher() publisher.Publisher       { return nil }
-func (m *multiNodeTarget) getTargetList(context.Context) ([]string, error)  { return m.order, nil }
-func (m *multiNodeTarget) submitCloudWatch() bool                           { return false }
-func (m *multiNodeTarget) submitPrometheus() bool                           { return false }
-func (m *multiNodeTarget) getLogger() logger.Logger                         { return logger.DefaultLogger() }
+func (m *multiNodeTarget) getCWMetricsPublisher() publisher.Publisher       { return &m.cw }
+func (*multiNodeTarget) submitCloudWatch() bool                             { return true }
+func (*multiNodeTarget) submitPrometheus() bool                             { return false }
+func (*multiNodeTarget) getLogger() logger.Logger                           { return logger.DefaultLogger() }
 
-// poll runs one aggregation pass and returns whether it was flagged as a
-// baseline/reset poll (which Handler skips publishing).
-func poll(t *testing.T, target *multiNodeTarget) bool {
-	t.Helper()
-	_, _, resetDetected, err := metricsListGrabAggregateConvert(context.Background(), target)
-	assert.NoError(t, err)
-	return resetDetected
-}
+func TestHandlerPublishesCounterDeltas(t *testing.T) {
+	const (
+		addCounter = "awscni_add_ip_req_count"
+		delCounter = "awscni_del_ip_req_count"
+		ipGauge    = "awscni_assigned_ip_addresses"
+		addCW      = "addReqCount"
+		delCW      = "delReqCount"
+		ipCW       = "assignIPAddresses"
+	)
 
-// published is the value that would be sent to CloudWatch for the test counter.
-func published(target *multiNodeTarget) float64 {
-	return target.interesting[testCounterMetric].actions[0].data.curSingleDataPoint
-}
-
-// TestCounterIdleClusterPublishesZeroRegardlessOfScrapeOrder is the headline
-// regression for #3844. Three nodes sit at 10/20/30 lifetime requests and serve
-// no new traffic. The helper must publish 0 on every poll after the first,
-// whatever order the nodes are scraped in. The buggy code published c-a (or
-// b+c) -- a non-zero, scrape-order-dependent value -- forever.
-func TestCounterIdleClusterPublishesZeroRegardlessOfScrapeOrder(t *testing.T) {
-	for _, order := range [][]string{{"a", "b", "c"}, {"c", "b", "a"}, {"b", "a", "c"}} {
-		order := order
-		t.Run(strings.Join(order, ""), func(t *testing.T) {
-			target := &multiNodeTarget{
-				interesting: newCounterMetrics(),
-				order:       order,
-				raw: map[string]string{
-					"a": counterExposition(10),
-					"b": counterExposition(20),
-					"c": counterExposition(30),
-				},
-			}
-
-			assert.True(t, poll(t, target), "first poll establishes the baseline and is skipped")
-
-			assert.False(t, poll(t, target), "idle cluster should not be flagged as reset")
-			assert.Equal(t, 0.0, published(target), "idle cluster must publish 0, not a scrape-order artifact")
-
-			assert.False(t, poll(t, target))
-			assert.Equal(t, 0.0, published(target), "repeated idle polls must stay at 0")
-		})
+	scalar := func(name, kind string, value int) string {
+		return fmt.Sprintf("# TYPE %s %s\n%s %d\n", name, kind, name, value)
 	}
-}
-
-// TestCounterSumsPerNodeIncreasesOrderIndependently verifies that a real
-// increase is the sum of each node's own delta and does not depend on order.
-func TestCounterSumsPerNodeIncreasesOrderIndependently(t *testing.T) {
-	for _, order := range [][]string{{"a", "b", "c"}, {"c", "a", "b"}} {
-		order := order
-		t.Run(strings.Join(order, ""), func(t *testing.T) {
-			target := &multiNodeTarget{
-				interesting: newCounterMetrics(),
-				order:       order,
-				raw: map[string]string{
-					"a": counterExposition(10),
-					"b": counterExposition(20),
-					"c": counterExposition(30),
-				},
-			}
-			assert.True(t, poll(t, target))
-
-			// a:+5, b:+0, c:+8  => cluster delta 13
-			target.raw["a"] = counterExposition(15)
-			target.raw["c"] = counterExposition(38)
-			assert.False(t, poll(t, target))
-			assert.Equal(t, 13.0, published(target))
-		})
-	}
-}
-
-// TestCounterHandlesNodeRestart checks that a node whose counter goes backwards
-// (ipamd restarted) contributes its post-reset total rather than a negative
-// delta, and that this does not discard the rest of the cluster's poll.
-func TestCounterHandlesNodeRestart(t *testing.T) {
-	target := &multiNodeTarget{
-		interesting: newCounterMetrics(),
-		order:       []string{"a", "b"},
-		raw: map[string]string{
-			"a": counterExposition(100),
-			"b": counterExposition(50),
-		},
-	}
-	assert.True(t, poll(t, target))
-
-	// a restarts: 100 -> 5. b unchanged. Expected delta = 5 (a's post-reset total) + 0.
-	target.raw["a"] = counterExposition(5)
-	assert.False(t, poll(t, target), "a single node restart must not skip the whole poll")
-	assert.Equal(t, 5.0, published(target))
-
-	// Next poll, both steady at 5 and 50 => 0.
-	assert.False(t, poll(t, target))
-	assert.Equal(t, 0.0, published(target))
-}
-
-// TestCounterDropsDepartedNode checks that a node leaving the cluster is removed
-// rather than counted as a decrease.
-func TestCounterDropsDepartedNode(t *testing.T) {
-	target := &multiNodeTarget{
-		interesting: newCounterMetrics(),
-		order:       []string{"a", "b"},
-		raw: map[string]string{
-			"a": counterExposition(10),
-			"b": counterExposition(20),
-		},
-	}
-	assert.True(t, poll(t, target))
-
-	// b leaves the cluster entirely; a advances by 2.
-	target.order = []string{"a"}
-	delete(target.raw, "b")
-	target.raw["a"] = counterExposition(12)
-	assert.False(t, poll(t, target))
-	assert.Equal(t, 2.0, published(target), "a departed node must not subtract its last value")
-
-	// b's baseline must be gone: a steady => 0.
-	assert.False(t, poll(t, target))
-	assert.Equal(t, 0.0, published(target))
-}
-
-// TestCounterBaselinesNewlyDiscoveredNode checks that a node joining an
-// established cluster does not spike the published delta by its whole lifetime
-// counter; its first observation only sets a baseline.
-func TestCounterBaselinesNewlyDiscoveredNode(t *testing.T) {
-	target := &multiNodeTarget{
-		interesting: newCounterMetrics(),
-		order:       []string{"a"},
-		raw:         map[string]string{"a": counterExposition(10)},
-	}
-	assert.True(t, poll(t, target))
-
-	// b joins with a large lifetime counter; a is unchanged.
-	target.order = []string{"a", "b"}
-	target.raw["b"] = counterExposition(50)
-	assert.False(t, poll(t, target))
-	assert.Equal(t, 0.0, published(target), "a newly discovered node must not spike by its lifetime total")
-
-	// Now b does real work: +5. a unchanged.
-	target.raw["b"] = counterExposition(55)
-	assert.False(t, poll(t, target))
-	assert.Equal(t, 5.0, published(target))
-}
-
-// TestCounterCarriesBaselineThroughScrapeFailure checks that a target which
-// still exists but fails to scrape this poll keeps its baseline, so the delta is
-// bridged across the gap when it recovers instead of being lost or double
-// counted.
-func TestCounterCarriesBaselineThroughScrapeFailure(t *testing.T) {
-	target := &multiNodeTarget{
-		interesting: newCounterMetrics(),
-		order:       []string{"a", "b"},
-		raw: map[string]string{
-			"a": counterExposition(10),
-			"b": counterExposition(20),
-		},
-	}
-	assert.True(t, poll(t, target))
-
-	// b is still a live target but its scrape fails this poll; a advances by 5.
-	delete(target.raw, "b") // still in order => still "live", scrape errors
-	target.raw["a"] = counterExposition(15)
-	assert.False(t, poll(t, target))
-	assert.Equal(t, 5.0, published(target), "a transient scrape failure should not fabricate a delta")
-
-	// b recovers at 26 (it advanced by 6 across the gap); a unchanged.
-	target.raw["b"] = counterExposition(26)
-	assert.False(t, poll(t, target))
-	assert.Equal(t, 6.0, published(target), "b's carried baseline must bridge the scrape gap")
-}
-
-// TestCounterSumsWithinTargetAndIsStableAcrossPolls checks that several label
-// series on one target are summed for that target, and that repeated identical
-// polls do not drift.
-func TestCounterSumsWithinTargetAndIsStableAcrossPolls(t *testing.T) {
-	target := &multiNodeTarget{
-		interesting: newCounterMetrics(),
-		order:       []string{"a"},
-		raw:         map[string]string{"a": counterExposition(3, 4)}, // 3 + 4 = 7
-	}
-	assert.True(t, poll(t, target))
-
-	assert.False(t, poll(t, target))
-	assert.Equal(t, 0.0, published(target))
-
-	// Repeated identical poll must still be 0 (no drift).
-	assert.False(t, poll(t, target))
-	assert.Equal(t, 0.0, published(target))
-
-	// Series grow 3->3 and 4->9: within-target total 7 -> 12, delta 5.
-	target.raw["a"] = counterExposition(3, 9)
-	assert.False(t, poll(t, target))
-	assert.Equal(t, 5.0, published(target))
-}
-
-// TestCounterBaselineStaysBoundedUnderChurn verifies that the per-target
-// baseline does not grow without bound as nodes join and leave: departed
-// targets must drop out so the retained state tracks only the current cluster.
-func TestCounterBaselineStaysBoundedUnderChurn(t *testing.T) {
-	const window = 3
-	target := &multiNodeTarget{
-		interesting: newCounterMetrics(),
-		order:       nil,
-		raw:         map[string]string{},
-	}
-	data := target.interesting[testCounterMetric].actions[0].data
-
-	for step := 0; step < 100; step++ {
-		// A sliding window of 3 live nodes; each node appears for a few polls
-		// then is replaced, so 100 distinct node names churn through.
-		target.order = target.order[:0]
-		target.raw = map[string]string{}
-		for j := 0; j < window; j++ {
-			name := fmt.Sprintf("node-%d", step+j)
-			target.order = append(target.order, name)
-			target.raw[name] = counterExposition(float64(step + j))
+	add := func(value int) string { return scalar(addCounter, "counter", value) }
+	del := func(value int) string { return scalar(delCounter, "counter", value) }
+	ips := func(value int) string { return scalar(ipGauge, "gauge", value) }
+	series := func(samples ...string) string {
+		var b strings.Builder
+		fmt.Fprintf(&b, "# TYPE %s counter\n", addCounter)
+		for _, sample := range samples {
+			fmt.Fprintf(&b, "%s%s\n", addCounter, sample)
 		}
-		poll(t, target)
-		assert.LessOrEqual(t, len(data.lastTargetValues), window,
-			"baseline map must not retain departed targets (step %d)", step)
+		return b.String()
 	}
-}
+	malformed := "# TYPE " + addCounter + " counter\n" + addCounter + " invalid\n"
 
-// TestCounterRecoversAfterParseError checks that a poll which aborts partway
-// through on a malformed scrape does not leave half-accumulated per-target
-// state that corrupts the next poll. The target scraped before the error ("a")
-// must not be double counted once scraping recovers.
-func TestCounterRecoversAfterParseError(t *testing.T) {
-	target := &multiNodeTarget{
-		interesting: newCounterMetrics(),
-		order:       []string{"a", "b"}, // a is scraped before b fails
-		raw: map[string]string{
-			"a": counterExposition(10),
-			"b": counterExposition(20),
+	type scrapes map[string]string
+	type values map[string]float64
+	type poll struct {
+		name      string
+		order     string // space-separated scrape targets
+		scrapes   scrapes
+		want      values
+		listError bool
+	}
+
+	tests := []struct {
+		name  string
+		polls []poll
+	}{
+		{
+			name: "startup waits for a successfully parsed poll",
+			polls: []poll{
+				{name: "empty target list"},
+				{name: "all scrapes fail", order: "a b"},
+				{name: "empty exposition", order: "a", scrapes: scrapes{"a": ""}},
+				{name: "untracked metric only", order: "a", scrapes: scrapes{"a": scalar("untracked", "gauge", 1)}},
+				{name: "partial parse abort", order: "a b", scrapes: scrapes{"a": add(7), "b": malformed}},
+				{name: "target list error", order: "a", scrapes: scrapes{"a": add(8)}, listError: true},
+				{
+					name:  "first valid scrape emits zero and current gauge",
+					order: "a b", scrapes: scrapes{"a": add(10) + ips(4)},
+					want: values{addCW: 0, ipCW: 4},
+				},
+				{
+					name:  "previously unobserved target counts from zero",
+					order: "b a", scrapes: scrapes{"a": add(12) + ips(5), "b": add(20)},
+					want: values{addCW: 22, ipCW: 5},
+				},
+			},
+		},
+		{
+			name: "gauge-only startup",
+			polls: []poll{
+				{name: "gauge establishes startup", order: "a", scrapes: scrapes{"a": ips(4)}, want: values{ipCW: 4}},
+				{name: "new counter family counts from zero", order: "a", scrapes: scrapes{"a": add(10)}, want: values{addCW: 10}},
+			},
+		},
+		{
+			name: "multiple targets accumulate increases and resets independently",
+			polls: []poll{
+				{name: "baseline", order: "a b c", scrapes: scrapes{"a": add(10), "b": add(20), "c": add(30)}, want: values{addCW: 0}},
+				{name: "idle after reorder", order: "c b a", scrapes: scrapes{"a": add(10), "b": add(20), "c": add(30)}, want: values{addCW: 0}},
+				{name: "two targets grow", order: "b a c", scrapes: scrapes{"a": add(15), "b": add(20), "c": add(38)}, want: values{addCW: 13}},
+				{name: "reset and growth", order: "c a b", scrapes: scrapes{"a": add(2), "b": add(23), "c": add(38)}, want: values{addCW: 5}},
+				{name: "idle after reset", order: "a b c", scrapes: scrapes{"a": add(2), "b": add(23), "c": add(38)}, want: values{addCW: 0}},
+			},
+		},
+		{
+			name: "target and family lifecycles",
+			polls: []poll{
+				{
+					name:  "publish families from every target",
+					order: "a b", scrapes: scrapes{"a": add(10) + del(7) + ips(4), "b": add(20)},
+					want: values{addCW: 0, delCW: 0, ipCW: 4},
+				},
+				{
+					name:  "new target contributes its full counters",
+					order: "a b c", scrapes: scrapes{"a": add(10) + del(7) + ips(4), "b": add(21), "c": add(30) + del(4)},
+					want: values{addCW: 31, delCW: 4, ipCW: 4},
+				},
+				{
+					name:  "target leaves and family disappears from one target",
+					order: "c a", scrapes: scrapes{"a": add(12) + ips(4), "c": add(32) + del(7)},
+					want: values{addCW: 4, delCW: 3, ipCW: 4},
+				},
+				{
+					name:  "departed target and missing family return",
+					order: "b a c", scrapes: scrapes{"a": add(12) + del(9), "b": add(22), "c": add(32) + del(7)},
+					want: values{addCW: 22, delCW: 2},
+				},
+				{
+					name:  "family absent across all targets",
+					order: "a b c", scrapes: scrapes{"a": add(13), "b": add(22), "c": add(32)},
+					want: values{addCW: 1},
+				},
+				{
+					name:  "family reappears after absence across all targets",
+					order: "a b c", scrapes: scrapes{"a": add(13), "b": add(22), "c": add(32) + del(10)},
+					want: values{addCW: 0, delCW: 3},
+				},
+				{name: "empty successful target list retires all targets"},
+				{name: "target reappears after empty list", order: "b", scrapes: scrapes{"b": add(24)}, want: values{addCW: 24}},
+			},
+		},
+		{
+			name: "departed target retires even when its counter family is absent",
+			polls: []poll{
+				{name: "baseline", order: "a b", scrapes: scrapes{"a": add(10), "b": add(20)}, want: values{addCW: 0}},
+				{name: "target leaves during a gauge-only poll", order: "a", scrapes: scrapes{"a": ips(4)}, want: values{ipCW: 4}},
+				{name: "returning target counts from zero", order: "a b", scrapes: scrapes{"a": add(11), "b": add(25)}, want: values{addCW: 26}},
+			},
+		},
+		{
+			name: "counter label series form one target total",
+			polls: []poll{
+				{
+					name: "baseline", order: "a",
+					scrapes: scrapes{"a": series(`{api="alloc", status="ok"} 20`, `{api="free", status="ok"} 50`)},
+					want:    values{addCW: 0},
+				},
+				{
+					name: "series order and label order change", order: "a",
+					scrapes: scrapes{"a": series(`{status="ok", api="free"} 50`, `{status="ok", api="alloc"} 20`)},
+					want:    values{addCW: 0},
+				},
+				{
+					name: "new series and growth increase the total", order: "a",
+					scrapes: scrapes{"a": series(`{api="alloc", status="ok"} 20`, `{api="free", status="ok"} 55`, `{api="alloc", status="error"} 8`)},
+					want:    values{addCW: 13},
+				},
+				{
+					name: "decreased target total counts from zero", order: "a",
+					scrapes: scrapes{"a": series(`{api="alloc", status="ok"} 2`, `{api="free", status="ok"} 60`, `{api="alloc", status="error"} 1`)},
+					want:    values{addCW: 63},
+				},
+			},
+		},
+		{
+			name: "errors preserve baselines",
+			polls: []poll{
+				{name: "baseline", order: "a b c", scrapes: scrapes{"a": add(10), "b": add(20), "c": add(40)}, want: values{addCW: 0}},
+				{name: "one scrape fails", order: "a b c", scrapes: scrapes{"a": add(15), "c": add(40)}, want: values{addCW: 5}},
+				{name: "listing fails", order: "a", scrapes: scrapes{"a": add(90)}, listError: true},
+				{name: "parse error aborts after partial read", order: "a b", scrapes: scrapes{"a": add(16), "b": malformed}},
+				{name: "all scrapes fail", order: "a b c"},
+				{
+					name:  "recovery bridges failed polls",
+					order: "a b c", scrapes: scrapes{"a": add(16), "b": add(26), "c": add(44)},
+					want: values{addCW: 11},
+				},
+			},
 		},
 	}
-	assert.True(t, poll(t, target)) // baseline: a=10, b=20
 
-	// a advances to 12 and is scraped first; b then returns unparseable text,
-	// so the poll aborts with an error before aggregation runs.
-	target.raw["a"] = counterExposition(12)
-	target.raw["b"] = "# TYPE awscni_add_ip_req_count counter\nawscni_add_ip_req_count abc\n"
-	_, _, _, err := metricsListGrabAggregateConvert(context.Background(), target)
-	assert.Error(t, err, "a malformed scrape should surface a parse error")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := &multiNodeTarget{interesting: newCNIMetrics()}
 
-	// Scraping recovers. a is unchanged at 12 (delta 2 vs the baseline of 10),
-	// b unchanged at 20 (delta 0). The aborted poll's partial read of a=12 must
-	// not be carried into this one.
-	target.raw["b"] = counterExposition(20)
-	assert.False(t, poll(t, target))
-	assert.Equal(t, 2.0, published(target), "counter must not double-count after a parse-error poll")
+			for _, p := range tt.polls {
+				t.Run(p.name, func(t *testing.T) {
+					target.targets = strings.Fields(p.order)
+					target.scrapes = p.scrapes
+					target.listError = p.listError
+					target.cw.datums = nil
+
+					Handler(context.Background(), target)
+
+					var want []cloudwatchtypes.MetricDatum
+					for name, value := range p.want {
+						want = append(want, cloudwatchtypes.MetricDatum{
+							MetricName: aws.String(name),
+							Unit:       cloudwatchtypes.StandardUnitCount,
+							Value:      aws.Float64(value),
+						})
+					}
+					assert.ElementsMatch(t, want, target.cw.datums)
+				})
+			}
+		})
+	}
 }

@@ -44,6 +44,18 @@ type metricsTarget interface {
 	submitCloudWatch() bool
 	submitPrometheus() bool
 	getLogger() logger.Logger
+	finishPoll() (firstPoll bool)
+}
+
+// metricsPollState tracks startup for the helper, across all counter families.
+type metricsPollState struct {
+	started bool
+}
+
+func (s *metricsPollState) finishPoll() bool {
+	firstPoll := !s.started
+	s.started = true
+	return firstPoll
 }
 
 type metricsConvert struct {
@@ -170,82 +182,37 @@ func processHistogram(metric *dto.Metric, act *metricsAction, log logger.Logger)
 	}
 }
 
-// postProcessingCounter collapses the cumulative counter values collected from
-// every scrape target this poll (curTargetValues) into a single cluster-wide
-// per-poll delta (curSingleDataPoint). It diffs each target against its own
-// previous value (lastTargetValues) so the result is independent of scrape
-// order and well defined when targets restart, disappear, or appear:
-//
-//   - target seen last poll and now, value not decreased -> add (cur - last)
-//   - target whose value decreased -> ipamd restarted; add cur, the post-reset
-//     total, rather than a negative delta
-//   - target seen for the first time -> add nothing; its value becomes the
-//     baseline for the next poll
-//   - target still live but not scraped this poll -> carry its baseline forward
-//     unchanged (a transient scrape failure is not a node leaving)
-//   - target no longer live -> drop it; a node that left the cluster is removed,
-//     not treated as a decrease
-//
-// liveTargets is the set of targets that currently exist in the cluster. The
-// function returns true only when there is no prior baseline at all while there
-// is current data (the first poll, or the first poll after the helper
-// restarted); the caller then skips publishing that single poll instead of
-// emitting cumulative totals as if they were a one-interval delta.
-func postProcessingCounter(convert metricsConvert, liveTargets map[string]bool) bool {
-	firstPoll := false
-	for i := range convert.actions {
-		data := convert.actions[i].data
-		if data == nil {
-			continue
-		}
-
-		hasCurrent := len(data.curTargetValues) > 0
-		noBaseline := len(data.lastTargetValues) == 0
-		if hasCurrent && noBaseline {
-			firstPoll = true
-		}
-
-		var delta, rawTotal float64
-		for target, cur := range data.curTargetValues {
-			rawTotal += cur
-			last, seen := data.lastTargetValues[target]
-			switch {
-			case !seen:
-				// newly discovered target: this poll only establishes a baseline
-			case cur >= last:
-				delta += cur - last
-			default:
-				// counter went backwards: target restarted; count the post-reset total
-				delta += cur
-			}
-		}
-
-		if noBaseline {
-			// Nothing to diff against yet. Surface the raw cluster total for
-			// visibility; the returned firstPoll tells the caller to skip
-			// publishing this poll.
-			data.curSingleDataPoint = rawTotal
-		} else {
-			data.curSingleDataPoint = delta
-		}
-
-		// Build the next poll's baseline. Reuse the current map (it already holds
-		// every scraped target) and add any still-live target that failed to
-		// scrape this poll, carrying its baseline forward. Targets that are no
-		// longer live are simply not carried, so a departed node drops out.
-		next := data.curTargetValues
-		if next == nil {
-			next = make(map[string]float64)
-		}
-		for target, last := range data.lastTargetValues {
-			if _, scraped := next[target]; !scraped && liveTargets[target] {
-				next[target] = last
-			}
-		}
-		data.lastTargetValues = next
-		data.curTargetValues = nil
+// postProcessingCounter sums the increase since the last scrape of each target.
+// A new target or a reset contributes its full value after the helper's first
+// poll. Keep baselines for live targets even when their scrape or series is
+// missing this poll.
+func postProcessingCounter(data *dataPoints, liveTargets map[string]bool, firstPoll bool) {
+	if data.lastTargetValues == nil {
+		data.lastTargetValues = make(map[string]float64)
 	}
-	return firstPoll
+
+	var delta float64
+	for target, cur := range data.curTargetValues {
+		last := data.lastTargetValues[target]
+		if cur >= last {
+			delta += cur - last
+		} else {
+			delta += cur
+		}
+		data.lastTargetValues[target] = cur
+	}
+	if firstPoll {
+		delta = 0
+	}
+	if len(data.curTargetValues) > 0 {
+		data.curSingleDataPoint = delta
+	}
+
+	for target := range data.lastTargetValues {
+		if !liveTargets[target] {
+			delete(data.lastTargetValues, target)
+		}
+	}
 }
 
 func postProcessingHistogram(convert metricsConvert, log logger.Logger) bool {
@@ -370,19 +337,6 @@ func produceHistogram(act metricsAction, cw publisher.Publisher) {
 	}
 }
 
-func filterMetrics(originalMetrics map[string]*dto.MetricFamily,
-	interestingMetrics map[string]metricsConvert,
-) (map[string]*dto.MetricFamily, error) {
-	result := map[string]*dto.MetricFamily{}
-
-	for metric := range interestingMetrics {
-		if family, found := originalMetrics[metric]; found {
-			result[metric] = family
-		}
-	}
-	return result, nil
-}
-
 func produceCloudWatchMetrics(t metricsTarget, families map[string]*dto.MetricFamily, convertDef map[string]metricsConvert, cw publisher.Publisher) error {
 	for key, family := range families {
 		convertMetrics := convertDef[key]
@@ -454,12 +408,7 @@ func resetMetrics(interestingMetrics map[string]metricsConvert) {
 		for _, act := range convert.actions {
 			if act.data != nil {
 				act.data.curSingleDataPoint = 0
-				// Clear this poll's per-target scratch for counters. Doing it
-				// here (rather than only at the end of postProcessingCounter)
-				// keeps aggregation correct even when a poll aborts early on a
-				// parse error: the next poll starts from a clean slate while the
-				// per-target baseline in lastTargetValues is preserved.
-				act.data.curTargetValues = nil
+				clear(act.data.curTargetValues)
 			}
 
 			if act.bucket != nil {
@@ -470,70 +419,52 @@ func resetMetrics(interestingMetrics map[string]metricsConvert) {
 }
 
 func metricsListGrabAggregateConvert(ctx context.Context, t metricsTarget) (map[string]*dto.MetricFamily, map[string]metricsConvert, bool, error) {
-	var resetDetected = false
-	var families map[string]*dto.MetricFamily
-
+	var resetDetected bool
+	families := make(map[string]*dto.MetricFamily)
 	interestingMetrics := t.getInterestingMetrics()
-	resetMetrics(interestingMetrics)
 
-	targetList, _ := t.getTargetList(ctx)
+	targetList, err := t.getTargetList(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
 	t.getLogger().Debugf("Total TargetList pod count: %d", len(targetList))
 
-	// Set of targets that currently exist in the cluster. Used by
-	// postProcessingCounter so a target that is live but fails to scrape this
-	// poll keeps its counter baseline instead of being mistaken for a departed
-	// node.
+	resetMetrics(interestingMetrics)
 	liveTargets := make(map[string]bool, len(targetList))
 	for _, target := range targetList {
 		liveTargets[target] = true
-	}
-
-	// Metric names observed as Prometheus counters this poll. Their cluster-wide
-	// per-poll delta is computed once, after the target loop, so it does not
-	// depend on scrape order (issue #3844).
-	counterMetrics := make(map[string]struct{})
-
-	for _, target := range targetList {
 		rawOutput, err := t.grabMetricsFromTarget(ctx, target)
 		if err != nil {
-			// it may take times to remove some metric targets
+			// Keep the baseline for a live target if its scrape fails.
 			continue
 		}
 
 		parser := expfmt.NewTextParser(model.UTF8Validation)
 		origFamilies, err := parser.TextToMetricFamilies(bytes.NewReader(rawOutput))
-
 		if err != nil {
-			return nil, nil, true, err
+			return nil, nil, false, err
 		}
-
-		families, err = filterMetrics(origFamilies, interestingMetrics)
-		if err != nil {
-			return nil, nil, true, err
-		}
-
-		for _, family := range families {
-			if family.GetType() == dto.MetricType_COUNTER {
-				counterMetrics[family.GetName()] = struct{}{}
+		for name, convert := range interestingMetrics {
+			family, found := origFamilies[name]
+			if !found {
+				continue
 			}
-			convert := interestingMetrics[family.GetName()]
+			families[name] = family
 			curReset, err := processMetric(family, convert, target, t.getLogger())
 			if err != nil {
-				return nil, nil, true, err
+				return nil, nil, false, err
 			}
-			if curReset {
-				resetDetected = true
-			}
+			resetDetected = resetDetected || curReset
 		}
 	}
 
-	// Aggregate every counter across the whole cluster into a single per-poll
-	// delta now that all targets have been scraped. Doing this per target (the
-	// previous behaviour) made the published value depend on scrape order and
-	// could not distinguish a node leaving from an ipamd restart -- issue #3844.
-	for name := range counterMetrics {
-		if postProcessingCounter(interestingMetrics[name], liveTargets) {
-			resetDetected = true
+	firstPoll := len(families) > 0 && t.finishPoll()
+	for _, convert := range interestingMetrics {
+		for _, action := range convert.actions {
+			data := action.data
+			if data != nil && (data.curTargetValues != nil || data.lastTargetValues != nil) {
+				postProcessingCounter(data, liveTargets, firstPoll)
+			}
 		}
 	}
 
@@ -544,8 +475,12 @@ func metricsListGrabAggregateConvert(ctx context.Context, t metricsTarget) (map[
 func Handler(ctx context.Context, t metricsTarget) {
 	families, interestingMetrics, resetDetected, err := metricsListGrabAggregateConvert(ctx, t)
 
-	if err != nil || resetDetected {
-		t.getLogger().Infof("Skipping 1st poll after reset, error: %v", err)
+	if err != nil {
+		t.getLogger().Infof("Skipping metrics poll: %v", err)
+		return
+	}
+	if resetDetected {
+		t.getLogger().Info("Histogram baseline initialized or reset")
 	}
 
 	if t.submitCloudWatch() {
