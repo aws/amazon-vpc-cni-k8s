@@ -17,11 +17,15 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"sync"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/agent/pkg/input"
 )
 
-var connectivityMetric []input.TestStatus
+var (
+	mu                 sync.Mutex
+	connectivityMetric []input.TestStatus
+)
 
 // metric server stores metrics from test client and returns the aggregated metrics to the
 // automation test
@@ -44,12 +48,16 @@ func submitConnectivityMetric(_ http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("received metric %+v", status)
+	mu.Lock()
 	connectivityMetric = append(connectivityMetric, status)
+	mu.Unlock()
 }
 
 // returns the list of metrics
 func getConnectivityMetric(w http.ResponseWriter, r *http.Request) {
+	mu.Lock()
 	metricByte, err := json.Marshal(connectivityMetric)
+	mu.Unlock()
 	if err != nil {
 		log.Printf("failed to marshall: %v", err)
 		return
