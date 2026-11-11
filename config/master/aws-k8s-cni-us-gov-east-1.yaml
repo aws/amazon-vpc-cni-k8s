@@ -335,7 +335,7 @@ spec:
             - --health-probe-bind-addr=:8163
             - --conntrack-cache-cleanup-period=300
             - --conntrack-cache-table-size=524288
-            - --log-level=debug
+            - --log-level=info
           resources:
             requests:
               cpu: 25m
