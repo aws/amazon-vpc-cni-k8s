@@ -16,6 +16,7 @@ package iptableswrapper
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -114,6 +115,25 @@ func (i ipTables) ChainExists(table, chain string) (bool, error) {
 // HasRandomFully implements IPTablesIface interface by calling iptables package
 func (i ipTables) HasRandomFully() bool {
 	return i.ipt.HasRandomFully()
+}
+
+// CreateChainIfNotExist creates chain in table and succeeds if the chain
+// already exists, including when a concurrent caller created it first. On
+// failure it checks the resulting chain state instead of matching
+// backend-specific error text.
+func CreateChainIfNotExist(ipt IPTablesIface, table, chain string) error {
+	createErr := ipt.NewChain(table, chain)
+	if createErr == nil {
+		return nil
+	}
+	exists, existsErr := ipt.ChainExists(table, chain)
+	if existsErr != nil {
+		return errors.Join(createErr, existsErr)
+	}
+	if !exists {
+		return createErr
+	}
+	return nil
 }
 
 type IptablesMode string
