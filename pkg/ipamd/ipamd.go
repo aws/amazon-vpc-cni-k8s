@@ -50,6 +50,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/utils"
+	"github.com/aws/amazon-vpc-cni-k8s/utils/eksinsight"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
 	rcv1alpha1 "github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1alpha1"
 )
@@ -256,6 +257,15 @@ type IPAMContext struct {
 	networkPolicyMode         string
 	enableMultiNICSupport     bool
 	withApiServer             bool
+	// eksRefusals records the subnets EC2 refused. The pool top-up path here and createENI in
+	// awsutils both write to it, and a failed pod ADD reads it. eksInsights holds what that
+	// ADD decides to report, and is the collector the metrics endpoint registers. Tests build
+	// their own on a clock they control.
+	eksInsights *eksinsight.Registry
+	eksRefusals *eksinsight.Refusals
+	// ipCooldown is IP_COOLDOWN_PERIOD, read once because a datastore never changes it. The
+	// eks_insight hold-down is derived from it on a path that must not take the datastore lock.
+	ipCooldown time.Duration
 }
 
 type kubeletConfig struct {
@@ -376,9 +386,14 @@ func (r *ReconcileCooldownCache) RecentlyFreed(cidr string) (found, recentlyFree
 	return false, false
 }
 
-func prometheusRegister() {
+// registerEksInsight is indirected so a test can see which registry was handed to the
+// metrics endpoint. The endpoint must serve the one this context records into.
+var registerEksInsight = prometheusmetrics.RegisterEksInsight
+
+func prometheusRegister(insights *eksinsight.Registry) {
 	if !prometheusRegistered {
 		prometheusmetrics.PrometheusRegister()
+		registerEksInsight(insights)
 		prometheusRegistered = true
 	}
 }
@@ -414,8 +429,10 @@ func (c *IPAMContext) inInsufficientCidrCoolingPeriod() bool {
 // New retrieves IP address usage information from Instance MetaData service and Kubelet
 // then initializes IP address pool data store
 func New(ctx context.Context, k8sClient client.Client, withApiServer bool) (*IPAMContext, error) {
-	prometheusRegister()
 	c := &IPAMContext{}
+	c.eksRefusals = eksinsight.NewRefusals(time.Now)
+	c.eksInsights = eksinsight.NewRegistry(eksinsight.DefaultMaxSubnets, time.Now)
+	prometheusRegister(c.eksInsights)
 	c.k8sClient = k8sClient
 	networkClient, err := networkutils.New()
 	if err != nil {
@@ -429,7 +446,7 @@ func New(ctx context.Context, k8sClient client.Client, withApiServer bool) (*IPA
 	c.enableIPv4 = isIPv4Enabled()
 	c.enableIPv6 = isIPv6Enabled()
 	c.disableENIProvisioning = disableENIProvisioning()
-	client, err := awsutils.New(ctx, c.useSubnetDiscovery, c.useCustomNetworking, disableLeakedENICleanup(), c.enableIPv4, c.enableIPv6)
+	client, err := awsutils.New(ctx, c.useSubnetDiscovery, c.useCustomNetworking, disableLeakedENICleanup(), c.enableIPv4, c.enableIPv6, c.eksRefusals)
 	if err != nil {
 		return nil, errors.Wrap(err, "ipamd: can not initialize with AWS SDK interface")
 	}
@@ -550,6 +567,8 @@ func (c *IPAMContext) nodeInit(ctx context.Context) error {
 	if c.dataStoreAccess == nil {
 		c.dataStoreAccess = datastore.InitializeDataStores(skipNetworkCards, dsBackingStorePath(), c.enablePrefixDelegation, log)
 	}
+	// Every datastore reads the same IP_COOLDOWN_PERIOD, so card 0's value is the node's.
+	c.ipCooldown = c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetIPCooldownPeriod()
 
 	// check if primary ENI is excluded for ipv6 cluster
 	if c.enableIPv6 && c.useSubnetDiscovery {
@@ -1165,11 +1184,15 @@ func (c *IPAMContext) tryAssignIPs(ctx context.Context, networkCard int) (increa
 				output, err = c.awsClient.AllocIPAddresses(ctx, eni.ID, 1)
 				if err != nil && !containsPrivateIPAddressLimitExceededError(err) {
 					ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
+					c.eksRefusals.RefusedCardIf(err, networkCard, eni.SubnetID)
 					if c.useSubnetDiscovery && containsInsufficientCIDRsOrSubnetIPs(err) {
 						continue
 					}
 					return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IP addresses on ENI %s, err ", eni.ID))
 				}
+			}
+			if err == nil {
+				c.eksRefusals.Supplied(eni.SubnetID)
 			}
 
 			var ec2ip4s []ec2types.NetworkInterfacePrivateIpAddress
@@ -1279,11 +1302,15 @@ func (c *IPAMContext) tryAssignPrefixes(ctx context.Context, networkCard int) (i
 			output, err = c.awsClient.AllocIPAddresses(ctx, eni.ID, 1)
 			if err != nil && !containsPrivateIPAddressLimitExceededError(err) {
 				ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
+				c.eksRefusals.RefusedCardIf(err, networkCard, eni.SubnetID)
 				if c.useSubnetDiscovery && containsInsufficientCIDRsOrSubnetIPs(err) {
 					continue
 				}
 				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IPv4 prefix on ENI %s, err: %v", eni.ID, err))
 			}
+		}
+		if err == nil {
+			c.eksRefusals.Supplied(eni.SubnetID)
 		}
 
 		var ec2Prefixes []ec2types.Ipv4PrefixSpecification
