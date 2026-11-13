@@ -1415,6 +1415,34 @@ func (ds *DataStore) GetENIInfos() *ENIInfos {
 	return &eniInfos
 }
 
+// GetIPCooldownPeriod returns the cooldown an address waits out after a pod releases it.
+func (ds *DataStore) GetIPCooldownPeriod() time.Duration {
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+	return ds.ipCooldownPeriod
+}
+
+// GetPodIPSubnets returns the subnets of the ENIs that serve pod IPs on this network card.
+// ENIs holding no CIDR are included: a subnet too short to supply even one address or prefix
+// leaves its ENIs empty. The result is deduplicated but not sorted.
+func (ds *DataStore) GetPodIPSubnets() []string {
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+	seen := make(map[string]struct{}, len(ds.eniPool))
+	subnets := make([]string, 0, len(ds.eniPool))
+	for _, eni := range ds.eniPool {
+		if eni.IsExcludedForPodIPs || eni.IsTrunk || eni.SubnetID == "" {
+			continue
+		}
+		if _, dup := seen[eni.SubnetID]; dup {
+			continue
+		}
+		seen[eni.SubnetID] = struct{}{}
+		subnets = append(subnets, eni.SubnetID)
+	}
+	return subnets
+}
+
 // GetENIs provides the number of ENI in the datastore
 func (ds *DataStore) GetENIs() int {
 	ds.lock.Lock()

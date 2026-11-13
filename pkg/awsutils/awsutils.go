@@ -43,6 +43,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/vpc"
+	"github.com/aws/amazon-vpc-cni-k8s/utils/eksinsight"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
 	vpcControllerVpc "github.com/aws/amazon-vpc-resource-controller-k8s/pkg/aws/vpc"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -1259,8 +1260,10 @@ func (cache *EC2InstanceMetadataCache) createENI(ctx context.Context, sg []*stri
 
 		networkInterfaceID, err = cache.tryCreateNetworkInterface(ctx, input)
 		if err == nil {
+			eksinsight.Refused.Supplied(eniCfgSubnet)
 			return networkInterfaceID, nil
 		}
+		eksinsight.Refused.RefusedIf(err, eniCfgSubnet)
 	} else {
 		if cache.useSubnetDiscovery {
 			subnetResult, vpcErr := cache.GetVpcSubnets(ctx)
@@ -1279,8 +1282,10 @@ func (cache *EC2InstanceMetadataCache) createENI(ctx context.Context, sg []*stri
 
 				networkInterfaceID, err = cache.tryCreateNetworkInterface(ctx, input)
 				if err == nil {
+					eksinsight.Refused.Supplied(cache.subnetID)
 					return networkInterfaceID, nil
 				}
+				eksinsight.Refused.RefusedIf(err, cache.subnetID)
 			} else {
 				validSubnetsFound := false
 				for _, subnet := range subnetResult {
@@ -1301,8 +1306,11 @@ func (cache *EC2InstanceMetadataCache) createENI(ctx context.Context, sg []*stri
 					input.SubnetId = subnet.SubnetId
 					networkInterfaceID, err = cache.tryCreateNetworkInterface(ctx, input)
 					if err == nil {
+						eksinsight.Refused.Supplied(*subnet.SubnetId)
 						return networkInterfaceID, nil
 					}
+					// Noted per attempt, since only the last subnet's error is returned.
+					eksinsight.Refused.RefusedIf(err, *subnet.SubnetId)
 				}
 
 				// If no valid subnets found, return appropriate error
@@ -1323,8 +1331,10 @@ func (cache *EC2InstanceMetadataCache) createENI(ctx context.Context, sg []*stri
 
 			networkInterfaceID, err = cache.tryCreateNetworkInterface(ctx, input)
 			if err == nil {
+				eksinsight.Refused.Supplied(cache.subnetID)
 				return networkInterfaceID, nil
 			}
+			eksinsight.Refused.RefusedIf(err, cache.subnetID)
 		}
 	}
 	return "", errors.Wrap(err, "failed to create network interface")
