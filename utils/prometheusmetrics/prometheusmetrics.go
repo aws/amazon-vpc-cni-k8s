@@ -21,6 +21,7 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
+	"github.com/aws/amazon-vpc-cni-k8s/utils/eksproblem"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -276,6 +277,10 @@ func PrometheusRegister() {
 	prometheus.MustRegister(ConnmarkReconcileCount)
 	ConnmarkReconcileCount.WithLabelValues("success")
 	ConnmarkReconcileCount.WithLabelValues("error")
+	// eks_problem is a collector rather than a plain gauge: whether a series exists is
+	// decided at scrape time from how recently each supporting fact was observed.
+	prometheus.MustRegister(eksproblem.Subnets)
+	prometheus.MustRegister(eksproblem.Dropped)
 }
 
 // This can be enhanced to get it programatically.

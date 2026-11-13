@@ -15,6 +15,7 @@ package ipamd
 
 import (
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"net"
 	"os"
@@ -22,6 +23,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	multiErr "github.com/hashicorp/go-multierror"
 	"github.com/pkg/errors"
@@ -39,6 +41,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/rpc"
+	"github.com/aws/amazon-vpc-cni-k8s/utils/eksproblem"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
 	k8serror "k8s.io/apimachinery/pkg/api/errors"
 )
@@ -94,6 +97,10 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 	var ipamMetadata datastore.IPAMMetadata
 	var errors error
 	var resp rpc.AddNetworkReply
+	// starvedCards are the network cards that ran out of addresses for this pod. Only those
+	// are reported as a problem: a pod needing an address from every card fails if a single
+	// card is short, and the other cards' subnets are healthy and must not be named.
+	var starvedCards []int
 
 	// This will be a list of IPs. For now it's just one
 	ipAddrs := []*rpc.IPAllocationMetadata{}
@@ -231,9 +238,12 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 
 			if err != nil {
 				log.Warnf("Failed to assign IPs from network card %d: %v", networkCard, err)
+				if stderrors.Is(err, datastore.ErrNoAvailableIPInDataStore) {
+					starvedCards = append(starvedCards, networkCard)
+				}
 				// continue to look through other datastores till you are unable to find an IP address when ONLY 1 ip is required
 				// if the last datastore also return ErrNoAvailableIPInDataStore, return an error
-				if err == datastore.ErrNoAvailableIPInDataStore && ipsRequired == defaultIpPerPodRequired && networkCard != len(s.ipamContext.dataStoreAccess.DataStores)-1 {
+				if stderrors.Is(err, datastore.ErrNoAvailableIPInDataStore) && ipsRequired == defaultIpPerPodRequired && networkCard != len(s.ipamContext.dataStoreAccess.DataStores)-1 {
 					continue
 				}
 				errors = multiErr.Append(errors, err)
@@ -254,6 +264,11 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 
 	if errors != nil {
 		log.Errorf("Returning failure response for AddNetwork: %v", errors)
+		// Only an address shortage is a subnet problem. Other failures on this path - a
+		// checkpoint write, say - must not be reported as one.
+		if stderrors.Is(errors, datastore.ErrNoAvailableIPInDataStore) {
+			s.recordPodIPAllocationFailure(ctx, starvedCards)
+		}
 	} else {
 		log.Infof("Address assigned from datastores:  %d", len(ipAddrs))
 		var pbVPCV4cidrs, pbVPCV6cidrs []string
@@ -551,4 +566,81 @@ func (c *IPAMContext) shutdownListener() {
 	log.Info("Received shutdown signal, setting 'terminating' to true")
 	// We received an interrupt signal, shut down.
 	c.setTerminating()
+}
+
+// recordPodIPAllocationFailure publishes, or declines to publish, the eks_problem gauge
+// after an AddNetwork has failed for want of an address. It only observes - no allocation
+// decision, threshold or pool calculation is touched.
+//
+// starvedCards are the network cards that ran out of addresses for this pod, and only their
+// subnets are considered. A pod needing an address from every card fails if one card is
+// short, and naming the healthy cards' subnets would send the customer to widen a subnet
+// with addresses to spare.
+//
+// A card's subnets are named only if that same card could still have grown - see
+// atAddressCapacity. A card that is itself the constraint contributes nothing, because its
+// subnets could not have helped it. Judging capacity node-wide while taking subnets per
+// card named the healthy subnet of a maxed-out card alongside the genuinely exhausted one.
+//
+// It does NOT decline when growth is blocked by a non-address EC2 error such as throttling
+// or a missing IAM permission: a pod genuinely cannot get an address. The subnets named are
+// not the cause in that case, and the existing awscni_aws_api_error_count{api,error}
+// counter already carries the EC2 error code needed to tell the two apart.
+func (s *server) recordPodIPAllocationFailure(ctx context.Context, starvedCards []int) {
+	var subnets []string
+	// reportedCards are the starved cards that could still have grown, so they are the ones
+	// whose subnets are named. Logging the raw starvedCards here instead printed a card
+	// list that disagreed with the subnet list - the one operator-facing line this path
+	// produces, and the line someone reads while chasing a false positive.
+	var reportedCards []int
+	cooldown := time.Duration(0)
+	// Under custom networking the primary ENI is excluded from pool growth, so pod
+	// addresses come only from secondary ENIs in the ENIConfig subnet. Skipping the
+	// primary here mirrors what the growth path does with the same flag.
+	skipPrimaryENI := s.ipamContext.useCustomNetworking
+
+	for _, networkCard := range starvedCards {
+		ds := s.ipamContext.dataStoreAccess.GetDataStore(networkCard)
+		if ds == nil {
+			continue
+		}
+		if s.ipamContext.atAddressCapacity(networkCard) {
+			continue
+		}
+		reportedCards = append(reportedCards, networkCard)
+		subnets = append(subnets, ds.GetPodIPSubnets(skipPrimaryENI)...)
+		if c := ds.GetIPCooldownPeriod(); c > cooldown {
+			cooldown = c
+		}
+	}
+
+	if len(reportedCards) == 0 {
+		// No card that starved could have grown, so no subnet is at fault for this pod.
+		// Only end an existing run if that is true of the *whole* node: on a multi-card
+		// node another card can have a live and correct run of its own, and clearing it
+		// here would resolve a real problem on one card because a different card is
+		// over-committed - then re-raise it a hold-down later, flapping the insight.
+		if s.ipamContext.atAddressCapacityOnEveryCard() {
+			s.ipamContext.eksProblemRegistry().ClearPodIPAllocationFailure()
+		}
+		return
+	}
+	// Under custom networking, pod addresses come from the ENIConfig subnet, which may hold
+	// no ENI yet - and a subnet that could not supply even the first ENI is exactly the one
+	// at fault. GetPodIPSubnets only sees subnets that already have an ENI, so without this
+	// the exhausted subnet would go unnamed.
+	if cnSubnet := s.ipamContext.customNetworkingSubnet(ctx); cnSubnet != "" {
+		subnets = append(subnets, cnSubnet)
+	}
+
+	if len(subnets) == 0 {
+		return
+	}
+	holdDown := eksproblem.HoldDownFor(cooldown)
+	// Logged once per run rather than once per kubelet retry, which is about once a second
+	// for as long as the pod stays stuck.
+	if s.ipamContext.eksProblemRegistry().RecordPodIPAllocationFailure(subnets, holdDown) {
+		log.Infof("A pod could not be given an IP address from subnet(s) %v on network card(s) %v; "+
+			"reporting eks_problem if it persists for %s", subnets, reportedCards, holdDown)
+	}
 }
