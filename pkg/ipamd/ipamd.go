@@ -50,6 +50,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/utils"
+	"github.com/aws/amazon-vpc-cni-k8s/utils/eksproblem"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
 	rcv1alpha1 "github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1alpha1"
 )
@@ -250,12 +251,27 @@ type IPAMContext struct {
 	myNodeName                string
 	enablePrefixDelegation    bool
 	lastInsufficientCidrError time.Time
-	enableManageUntaggedMode  bool
-	enablePodIPAnnotation     bool
-	maxPods                   int // maximum number of pods that can be scheduled on the node
-	networkPolicyMode         string
-	enableMultiNICSupport     bool
-	withApiServer             bool
+
+	enableManageUntaggedMode bool
+	enablePodIPAnnotation    bool
+	maxPods                  int // maximum number of pods that can be scheduled on the node
+	networkPolicyMode        string
+	enableMultiNICSupport    bool
+	withApiServer            bool
+
+	// eksProblems is where pod IP allocation failures are reported for the eks_problem
+	// gauge. Nil means the process-wide registry, which is what production uses; tests
+	// driving AddNetwork set their own so they neither share state nor wait out a real
+	// hold-down.
+	eksProblems *eksproblem.Registry
+}
+
+// eksProblemRegistry returns the registry to report pod IP allocation failures to.
+func (c *IPAMContext) eksProblemRegistry() *eksproblem.Registry {
+	if c.eksProblems != nil {
+		return c.eksProblems
+	}
+	return eksproblem.Subnets
 }
 
 type kubeletConfig struct {
@@ -2968,4 +2984,96 @@ func (c *IPAMContext) excludedENIBasedOnSubnetTags(ctx context.Context, eni stri
 type Decisions struct {
 	Stats *datastore.DataStoreStats
 	IsLow bool
+}
+
+// atAddressCapacity reports whether ipamd has run out of room to add addresses: no
+// existing ENI can take more, and no further ENI can be attached. When true, a failed pod
+// ADD cannot be the subnets' fault however healthy they are - it is max-pods over-commit,
+// which needs its own insight.
+//
+// hasRoomForEni already accounts for the trunk ENI reserved for Security Groups for Pods,
+// unmanaged ENIs, ENIs in excluded subnets and reserved slots, which are exactly the things
+// that make the max-pods kubelet advertises exceed what ipamd can serve.
+//
+// The caller evaluates this for the network card whose allocation failed. Both reads are
+// local - a datastore scan, and a static instance-type table plus cached fields - so this
+// adds no AWS API call to the pod-ADD path.
+// It is deliberately inert on IPv6 nodes, where it always reports "not at capacity": a pod
+// subnet is a /64 and one /80 prefix holds about 10^14 addresses, so an IPv6 pod ADD fails
+// only when no prefix could be attached at all, which genuinely is a subnet problem worth
+// reporting. (GetAllocatableENIs also counts only AvailableIPv4Cidrs, while IPv6 prefixes
+// live in ENI.IPv6Cidrs, so without this branch it would reach the same answer by accident
+// rather than on purpose.)
+func (c *IPAMContext) atAddressCapacity(networkCard int) bool {
+	// With ENI provisioning disabled the pool is whatever was pre-attached and ipamd never
+	// grows it, so once it is used up every pod fails for good with healthy subnets. Treat
+	// it as at capacity: the node, not the subnet, is the thing that cannot grow. This is
+	// a statement about growth, so it holds in either address family and must be answered
+	// before the IPv6 branch below, which is only a statement about pool size.
+	if c.disableENIProvisioning {
+		return true
+	}
+	if c.enableIPv6 {
+		return false
+	}
+	// The per-ENI limit is counted in prefixes under prefix delegation and in addresses
+	// otherwise, matching what the growth path itself passes.
+	perENILimit := c.maxIPsPerENI
+	if c.enablePrefixDelegation {
+		perENILimit = c.maxPrefixesPerENI
+	}
+	ds := c.dataStoreAccess.GetDataStore(networkCard)
+	if ds == nil {
+		return false
+	}
+	if len(ds.GetAllocatableENIs(perENILimit, c.useCustomNetworking)) > 0 {
+		return false
+	}
+	// hasRoomForEni indexes unmanagedENI by network card without a bounds check, and this
+	// runs on the CNI ADD path, where a panic would take down ipamd's gRPC handler. If the
+	// index is not populated, report "not at capacity": that errs towards publishing the
+	// problem rather than silently suppressing a real one.
+	if networkCard >= len(c.unmanagedENI) {
+		return false
+	}
+	return !c.hasRoomForEni(networkCard)
+}
+
+// atAddressCapacityOnEveryCard reports whether no network card on this node can obtain more
+// addresses. It gates ending a run: one card being over-committed says nothing about a run
+// another card established, and clearing on it would resolve a real problem and then raise
+// it again a hold-down later.
+//
+// Not a hot path, and not written as one: it re-looks-up each datastore through
+// atAddressCapacity and stops at the first card with room. It runs only on a pod ADD that
+// has already failed, and only when no starved card could grow.
+func (c *IPAMContext) atAddressCapacityOnEveryCard() bool {
+	for _, ds := range c.dataStoreAccess.DataStores {
+		if !c.atAddressCapacity(ds.GetNetworkCard()) {
+			return false
+		}
+	}
+	return true
+}
+
+// customNetworkingSubnet returns the ENIConfig subnet ipamd is configured to create pod
+// ENIs in, or "" if custom networking is off or the config cannot be read. Under custom
+// networking this is the subnet pod addresses must come from, and it can hold no ENI at all
+// - which is exactly the situation when it is the exhausted one, so the datastore cannot
+// name it.
+//
+// It is read live rather than remembered from the last ENI creation: an admin editing the
+// ENIConfig to point at a fresh subnet is the usual remedy for this very problem, and a
+// remembered value would keep naming the old subnet until ipamd next attached an ENI. The
+// read is served by the controller-runtime cache, so it costs no API call.
+func (c *IPAMContext) customNetworkingSubnet(ctx context.Context) string {
+	if !c.useCustomNetworking || c.k8sClient == nil {
+		return ""
+	}
+	eniCfg, err := eniconfig.MyENIConfig(ctx, c.k8sClient)
+	if err != nil {
+		log.Debugf("Could not read the ENIConfig to name the custom networking subnet: %v", err)
+		return ""
+	}
+	return eniCfg.Subnet
 }

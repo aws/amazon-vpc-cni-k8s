@@ -119,6 +119,7 @@ func TestServer_AddNetwork(t *testing.T) {
 		IPs          []string
 		DeviceNumber int
 		IsPrimary    bool
+		Subnet       string
 	}
 
 	type fields struct {
@@ -136,10 +137,14 @@ func TestServer_AddNetwork(t *testing.T) {
 		podsRequireMultiNICAttachment bool
 	}
 	tests := []struct {
-		name    string
-		fields  fields
-		want    *pb.AddNetworkReply
-		wantErr error
+		name   string
+		fields fields
+		want   *pb.AddNetworkReply
+		// wantProblemSubnets are the subnets eks_problem must name once the failure has
+		// persisted. Empty means no series at all, which is the case for every successful
+		// ADD and for a failure that is not an address shortage.
+		wantProblemSubnets []string
+		wantErr            error
 	}{
 		{
 			name: "successfully allocated IPv4Address & use externalSNAT",
@@ -274,6 +279,46 @@ func TestServer_AddNetwork(t *testing.T) {
 				Success:              false,
 				IPAllocationMetadata: []*rpc.IPAllocationMetadata{},
 			},
+		},
+		// The eks_problem gauge is driven from this failure, so the subnet the starved
+		// allocation drew from must be named. Nothing asserted this before, and deleting
+		// the call site left the suite green.
+		{
+			name: "failed allocating IPv4Address names the exhausted subnet",
+			fields: fields{
+				managedNetworkCards: 1,
+				ipV4AddressByENIID: map[int]map[string]ENIConfig{
+					0: {"eni-1": {IPs: nil, DeviceNumber: 0, IsPrimary: true, Subnet: "subnet-0aaa000000000001"}},
+				},
+				ipV4Enabled: true,
+				ipV6Enabled: false,
+			},
+			want: &pb.AddNetworkReply{
+				Success:              false,
+				IPAllocationMetadata: []*rpc.IPAllocationMetadata{},
+			},
+			wantProblemSubnets: []string{"subnet-0aaa000000000001"},
+		},
+		// A pod needing an address from every network card fails if one card is short. The
+		// other cards' subnets have addresses to spare and must not be named.
+		{
+			name: "multi-NIC pod short on one card names only that card's subnet",
+			fields: fields{
+				managedNetworkCards: 2,
+				ipV4AddressByENIID: map[int]map[string]ENIConfig{
+					0: {"eni-1": {IPs: []string{"192.168.1.100"}, DeviceNumber: 0, IsPrimary: true, Subnet: "subnet-0aaa000000000001"}},
+					1: {"eni-2": {IPs: nil, DeviceNumber: 1, IsPrimary: false, Subnet: "subnet-0bbb000000000002"}},
+				},
+				ipV4Enabled:                   true,
+				ipV6Enabled:                   false,
+				enableMultiNICSupport:         true,
+				podsRequireMultiNICAttachment: true,
+			},
+			want: &pb.AddNetworkReply{
+				Success:              false,
+				IPAllocationMetadata: []*rpc.IPAllocationMetadata{},
+			},
+			wantProblemSubnets: []string{"subnet-0bbb000000000002"},
 		},
 		{
 			name: "failed allocating IPv4Address from any datastore - no IPs available",
@@ -487,6 +532,11 @@ func TestServer_AddNetwork(t *testing.T) {
 			for _, call := range tt.fields.getExcludeSNATCIDRsCalls {
 				m.network.EXPECT().GetExcludeSNATCIDRs().Return(call.snatExclusionCIDRs)
 			}
+			// A failed ADD asks whether ipamd is at its address capacity, to decide
+			// whether the subnets could be at fault. Both of these are local reads - a
+			// static instance-type table and a cached field - not AWS API calls.
+			m.awsutils.EXPECT().IsTrunkingCompatible().Return(false).AnyTimes()
+			m.awsutils.EXPECT().IsHyperPod().Return(false).AnyTimes()
 			var dsList []*datastore.DataStore
 			for i := 0; i < tt.fields.managedNetworkCards; i++ {
 				dsList = append(dsList, datastore.NewDataStore(log, datastore.NullCheckpoint{}, tt.fields.prefixDelegationEnabled, i))
@@ -496,7 +546,7 @@ func TestServer_AddNetwork(t *testing.T) {
 
 			for networkCard, eniMap := range tt.fields.ipV4AddressByENIID {
 				for eniID, eniConfig := range eniMap {
-					dsAccess.GetDataStore(networkCard).AddENI(eniID, eniConfig.DeviceNumber, eniConfig.IsPrimary, false, false, networkutils.CalculateRouteTableId(eniConfig.DeviceNumber, networkCard), "")
+					dsAccess.GetDataStore(networkCard).AddENI(eniID, eniConfig.DeviceNumber, eniConfig.IsPrimary, false, false, networkutils.CalculateRouteTableId(eniConfig.DeviceNumber, networkCard), eniConfig.Subnet)
 					for _, ipv4Address := range eniConfig.IPs {
 						ipv4Addr := net.IPNet{IP: net.ParseIP(ipv4Address), Mask: net.IPv4Mask(255, 255, 255, 255)}
 						dsAccess.GetDataStore(networkCard).AddIPv4CidrToStore(eniID, ipv4Addr, false)
@@ -506,7 +556,7 @@ func TestServer_AddNetwork(t *testing.T) {
 
 			for networkCard, eniMap := range tt.fields.ipV6PrefixByENIID {
 				for eniID, eniConfig := range eniMap {
-					dsAccess.GetDataStore(networkCard).AddENI(eniID, eniConfig.DeviceNumber, eniConfig.IsPrimary, false, false, networkutils.CalculateRouteTableId(eniConfig.DeviceNumber, networkCard), "")
+					dsAccess.GetDataStore(networkCard).AddENI(eniID, eniConfig.DeviceNumber, eniConfig.IsPrimary, false, false, networkutils.CalculateRouteTableId(eniConfig.DeviceNumber, networkCard), eniConfig.Subnet)
 					for _, ipv6Prefix := range eniConfig.IPs {
 						_, ipnet, _ := net.ParseCIDR(ipv6Prefix)
 						dsAccess.GetDataStore(networkCard).AddIPv6CidrToStore(eniID, *ipnet, true)
@@ -527,6 +577,9 @@ func TestServer_AddNetwork(t *testing.T) {
 				dataStoreAccess:        dsAccess,
 				enableMultiNICSupport:  tt.fields.enableMultiNICSupport,
 			}
+			// Its own problem registry on a hand-wound clock, so the test can serve the
+			// 60-second hold-down without sleeping and without sharing process-wide state.
+			clk := newProblemRegistry(mockContext)
 
 			s := &server{
 				version:     "1.2.3",
@@ -560,9 +613,24 @@ func TestServer_AddNetwork(t *testing.T) {
 				assert.Equal(t, tt.want.Success, resp.Success)
 			}
 
+			// A single failed ADD never publishes - that is the hold-down, and it is what
+			// keeps ordinary pod churn out of the metric. Retry as kubelet does until the
+			// hold-down is served, then assert on the series a scrape would see.
+			addCalls := 1
+			if len(tt.wantProblemSubnets) > 0 {
+				for i := 0; i < 4; i++ {
+					clk.advance(20 * time.Second)
+					_, err := s.AddNetwork(context.Background(), req)
+					require.NoError(t, err)
+					addCalls++
+				}
+			}
+			assert.Equal(t, tt.wantProblemSubnets, publishedSubnets(t, mockContext),
+				"eks_problem must name exactly the subnets that could not supply an address")
+
 			// Add more detailed assertion messages
-			assert.Equal(t, float64(1), testutil.ToFloat64(prometheusmetrics.AddIPCnt),
-				"AddIPCnt should be incremented exactly once for test case: %s", tt.name)
+			assert.Equal(t, float64(addCalls), testutil.ToFloat64(prometheusmetrics.AddIPCnt),
+				"AddIPCnt should be incremented once per request for test case: %s", tt.name)
 		})
 	}
 }

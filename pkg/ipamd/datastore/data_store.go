@@ -1415,7 +1415,44 @@ func (ds *DataStore) GetENIInfos() *ENIInfos {
 	return &eniInfos
 }
 
-// GetENIs provides the number of ENI in the datastore
+// GetIPCooldownPeriod returns the configured cooldown an address waits out after a pod
+// releases it, so callers can derive timings from the same setting instead of guessing.
+func (ds *DataStore) GetIPCooldownPeriod() time.Duration {
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+	return ds.ipCooldownPeriod
+}
+
+// GetPodIPSubnets returns the subnets of the ENIs this datastore draws pod IP addresses
+// from, so that when an assignment fails every subnet returned here failed to supply this
+// node. skipPrimary excludes the primary ENI's subnet, which is what the caller wants under
+// custom networking: there pod addresses come from secondary ENIs in the ENIConfig subnet,
+// and GetAllocatableENIs skips the primary on the same flag.
+//
+// ENIs holding no CIDR are deliberately still named: when a subnet is so short of addresses
+// that ipamd could not attach even one address or prefix, its ENIs hold nothing, and that is
+// the symptom rather than noise. The result is deduplicated but not sorted.
+func (ds *DataStore) GetPodIPSubnets(skipPrimary bool) []string {
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+	seen := make(map[string]struct{}, len(ds.eniPool))
+	subnets := make([]string, 0, len(ds.eniPool))
+	for _, eni := range ds.eniPool {
+		if eni.IsExcludedForPodIPs || eni.IsTrunk || eni.SubnetID == "" {
+			continue
+		}
+		if skipPrimary && eni.IsPrimary {
+			continue
+		}
+		if _, dup := seen[eni.SubnetID]; dup {
+			continue
+		}
+		seen[eni.SubnetID] = struct{}{}
+		subnets = append(subnets, eni.SubnetID)
+	}
+	return subnets
+}
+
 func (ds *DataStore) GetENIs() int {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
