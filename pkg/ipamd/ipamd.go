@@ -234,10 +234,15 @@ type IPAMContext struct {
 	unmanagedENI              []int
 	numNetworkCards           int
 
-	warmENITarget        int
-	warmIPTarget         int
+	warmENITarget int
+	warmIPTarget  int
+	// warmIPTargetSet records whether WARM_IP_TARGET was supplied. Zero is a
+	// legitimate target, so the value alone cannot say whether it was set.
+	warmIPTargetSet      bool
 	minimumIPTarget      int
+	minimumIPTargetSet   bool
 	warmPrefixTarget     int
+	warmPrefixTargetSet  bool
 	primaryIP            map[string]string // primaryIP is a map from ENI ID to primary IP of that ENI
 	lastNodeIPPoolAction time.Time
 	lastDecreaseIPPool   time.Time
@@ -439,9 +444,16 @@ func New(ctx context.Context, k8sClient client.Client, withApiServer bool) (*IPA
 	c.reconcileCooldownCache.cache = make(map[string]time.Time)
 	// WARM and Min IP/Prefix targets are ignored in IPv6 mode
 	c.warmENITarget = getWarmENITarget()
-	c.warmIPTarget = getWarmIPTarget()
-	c.minimumIPTarget = getMinimumIPTarget()
-	c.warmPrefixTarget = getWarmPrefixTarget()
+	c.warmIPTarget, c.warmIPTargetSet = getWarmIPTarget()
+	c.minimumIPTarget, c.minimumIPTargetSet = getMinimumIPTarget()
+	c.warmPrefixTarget, c.warmPrefixTargetSet = getWarmPrefixTarget()
+	if c.warmIPTargetsDefined() && c.warmIPTarget == noWarmIPTarget {
+		// README "NOTE! 2" documents this for MINIMUM_IP_TARGET without WARM_IP_TARGET. It is the
+		// same arithmetic whenever the warm target is zero: nothing can raise the shortfall, so the
+		// pool stops growing once it reaches MINIMUM_IP_TARGET addresses. Say so out loud, because
+		// before this it silently fell through to WARM_ENI_TARGET and did the opposite.
+		log.Warnf("WARM_IP_TARGET is 0, so the IP pool will not grow beyond MINIMUM_IP_TARGET (%d) addresses. Pods beyond that will fail to start. Set WARM_IP_TARGET greater than 0 unless you intend a fixed-size pool.", c.minimumIPTarget)
+	}
 	c.enablePodENI = EnablePodENI()
 	c.enableManageUntaggedMode = enableManageUntaggedMode()
 	c.enablePodIPAnnotation = EnablePodIPAnnotation()
@@ -1495,21 +1507,22 @@ func getWarmENITarget() int {
 	return defaultWarmENITarget
 }
 
-func getWarmPrefixTarget() int {
+// getWarmPrefixTarget returns the WARM_PREFIX_TARGET value and whether the operator set it.
+func getWarmPrefixTarget() (int, bool) {
 	inputStr, found := os.LookupEnv(envWarmPrefixTarget)
 
 	if !found {
-		return defaultWarmPrefixTarget
+		return defaultWarmPrefixTarget, false
 	}
 
 	if input, err := strconv.Atoi(inputStr); err == nil {
 		if input < 0 {
-			return defaultWarmPrefixTarget
+			return defaultWarmPrefixTarget, false
 		}
 		log.Debugf("Using WARM_PREFIX_TARGET %v", input)
-		return input
+		return input, true
 	}
-	return defaultWarmPrefixTarget
+	return defaultWarmPrefixTarget, false
 }
 
 // logPoolStats logs usage information for allocated addresses/prefixes.
@@ -1552,13 +1565,24 @@ func (c *IPAMContext) shouldRemoveExtraENIs(stats *datastore.DataStoreStats, net
 	var shouldRemoveExtra bool
 
 	// We need the +1 to make sure we are not going below the WARM_ENI_TARGET/WARM_PREFIX_TARGET
-	warmTarget := (c.warmENITarget + 1)
-
+	rank2Target := c.warmENITarget
 	if c.enablePrefixDelegation {
-		warmTarget = (c.warmPrefixTarget + 1)
+		rank2Target = c.warmPrefixTarget
 	}
+	warmTarget := rank2Target + 1
 
 	shouldRemoveExtra = available >= (warmTarget)*c.maxIPsPerENI
+
+	// At a rank-2 target of 0 the threshold above is exactly one interface's worth of addresses,
+	// and isDatastorePoolTooLow grows whenever nothing is available at all. The two windows touch,
+	// so freeing the interface that holds the node's whole supply makes the pool too low on the
+	// next tick and it is re-attached. That is the allocate/free loop in issue #1451. Keep the last
+	// interface's worth, which is the "do not go below the target" intent the +1 already encodes.
+	if shouldRemoveExtra && rank2Target == 0 && available <= c.maxIPsPerENI {
+		log.Debugf("Not removing extra ENIs: available (%d) is the last interface's worth and the pool would be refilled immediately", available)
+		shouldRemoveExtra = false
+	}
+
 	if shouldRemoveExtra {
 		c.logPoolStats(stats, networkCard)
 		log.Debugf("It might be possible to remove extra ENIs because available (%d) >= (ENI/Prefix target + 1 (%d) + 1) * addrsPerENI (%d)", available, warmTarget, c.maxIPsPerENI)
@@ -1996,7 +2020,7 @@ func (c *IPAMContext) verifyAndAddPrefixesToDatastore(ctx context.Context, eni s
 
 // return true when WARM_IP_TARGET or MINIMUM_IP_TARGET is defined
 func (c *IPAMContext) warmIPTargetsDefined() bool {
-	return c.warmIPTarget != noWarmIPTarget || c.minimumIPTarget != noMinimumIPTarget
+	return c.warmIPTargetSet || c.minimumIPTargetSet
 }
 
 // max pods from instance type mapping file
@@ -2083,34 +2107,37 @@ func dsBackingStorePath() string {
 	return defaultBackingStorePath
 }
 
-func getWarmIPTarget() int {
+// getWarmIPTarget returns the WARM_IP_TARGET value and whether the operator set it.
+// An explicit 0 is a valid target and must stay distinguishable from unset.
+func getWarmIPTarget() (int, bool) {
 	inputStr, found := os.LookupEnv(envWarmIPTarget)
 	if !found {
-		return noWarmIPTarget
+		return noWarmIPTarget, false
 	}
 
 	if input, err := strconv.Atoi(inputStr); err == nil {
 		if input >= 0 {
 			log.Debugf("Using WARM_IP_TARGET %v", input)
-			return input
+			return input, true
 		}
 	}
-	return noWarmIPTarget
+	return noWarmIPTarget, false
 }
 
-func getMinimumIPTarget() int {
+// getMinimumIPTarget returns the MINIMUM_IP_TARGET value and whether the operator set it.
+func getMinimumIPTarget() (int, bool) {
 	inputStr, found := os.LookupEnv(envMinimumIPTarget)
 	if !found {
-		return noMinimumIPTarget
+		return noMinimumIPTarget, false
 	}
 
 	if input, err := strconv.Atoi(inputStr); err == nil {
 		if input >= 0 {
 			log.Debugf("Using MINIMUM_IP_TARGET %v", input)
-			return input
+			return input, true
 		}
 	}
-	return noMinimumIPTarget
+	return noMinimumIPTarget, false
 }
 
 func disableENIProvisioning() bool {
@@ -2257,8 +2284,12 @@ func (c *IPAMContext) datastoreTargetState(stats *datastore.DataStoreStats, netw
 	// short is greater than the warm IP target alone when we have fewer total IPs than the minimum target
 	short = max(short, minimumIPTarget-stats.TotalIPs)
 
-	// over is the number of available IPs we have beyond the warm IP target
-	over = max(available-warmIPTarget, 0)
+	// over is the number of surplus IPs we have beyond the warm IP target. An address whose pod has
+	// just departed is in its cooldown period, which makes it neither assignable nor surplus: the
+	// next pod on this node takes it back without an EC2 call. Counting it as surplus spends one
+	// call to give it away and a second to get an address back. The allocate side above keeps using
+	// AvailableAddresses deliberately, see DataStoreStats.SurplusAddresses.
+	over = max(stats.SurplusAddresses()-warmIPTarget, 0)
 
 	// over is less than the warm IP target alone if it would imply reducing total IPs below the minimum target
 	over = max(min(over, stats.TotalIPs-minimumIPTarget), 0)
@@ -2339,8 +2370,9 @@ func (c *IPAMContext) isNodeNonSchedulable() bool {
 
 // GetConfigForDebug returns the active values of the configuration env vars (for debugging purposes).
 func GetConfigForDebug() map[string]interface{} {
+	warmIPTarget, _ := getWarmIPTarget()
 	return map[string]interface{}{
-		envWarmIPTarget:             getWarmIPTarget(),
+		envWarmIPTarget:             warmIPTarget,
 		envWarmENITarget:            getWarmENITarget(),
 		envCustomNetworkCfg:         UseCustomNetworkCfg(),
 		envManageENIsNonSchedulable: ManageENIsOnNonSchedulableNode(),
@@ -2746,7 +2778,7 @@ func (c *IPAMContext) isDatastorePoolTooHigh(stats *datastore.DataStoreStats, ne
 }
 
 func (c *IPAMContext) warmPrefixTargetDefined() bool {
-	return c.warmPrefixTarget >= defaultWarmPrefixTarget && c.enablePrefixDelegation
+	return c.warmPrefixTargetSet && c.enablePrefixDelegation
 }
 
 // DeallocCidrs frees IPs and Prefixes from EC2

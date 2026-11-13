@@ -234,6 +234,17 @@ func (cidr *CidrInfo) GetIPStatsFromCidr(ipCooldownPeriod time.Duration) CidrSta
 	return stats
 }
 
+// hasAddressInCooling reports whether any unassigned address in the CIDR is still in its cooldown
+// period, and so is being held for the next pod on this node rather than being spare.
+func (cidr *CidrInfo) hasAddressInCooling(ipCooldownPeriod time.Duration) bool {
+	for _, addr := range cidr.IPAddresses {
+		if !addr.Assigned() && addr.inCoolingPeriod(ipCooldownPeriod) {
+			return true
+		}
+	}
+	return false
+}
+
 // Assigned returns true iff the address is allocated to a pod/sandbox.
 func (addr AddressInfo) Assigned() bool {
 	return !addr.IPAMKey.IsZero()
@@ -912,6 +923,17 @@ func (stats *DataStoreStats) AvailableAddresses() int {
 	return stats.TotalIPs - stats.AssignedIPs
 }
 
+// SurplusAddresses is the number of addresses that are neither assigned to a pod nor in their
+// cooldown period, so the only ones a warm target may count as spare and release to EC2.
+//
+// This is deliberately not the same as AvailableAddresses. A cooling address is not yet reusable by
+// the ADD path (getUnusedIP skips it) and it is not surplus to the release path, because the next
+// pod on this node will take it without an EC2 call once it comes out of cooldown. Both statements
+// hold at once, which is why the allocate side keeps using AvailableAddresses.
+func (stats *DataStoreStats) SurplusAddresses() int {
+	return stats.TotalIPs - stats.AssignedIPs - stats.CooldownIPs
+}
+
 // GetIPStats returns DataStoreStats for addressFamily
 func (ds *DataStore) GetIPStats(addressFamily string) *DataStoreStats {
 	ds.lock.Lock()
@@ -1572,6 +1594,14 @@ func (ds *DataStore) FindFreeableCidrs(eniID string) []CidrInfo {
 	var freeable []CidrInfo
 	for _, assignedaddr := range eni.AvailableIPv4Cidrs {
 		if assignedaddr.AssignedIPAddressesInCidr() == 0 {
+			// An address a pod has just vacated is being held for the next pod on this node, not
+			// spare. Releasing it to EC2 here spends a call to give away the address the next pod
+			// would have taken for free, and the node then spends another call getting one back.
+			// getDeletableENI already applies this guard at the ENI granularity.
+			if assignedaddr.hasAddressInCooling(ds.ipCooldownPeriod) {
+				ds.log.Debugf("CIDR %s is not freeable because it holds an address in cooling", assignedaddr.Cidr.String())
+				continue
+			}
 			tempFreeable := CidrInfo{
 				Cidr:          assignedaddr.Cidr,
 				IPAddresses:   nil,
