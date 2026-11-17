@@ -234,10 +234,8 @@ type IPAMContext struct {
 	unmanagedENI              []int
 	numNetworkCards           int
 
-	warmENITarget int
-	warmIPTarget  int
-	// warmIPTargetSet records whether WARM_IP_TARGET was supplied. Zero is a
-	// legitimate target, so the value alone cannot say whether it was set.
+	warmENITarget        int
+	warmIPTarget         int
 	warmIPTargetSet      bool
 	minimumIPTarget      int
 	minimumIPTargetSet   bool
@@ -448,10 +446,6 @@ func New(ctx context.Context, k8sClient client.Client, withApiServer bool) (*IPA
 	c.minimumIPTarget, c.minimumIPTargetSet = getMinimumIPTarget()
 	c.warmPrefixTarget, c.warmPrefixTargetSet = getWarmPrefixTarget()
 	if c.warmIPTargetsDefined() && c.warmIPTarget == noWarmIPTarget {
-		// README "NOTE! 2" documents this for MINIMUM_IP_TARGET without WARM_IP_TARGET. It is the
-		// same arithmetic whenever the warm target is zero: nothing can raise the shortfall, so the
-		// pool stops growing once it reaches MINIMUM_IP_TARGET addresses. Say so out loud, because
-		// before this it silently fell through to WARM_ENI_TARGET and did the opposite.
 		log.Warnf("WARM_IP_TARGET is 0, so the IP pool will not grow beyond MINIMUM_IP_TARGET (%d) addresses. Pods beyond that will fail to start. Set WARM_IP_TARGET greater than 0 unless you intend a fixed-size pool.", c.minimumIPTarget)
 	}
 	c.enablePodENI = EnablePodENI()
@@ -1507,7 +1501,6 @@ func getWarmENITarget() int {
 	return defaultWarmENITarget
 }
 
-// getWarmPrefixTarget returns the WARM_PREFIX_TARGET value and whether the operator set it.
 func getWarmPrefixTarget() (int, bool) {
 	inputStr, found := os.LookupEnv(envWarmPrefixTarget)
 
@@ -1573,11 +1566,6 @@ func (c *IPAMContext) shouldRemoveExtraENIs(stats *datastore.DataStoreStats, net
 
 	shouldRemoveExtra = available >= (warmTarget)*c.maxIPsPerENI
 
-	// At a rank-2 target of 0 the threshold above is exactly one interface's worth of addresses,
-	// and isDatastorePoolTooLow grows whenever nothing is available at all. The two windows touch,
-	// so freeing the interface that holds the node's whole supply makes the pool too low on the
-	// next tick and it is re-attached. That is the allocate/free loop in issue #1451. Keep the last
-	// interface's worth, which is the "do not go below the target" intent the +1 already encodes.
 	if shouldRemoveExtra && rank2Target == 0 && available <= c.maxIPsPerENI {
 		log.Debugf("Not removing extra ENIs: available (%d) is the last interface's worth and the pool would be refilled immediately", available)
 		shouldRemoveExtra = false
@@ -2107,8 +2095,6 @@ func dsBackingStorePath() string {
 	return defaultBackingStorePath
 }
 
-// getWarmIPTarget returns the WARM_IP_TARGET value and whether the operator set it.
-// An explicit 0 is a valid target and must stay distinguishable from unset.
 func getWarmIPTarget() (int, bool) {
 	inputStr, found := os.LookupEnv(envWarmIPTarget)
 	if !found {
@@ -2124,7 +2110,6 @@ func getWarmIPTarget() (int, bool) {
 	return noWarmIPTarget, false
 }
 
-// getMinimumIPTarget returns the MINIMUM_IP_TARGET value and whether the operator set it.
 func getMinimumIPTarget() (int, bool) {
 	inputStr, found := os.LookupEnv(envMinimumIPTarget)
 	if !found {
@@ -2284,11 +2269,6 @@ func (c *IPAMContext) datastoreTargetState(stats *datastore.DataStoreStats, netw
 	// short is greater than the warm IP target alone when we have fewer total IPs than the minimum target
 	short = max(short, minimumIPTarget-stats.TotalIPs)
 
-	// over is the number of surplus IPs we have beyond the warm IP target. An address whose pod has
-	// just departed is in its cooldown period, which makes it neither assignable nor surplus: the
-	// next pod on this node takes it back without an EC2 call. Counting it as surplus spends one
-	// call to give it away and a second to get an address back. The allocate side above keeps using
-	// AvailableAddresses deliberately, see DataStoreStats.SurplusAddresses.
 	over = max(stats.SurplusAddresses()-warmIPTarget, 0)
 
 	// over is less than the warm IP target alone if it would imply reducing total IPs below the minimum target

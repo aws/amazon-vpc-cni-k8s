@@ -1395,7 +1395,6 @@ func TestGetWarmENITarget(t *testing.T) {
 	assert.Equal(t, warmIPTarget, noWarmIPTarget)
 	assert.False(t, isSet)
 
-	// An explicit zero is a request for no warm pool and must not look like unset.
 	_ = os.Setenv("WARM_IP_TARGET", "0")
 	warmIPTarget, isSet = getWarmIPTarget()
 	assert.Equal(t, warmIPTarget, 0)
@@ -1556,8 +1555,6 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 		{"Test 3 used, 1 warm ENI", fields{3, 4, 1, 0, false, datastoreWith3Pods(), 500}, true},
 		{"Test 3 used, 0 warm ENI", fields{3, 4, 0, 0, false, datastoreWith3Pods(), 500}, true},
 		{"Test max pods exceeded", fields{3, 4, 0, 5, true, datastoreWith3Pods(), 3}, false},
-		// An explicit WARM_IP_TARGET=0 must stop falling through to WARM_ENI_TARGET. With no
-		// pod waiting the pool is at target, so it is not low, whatever WARM_ENI_TARGET says.
 		{"Zero warm, 1 used, WARM_ENI_TARGET=1", fields{3, 4, 1, 0, true, datastoreWith1Pod1(), 500}, false},
 		{"Zero warm, 3 used, WARM_ENI_TARGET=1", fields{3, 4, 1, 0, true, datastoreWith3Pods(), 500}, false},
 		{"Zero warm, empty ds, WARM_ENI_TARGET=1", fields{14, 4, 1, 0, true, testDatastore(), 500}, false},
@@ -4170,8 +4167,6 @@ func TestIPAMContext_WarmIPTargetsDefined(t *testing.T) {
 		{"warmIPTarget defined", 5, true, noMinimumIPTarget, false, true},
 		{"minimumIPTarget defined", noWarmIPTarget, false, 10, true, true},
 		{"both defined", 5, true, 10, true, true},
-		// A target of zero is a request for no warm pool. It must read as defined, otherwise the
-		// pool manager falls through to WARM_ENI_TARGET and reserves a whole spare ENI.
 		{"warmIPTarget explicitly zero", 0, true, noMinimumIPTarget, false, true},
 		{"minimumIPTarget explicitly zero", noWarmIPTarget, false, 0, true, true},
 		{"both explicitly zero", 0, true, 0, true, true},
@@ -4198,9 +4193,6 @@ func TestIPAMContext_WarmPrefixTargetDefined(t *testing.T) {
 		{"not defined", 0, false, false, false},
 		{"defined with prefix delegation", 1, true, true, true},
 		{"defined without prefix delegation", 1, true, false, false},
-		// Unset in prefix mode used to read as defined, because the old predicate was
-		// `warmPrefixTarget >= defaultWarmPrefixTarget` and the default is 0, a tautology. It
-		// switched the prefix scale-down regime on with a warm target of zero.
 		{"unset with prefix delegation", 0, false, true, false},
 		{"explicitly zero with prefix delegation", 0, true, true, true},
 	}
@@ -4669,4 +4661,286 @@ func TestInitHyperPodDisablesMultiNIC(t *testing.T) {
 	assert.NoError(t, c.initHyperPod(context.Background(), "aws:///us-west-2a/sagemaker/cluster/hyperpod-abc-i-0abc123def4567890"))
 	assert.False(t, c.enableMultiNICSupport)
 	assert.Equal(t, []bool{false, true, true}, c.markUnmanagedNetworkCards(efaOnly, enisByCard))
+}
+
+func TestExplicitZeroWarmIPTargetDoesNotFallThroughToWarmENITarget(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	newCtx := func(warmIPTargetSet bool) *IPAMContext {
+		return &IPAMContext{
+			awsClient:       m.awsutils,
+			networkClient:   m.network,
+			primaryIP:       make(map[string]string),
+			dataStoreAccess: testDatastore(),
+			maxIPsPerENI:    14,
+			maxENI:          4,
+			warmENITarget:   defaultWarmENITarget,
+			warmIPTarget:    0,
+			warmIPTargetSet: warmIPTargetSet,
+			maxPods:         110,
+			numNetworkCards: 1,
+		}
+	}
+
+	unset := newCtx(false)
+	assert.False(t, unset.warmIPTargetsDefined())
+	assert.True(t, unset.isDatastorePoolTooLow()[defaultNetworkCard].IsLow)
+	assert.Equal(t, 14, unset.GetENIResourcesToAllocate(defaultNetworkCard),
+		"with no target set, allocation is unclamped at full ENI capacity")
+
+	zero := newCtx(true)
+	assert.True(t, zero.warmIPTargetsDefined())
+	assert.False(t, zero.isDatastorePoolTooLow()[defaultNetworkCard].IsLow)
+	assert.Equal(t, 0, zero.GetENIResourcesToAllocate(defaultNetworkCard),
+		"asking for zero must not yield a spare ENI's worth of addresses")
+
+	short, over, enabled := zero.datastoreTargetState(nil, defaultNetworkCard)
+	assert.True(t, enabled)
+	assert.Equal(t, 0, short)
+	assert.Equal(t, 0, over)
+}
+
+func TestZeroWarmIPTargetWithMinimumHoldsExactlyTheMinimum(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	c := &IPAMContext{
+		awsClient:          m.awsutils,
+		networkClient:      m.network,
+		primaryIP:          make(map[string]string),
+		dataStoreAccess:    testDatastore(),
+		maxIPsPerENI:       14,
+		maxENI:             4,
+		warmENITarget:      defaultWarmENITarget,
+		warmIPTarget:       0,
+		warmIPTargetSet:    true,
+		minimumIPTarget:    3,
+		minimumIPTargetSet: true,
+		maxPods:            110,
+		numNetworkCards:    1,
+	}
+
+	short, over, enabled := c.datastoreTargetState(nil, defaultNetworkCard)
+	assert.True(t, enabled)
+	assert.Equal(t, 3, short, "empty pool is short of the minimum")
+	assert.Equal(t, 0, over)
+
+	ds := c.dataStoreAccess.GetDataStore(defaultNetworkCard)
+	_ = ds.AddENI(primaryENIid, 0, true, false, false, networkutils.CalculateRouteTableId(0, 0), "")
+	for _, a := range []string{ipaddr01, ipaddr02, ipaddr03} {
+		_ = ds.AddIPv4CidrToStore(primaryENIid, net.IPNet{IP: net.ParseIP(a), Mask: net.IPv4Mask(255, 255, 255, 255)}, false)
+	}
+
+	short, over, _ = c.datastoreTargetState(nil, defaultNetworkCard)
+	assert.Equal(t, 0, short, "the minimum is met")
+	assert.Equal(t, 0, over, "and the minimum floors the release, so nothing is surplus")
+	assert.False(t, c.isDatastorePoolTooLow()[defaultNetworkCard].IsLow)
+}
+
+func TestWarmPrefixTargetUnsetInPrefixModeIsNotDefined(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	newCtx := func(set bool) *IPAMContext {
+		c := &IPAMContext{
+			awsClient:              m.awsutils,
+			networkClient:          m.network,
+			primaryIP:              make(map[string]string),
+			dataStoreAccess:        testDatastorewithPrefix(),
+			enablePrefixDelegation: true,
+			maxIPsPerENI:           16,
+			maxPrefixesPerENI:      1,
+			maxENI:                 4,
+			warmPrefixTarget:       0,
+			warmPrefixTargetSet:    set,
+			maxPods:                110,
+			numNetworkCards:        1,
+		}
+		ds := c.dataStoreAccess.GetDataStore(defaultNetworkCard)
+		_ = ds.AddENI(primaryENIid, 0, true, false, false, networkutils.CalculateRouteTableId(0, 0), "")
+		_, prefix, _ := net.ParseCIDR("10.0.0.0/28")
+		_ = ds.AddIPv4CidrToStore(primaryENIid, *prefix, true)
+		return c
+	}
+
+	unset := newCtx(false)
+	assert.False(t, unset.warmPrefixTargetDefined())
+	stats := unset.dataStoreAccess.GetDataStore(defaultNetworkCard).GetIPStats(ipV4AddrFamily)
+	assert.False(t, unset.isDatastorePoolTooHigh(stats, defaultNetworkCard),
+		"an unset WARM_PREFIX_TARGET must not read as a target of zero and release the launch prefix")
+	assert.Equal(t, 0, unset.computeExtraPrefixesOverWarmTarget(defaultNetworkCard))
+
+	zero := newCtx(true)
+	assert.True(t, zero.warmPrefixTargetDefined())
+	stats = zero.dataStoreAccess.GetDataStore(defaultNetworkCard).GetIPStats(ipV4AddrFamily)
+	assert.True(t, zero.isDatastorePoolTooHigh(stats, defaultNetworkCard))
+	assert.Equal(t, 1, zero.computeExtraPrefixesOverWarmTarget(defaultNetworkCard))
+}
+
+func TestDefaultPathUnchangedByWarmTargetSentinel(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	for _, pd := range []bool{false, true} {
+		c := &IPAMContext{
+			awsClient:              m.awsutils,
+			networkClient:          m.network,
+			primaryIP:              make(map[string]string),
+			enablePrefixDelegation: pd,
+			maxIPsPerENI:           14,
+			maxPrefixesPerENI:      1,
+			maxENI:                 4,
+			warmENITarget:          defaultWarmENITarget,
+			warmIPTarget:           noWarmIPTarget,
+			warmIPTargetSet:        false,
+			minimumIPTarget:        noMinimumIPTarget,
+			minimumIPTargetSet:     false,
+			warmPrefixTarget:       defaultWarmPrefixTarget,
+			warmPrefixTargetSet:    false,
+			maxPods:                110,
+			numNetworkCards:        1,
+		}
+		if pd {
+			c.dataStoreAccess = testDatastorewithPrefix()
+			c.maxIPsPerENI = 16
+		} else {
+			c.dataStoreAccess = testDatastore()
+		}
+
+		assert.False(t, c.warmIPTargetsDefined(), "pd=%v", pd)
+		_, _, enabled := c.datastoreTargetState(nil, defaultNetworkCard)
+		assert.False(t, enabled, "rank 1 must stay inactive with nothing set, pd=%v", pd)
+
+		assert.True(t, c.isDatastorePoolTooLow()[defaultNetworkCard].IsLow, "pd=%v", pd)
+		expected := 14
+		if pd {
+			expected = 1
+		}
+		assert.Equal(t, expected, c.GetENIResourcesToAllocate(defaultNetworkCard), "pd=%v", pd)
+	}
+}
+
+func TestCoolingAddressIsNotSurplus(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	c := &IPAMContext{
+		awsClient:       m.awsutils,
+		networkClient:   m.network,
+		primaryIP:       make(map[string]string),
+		dataStoreAccess: testDatastore(),
+		maxIPsPerENI:    14,
+		maxENI:          4,
+		warmENITarget:   defaultWarmENITarget,
+		warmIPTarget:    1,
+		warmIPTargetSet: true,
+		maxPods:         110,
+		numNetworkCards: 1,
+	}
+	ds := c.dataStoreAccess.GetDataStore(defaultNetworkCard)
+	_ = ds.AddENI(primaryENIid, 0, true, false, false, networkutils.CalculateRouteTableId(0, 0), "")
+	for _, a := range []string{ipaddr01, ipaddr02, ipaddr03} {
+		_ = ds.AddIPv4CidrToStore(primaryENIid, net.IPNet{IP: net.ParseIP(a), Mask: net.IPv4Mask(255, 255, 255, 255)}, false)
+	}
+	keys := []datastore.IPAMKey{
+		{NetworkName: "net0", ContainerID: "sandbox-1", IfName: "eth0"},
+		{NetworkName: "net0", ContainerID: "sandbox-2", IfName: "eth0"},
+	}
+	for _, k := range keys {
+		_, _, _, err := ds.AssignPodIPv4Address(k, datastore.IPAMMetadata{K8SPodNamespace: "default", K8SPodName: k.ContainerID})
+		assert.NoError(t, err)
+	}
+
+	stats := ds.GetIPStats(ipV4AddrFamily)
+	_, over, _ := c.datastoreTargetState(stats, defaultNetworkCard)
+	assert.Equal(t, 0, over)
+	assert.False(t, c.isDatastorePoolTooHigh(stats, defaultNetworkCard))
+
+	_, _, _, _, _, err := ds.UnassignPodIPAddress(keys[0])
+	assert.NoError(t, err)
+
+	stats = ds.GetIPStats(ipV4AddrFamily)
+	assert.Equal(t, 1, stats.CooldownIPs)
+	_, over, _ = c.datastoreTargetState(stats, defaultNetworkCard)
+	assert.Equal(t, 0, over, "the cooling address is held for the next pod, so the pool is not over target")
+	assert.False(t, c.isDatastorePoolTooHigh(stats, defaultNetworkCard),
+		"a single pod churn must not trigger a release at WARM_IP_TARGET=1")
+	assert.Len(t, ds.FindFreeableCidrs(primaryENIid), 1,
+		"only the genuinely idle address is a release candidate")
+}
+
+const osc1451MaxIPsPerENI = 14
+
+func osc1451Context(t *testing.T, m *testMocks, warmENITarget, secondaryENIs int) (*IPAMContext, *datastore.DataStore) {
+	t.Helper()
+	dsa := testDatastore()
+	ds := dsa.GetDataStore(defaultNetworkCard)
+	assert.NoError(t, ds.AddENI(primaryENIid, 0, true, false, false, networkutils.CalculateRouteTableId(0, 0), ""))
+	for e := 1; e <= secondaryENIs; e++ {
+		id := fmt.Sprintf("eni-sec-%d", e)
+		assert.NoError(t, ds.AddENI(id, e, false, false, false, networkutils.CalculateRouteTableId(e, 0), ""))
+		for i := 1; i <= osc1451MaxIPsPerENI; i++ {
+			assert.NoError(t, ds.AddIPv4CidrToStore(id, net.IPNet{
+				IP: net.ParseIP(fmt.Sprintf("10.%d.0.%d", e, i)), Mask: net.CIDRMask(32, 32),
+			}, false))
+		}
+	}
+	return &IPAMContext{
+		awsClient:           m.awsutils,
+		networkClient:       m.network,
+		primaryIP:           make(map[string]string),
+		dataStoreAccess:     dsa,
+		useCustomNetworking: true,
+		maxIPsPerENI:        osc1451MaxIPsPerENI,
+		maxENI:              4,
+		warmENITarget:       warmENITarget,
+		maxPods:             110,
+		numNetworkCards:     1,
+		unmanagedENI:        []int{0},
+	}, ds
+}
+
+func TestOscillation1451GrowAndShrinkWindowsTouchAtZeroWarmENITarget(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	c, ds := osc1451Context(t, m, 0, 1)
+	stats := ds.GetIPStats(ipV4AddrFamily)
+	assert.Equal(t, 14, stats.AvailableAddresses())
+	assert.False(t, c.isDatastorePoolTooLow()[defaultNetworkCard].IsLow, "14 available is not too low")
+	assert.False(t, c.shouldRemoveExtraENIs(stats, defaultNetworkCard),
+		"the last interface's worth of addresses must not be offered for removal, or the next tick re-attaches it")
+
+	assert.NoError(t, ds.RemoveENIFromDataStore("eni-sec-1", true))
+	assert.True(t, c.isDatastorePoolTooLow()[defaultNetworkCard].IsLow,
+		"0 available is too low, which is the other half of the loop")
+
+	c, ds = osc1451Context(t, m, 0, 2)
+	stats = ds.GetIPStats(ipV4AddrFamily)
+	assert.Equal(t, 28, stats.AvailableAddresses())
+	assert.True(t, c.shouldRemoveExtraENIs(stats, defaultNetworkCard),
+		"28 available is more than the last interface's worth, so an ENI is spare")
+
+	c, ds = osc1451Context(t, m, 1, 1)
+	stats = ds.GetIPStats(ipV4AddrFamily)
+	assert.False(t, c.isDatastorePoolTooLow()[defaultNetworkCard].IsLow)
+	assert.False(t, c.shouldRemoveExtraENIs(stats, defaultNetworkCard),
+		"14 available is below the (1+1)*14 shrink threshold, so there is a gap between the windows")
+
+	c, ds = osc1451Context(t, m, 1, 2)
+	stats = ds.GetIPStats(ipV4AddrFamily)
+	assert.True(t, c.shouldRemoveExtraENIs(stats, defaultNetworkCard),
+		"the default path is unchanged: at WARM_ENI_TARGET=1 removal is still offered at two ENIs' worth")
+}
+
+func TestOscillation1451IsRateLimitedByMinENILifeTime(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	c, ds := osc1451Context(t, m, 0, 2)
+	stats := ds.GetIPStats(ipV4AddrFamily)
+	assert.True(t, c.shouldRemoveExtraENIs(stats, defaultNetworkCard))
+	assert.Equal(t, "", ds.RemoveUnusedENIFromStore(c.warmIPTarget, c.minimumIPTarget, c.warmPrefixTarget),
+		"an ENI younger than minENILifeTime is never deletable, which caps the loop at about 1 cycle per minute")
 }

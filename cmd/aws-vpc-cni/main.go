@@ -377,10 +377,6 @@ func validateEnvVars() bool {
 
 	prefixDelegationEn := utils.GetBoolAsStringEnvVar(envEnPrefixDelegation, defaultEnPrefixDelegation)
 
-	// A warm target of zero is a legitimate request for no warm pool, so what matters here is
-	// whether a target was supplied at all, not what it was set to. Prefix delegation with no
-	// target of any kind is still refused, because it leaves the pool manager with nothing to
-	// size the node against.
 	_, warmIPTargetSet := os.LookupEnv(envWarmIPTarget)
 	_, warmPrefixTargetSet := os.LookupEnv(envWarmPrefixTarget)
 	_, minimumIPTargetSet := os.LookupEnv(envMinIPTarget)
