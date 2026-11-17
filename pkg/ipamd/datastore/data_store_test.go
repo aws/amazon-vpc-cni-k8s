@@ -2511,3 +2511,22 @@ func TestCoolingGuardDoesNotCoverANeverUsedENI(t *testing.T) {
 	assert.Equal(t, "eni-sec", deletable.ID,
 		"a never-used ENI is deletable whatever the warm target, so the cooldown guard cannot break the #1451 loop")
 }
+
+func TestGetDeletableENIHoldsAnENINeededForANonZeroWarmIPTarget(t *testing.T) {
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
+	_ = ds.AddENI("eni-primary", 0, true, false, false, networkutils.CalculateRouteTableId(0, 0), "")
+	_ = ds.AddENI("eni-sec", 1, false, false, false, networkutils.CalculateRouteTableId(1, 0), "")
+	for i := 1; i <= 14; i++ {
+		_ = ds.AddIPv4CidrToStore("eni-sec", net.IPNet{IP: net.ParseIP(fmt.Sprintf("10.1.0.%d", i)), Mask: net.CIDRMask(32, 32)}, false)
+	}
+	ds.eniPool["eni-sec"].createTime = ds.eniPool["eni-sec"].createTime.Add(-2 * minENILifeTime)
+
+	deletable := ds.getDeletableENI(0, 0, 0)
+	assert.NotNil(t, deletable)
+	assert.Equal(t, "eni-sec", deletable.ID, "at a target of zero an aged idle ENI is spare")
+
+	assert.True(t, ds.isRequiredForWarmIPTarget(2, ds.eniPool["eni-sec"]),
+		"the other ENIs hold no free address, so this one is needed to cover a target of two")
+	assert.Nil(t, ds.getDeletableENI(2, 0, 0),
+		"a caller that passes waiting-pod demand as the warm IP target keeps the ENI those pods will use")
+}

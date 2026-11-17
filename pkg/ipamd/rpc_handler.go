@@ -193,6 +193,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 
 		ipsRequired := defaultIpPerPodRequired
 		ipsAllocated := 0
+		var starvedNetworkCards []int
 
 		if in.RequiresMultiNICAttachment {
 			if !s.ipamContext.enableMultiNICSupport {
@@ -231,6 +232,9 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 
 			if err != nil {
 				log.Warnf("Failed to assign IPs from network card %d: %v", networkCard, err)
+				if err == datastore.ErrNoAvailableIPInDataStore {
+					starvedNetworkCards = append(starvedNetworkCards, networkCard)
+				}
 				// continue to look through other datastores till you are unable to find an IP address when ONLY 1 ip is required
 				// if the last datastore also return ErrNoAvailableIPInDataStore, return an error
 				if err == datastore.ErrNoAvailableIPInDataStore && ipsRequired == defaultIpPerPodRequired && networkCard != len(s.ipamContext.dataStoreAccess.DataStores)-1 {
@@ -249,6 +253,15 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 			})
 
 			ipsAllocated += 1
+		}
+
+		podKey := unfilledDemandKey(in.K8S_POD_NAMESPACE, in.K8S_POD_NAME, in.ContainerID)
+		if ipsAllocated < ipsRequired {
+			for _, starved := range starvedNetworkCards {
+				s.ipamContext.recordUnfilledDemand(starved, podKey)
+			}
+		} else {
+			s.ipamContext.clearUnfilledDemand(podKey)
 		}
 	}
 

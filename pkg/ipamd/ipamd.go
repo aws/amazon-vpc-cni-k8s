@@ -69,6 +69,9 @@ const (
 	// during reconciliation after being discovered on the EC2 instance metadata.
 	ipReconcileCooldown = 60 * time.Second
 
+	// unfilledDemandTTL is how long a pod counts as waiting for an address after its most recent failed ADD.
+	unfilledDemandTTL = 30 * time.Second
+
 	// hyperPodReservedENIs is the number of network card 0 slots used by the HyperPod-owned ENI at device index 0.
 	// That ENI lives in the service account, so it is filtered out of DescribeAllENIs and never counted as attached.
 	hyperPodReservedENIs = 1
@@ -241,6 +244,8 @@ type IPAMContext struct {
 	minimumIPTargetSet   bool
 	warmPrefixTarget     int
 	warmPrefixTargetSet  bool
+	unfilledDemand       map[int]map[string]time.Time
+	unfilledDemandLock   sync.Mutex
 	primaryIP            map[string]string // primaryIP is a map from ENI ID to primary IP of that ENI
 	lastNodeIPPoolAction time.Time
 	lastDecreaseIPPool   time.Time
@@ -446,7 +451,11 @@ func New(ctx context.Context, k8sClient client.Client, withApiServer bool) (*IPA
 	c.minimumIPTarget, c.minimumIPTargetSet = getMinimumIPTarget()
 	c.warmPrefixTarget, c.warmPrefixTargetSet = getWarmPrefixTarget()
 	if c.warmIPTargetsDefined() && c.warmIPTarget == noWarmIPTarget {
-		log.Warnf("WARM_IP_TARGET is 0, so the IP pool will not grow beyond MINIMUM_IP_TARGET (%d) addresses. Pods beyond that will fail to start. Set WARM_IP_TARGET greater than 0 unless you intend a fixed-size pool.", c.minimumIPTarget)
+		if c.warmIPTargetSet && !c.enablePrefixDelegation {
+			log.Infof("WARM_IP_TARGET is 0, so the node holds no warm pool and allocates only to cover pods that are waiting for an address.")
+		} else {
+			log.Warnf("WARM_IP_TARGET is 0, so the IP pool will not grow beyond MINIMUM_IP_TARGET (%d) addresses. Pods beyond that will fail to start. Set WARM_IP_TARGET greater than 0 unless you intend a fixed-size pool.", c.minimumIPTarget)
+		}
 	}
 	c.enablePodENI = EnablePodENI()
 	c.enableManageUntaggedMode = enableManageUntaggedMode()
@@ -895,6 +904,7 @@ func (c *IPAMContext) tryFreeENI(ctx context.Context, networkCard int) {
 		warmIPTarget = DefaultWarmIPTarget
 		minimumIPTarget = DefaultMinimumIPTarget
 	}
+	warmIPTarget = c.demandSizedWarmIPTarget(warmIPTarget, networkCard)
 
 	eni := c.dataStoreAccess.GetDataStore(networkCard).RemoveUnusedENIFromStore(warmIPTarget, minimumIPTarget, c.warmPrefixTarget)
 	if eni == "" {
@@ -2011,6 +2021,65 @@ func (c *IPAMContext) warmIPTargetsDefined() bool {
 	return c.warmIPTargetSet || c.minimumIPTargetSet
 }
 
+// unfilledDemandKey identifies the pod behind a failed ADD, falling back to the sandbox when the pod is unnamed.
+func unfilledDemandKey(namespace, name, containerID string) string {
+	if name == "" {
+		return containerID
+	}
+	return namespace + "/" + name
+}
+
+// recordUnfilledDemand notes that a pod asked for an address on this network card and the data store had none.
+func (c *IPAMContext) recordUnfilledDemand(networkCard int, podKey string) {
+	if podKey == "" {
+		return
+	}
+	c.unfilledDemandLock.Lock()
+	defer c.unfilledDemandLock.Unlock()
+	if c.unfilledDemand == nil {
+		c.unfilledDemand = make(map[int]map[string]time.Time)
+	}
+	if c.unfilledDemand[networkCard] == nil {
+		c.unfilledDemand[networkCard] = make(map[string]time.Time)
+	}
+	c.unfilledDemand[networkCard][podKey] = time.Now()
+	log.Debugf("Pod %s has no address on network card %d, %d pods now waiting", podKey, networkCard, len(c.unfilledDemand[networkCard]))
+}
+
+// clearUnfilledDemand drops a pod from the waiting set on every network card.
+func (c *IPAMContext) clearUnfilledDemand(podKey string) {
+	if podKey == "" {
+		return
+	}
+	c.unfilledDemandLock.Lock()
+	defer c.unfilledDemandLock.Unlock()
+	for _, waiting := range c.unfilledDemand {
+		delete(waiting, podKey)
+	}
+}
+
+// demandSizedWarmIPTarget reads an explicit WARM_IP_TARGET of zero in secondary IP mode as the number of pods
+// waiting for an address, and leaves every other configuration alone.
+func (c *IPAMContext) demandSizedWarmIPTarget(warmIPTarget, networkCard int) int {
+	if c.enablePrefixDelegation || !c.warmIPTargetSet || warmIPTarget != noWarmIPTarget {
+		return warmIPTarget
+	}
+	return c.unfilledDemandCount(networkCard)
+}
+
+// unfilledDemandCount returns the number of distinct pods still waiting for an address on this network card.
+func (c *IPAMContext) unfilledDemandCount(networkCard int) int {
+	c.unfilledDemandLock.Lock()
+	defer c.unfilledDemandLock.Unlock()
+	waiting := c.unfilledDemand[networkCard]
+	for podKey, lastSeen := range waiting {
+		if time.Since(lastSeen) > unfilledDemandTTL {
+			delete(waiting, podKey)
+		}
+	}
+	return len(waiting)
+}
+
 // max pods from instance type mapping file
 type instanceTypeMaxPodsMapping map[string]int64
 
@@ -2255,6 +2324,8 @@ func (c *IPAMContext) datastoreTargetState(stats *datastore.DataStoreStats, netw
 		// there is no WARM_IP_TARGET defined and no MINIMUM_IP_TARGET, fallback to use all IP addresses on ENI
 		return 0, 0, false
 	}
+
+	warmIPTarget = c.demandSizedWarmIPTarget(warmIPTarget, networkCard)
 
 	// Calculating DataStore stats can be expensive, so allow the caller to optionally pass stats it already calculated
 	if stats == nil {

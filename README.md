@@ -301,7 +301,8 @@ Default: None
 Specifies the number of free IP addresses that the `ipamd` daemon should attempt to keep available for pod assignment on the node.
 A negative value is treated as not set. An explicit `0` is a valid target and is **not** the same as not setting the variable:
 `WARM_IP_TARGET=0` asks for no free addresses, which overrides `WARM_ENI_TARGET`, whereas leaving it unset falls back to
-`WARM_ENI_TARGET` and reserves a whole interface's worth of addresses. See NOTE 3 below for what `WARM_IP_TARGET=0` costs.
+`WARM_ENI_TARGET` and reserves a whole interface's worth of addresses. What `0` means depends on the addressing mode, see
+NOTE 3 and NOTE 4 below.
 With `ENABLE_PREFIX_DELEGATION` set to `true` then `ipamd` daemon will check if the existing (/28) prefixes are enough to maintain the
 `WARM_IP_TARGET` if it is not sufficient then more prefixes will be attached.
 
@@ -347,9 +348,19 @@ private IPs, which may be throttled, especially at scaling-related times.
 **NOTE!**
 1. If `MINIMUM_IP_TARGET` is set, `WARM_ENI_TARGET` will be ignored. Please utilize `WARM_IP_TARGET` instead.
 2. If `MINIMUM_IP_TARGET` is set and `WARM_IP_TARGET` is not set, `WARM_IP_TARGET` is assumed to be 0, which leads to the number of IPs attached to the node will be the value of `MINIMUM_IP_TARGET`. This configuration will prevent future ENIs/IPs from being allocated. It is strongly recommended that `WARM_IP_TARGET` should be set greater than 0 when `MINIMUM_IP_TARGET` is set.
-3. `WARM_IP_TARGET=0` has the same consequence as NOTE 2, by the same arithmetic: nothing can raise the shortfall, so the pool stops
-growing once it holds `MINIMUM_IP_TARGET` addresses and pods beyond that fail to start. `ipamd` logs a warning at startup when this
-configuration is detected. Set `WARM_IP_TARGET` greater than 0 unless you intend a pool of fixed size.
+3. With `ENABLE_PREFIX_DELEGATION` set to `true`, `WARM_IP_TARGET=0` has the same consequence as NOTE 2, by the same arithmetic:
+nothing can raise the shortfall, so the pool stops growing once it holds `MINIMUM_IP_TARGET` addresses and pods beyond that fail to
+start. `ipamd` logs a warning at startup when this configuration is detected. A prefix is 16 addresses and there is no smaller unit,
+so serving one pod necessarily acquires 15 spare and a target of `0` would then ask for those 15 to be released. Set
+`WARM_IP_TARGET` greater than 0 in prefix mode unless you intend a pool of fixed size.
+4. In secondary IP mode, `WARM_IP_TARGET=0` is demand-sized rather than fixed. The node holds no free address while it is idle. When
+a pod cannot be given an address, `ipamd` counts that pod as unfilled demand, and the next pool check allocates exactly the number of
+addresses the waiting pods need in a single `AssignPrivateIpAddresses` call. kubelet retries the pod sandbox, so the pod starts on a
+retry once its address lands. The address quantum in this mode is 1, so the node never acquires a spare it was not asked for.
+The cost is one EC2 call on the path of a pod that arrives when the node holds no free address, and the pod waits for the next pool
+check. A pod can also wait up to `IP_COOLDOWN_PERIOD` when the only free addresses on the node are still cooling, since the pool is
+not grown to cover an address that is about to become reusable. Use `MINIMUM_IP_TARGET` to pre-scale a floor if either cost matters,
+or set `WARM_IP_TARGET` greater than 0 for a conventional warm pool.
 
 #### `MAX_ENI`
 

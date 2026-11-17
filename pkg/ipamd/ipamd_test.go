@@ -4944,3 +4944,318 @@ func TestOscillation1451IsRateLimitedByMinENILifeTime(t *testing.T) {
 	assert.Equal(t, "", ds.RemoveUnusedENIFromStore(c.warmIPTarget, c.minimumIPTarget, c.warmPrefixTarget),
 		"an ENI younger than minENILifeTime is never deletable, which caps the loop at about 1 cycle per minute")
 }
+
+func demandZeroContext(t *testing.T, m *testMocks) *IPAMContext {
+	t.Helper()
+	c := &IPAMContext{
+		awsClient:       m.awsutils,
+		networkClient:   m.network,
+		primaryIP:       make(map[string]string),
+		dataStoreAccess: testDatastore(),
+		maxIPsPerENI:    14,
+		maxENI:          4,
+		warmENITarget:   defaultWarmENITarget,
+		warmIPTarget:    noWarmIPTarget,
+		warmIPTargetSet: true,
+		maxPods:         110,
+		numNetworkCards: 1,
+	}
+	ds := c.dataStoreAccess.GetDataStore(defaultNetworkCard)
+	assert.NoError(t, ds.AddENI(primaryENIid, primaryDevice, true, false, false, networkutils.CalculateRouteTableId(primaryDevice, 0), ""))
+	return c
+}
+
+func waitingPods(c *IPAMContext, networkCard int, n int) {
+	for i := 0; i < n; i++ {
+		c.recordUnfilledDemand(networkCard, fmt.Sprintf("default/pod-%d", i))
+	}
+}
+
+func TestDemandSizedZeroGrowsOnlyForWaitingPods(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	c := demandZeroContext(t, m)
+
+	assert.Equal(t, 0, c.unfilledDemandCount(defaultNetworkCard))
+	short, over, enabled := c.datastoreTargetState(nil, defaultNetworkCard)
+	assert.True(t, enabled)
+	assert.Equal(t, 0, short, "an idle node with nothing waiting is not short")
+	assert.Equal(t, 0, over)
+	assert.False(t, c.isDatastorePoolTooLow()[defaultNetworkCard].IsLow,
+		"zero available with no pod waiting must not trigger growth, that is upstream 1451")
+	assert.Equal(t, 0, c.GetENIResourcesToAllocate(defaultNetworkCard))
+
+	waitingPods(c, defaultNetworkCard, 3)
+	short, over, enabled = c.datastoreTargetState(nil, defaultNetworkCard)
+	assert.True(t, enabled)
+	assert.Equal(t, 3, short, "three pods waiting is a shortfall of three")
+	assert.Equal(t, 0, over)
+	assert.True(t, c.isDatastorePoolTooLow()[defaultNetworkCard].IsLow)
+	assert.Equal(t, 3, c.GetENIResourcesToAllocate(defaultNetworkCard))
+
+	ds := c.dataStoreAccess.GetDataStore(defaultNetworkCard)
+	for _, a := range []string{ipaddr01, ipaddr02, ipaddr03} {
+		assert.NoError(t, ds.AddIPv4CidrToStore(primaryENIid, net.IPNet{IP: net.ParseIP(a), Mask: net.IPv4Mask(255, 255, 255, 255)}, false))
+	}
+
+	short, over, _ = c.datastoreTargetState(nil, defaultNetworkCard)
+	assert.Equal(t, 0, short, "the demand is filled, so a second allocation must not be requested")
+	assert.Equal(t, 0, over, "the addresses are still earmarked for the waiting pods, so none is surplus")
+	assert.False(t, c.isDatastorePoolTooHigh(ds.GetIPStats(ipV4AddrFamily), defaultNetworkCard))
+
+	for i := 0; i < 3; i++ {
+		c.clearUnfilledDemand(fmt.Sprintf("default/pod-%d", i))
+	}
+	short, over, _ = c.datastoreTargetState(nil, defaultNetworkCard)
+	assert.Equal(t, 0, short)
+	assert.Equal(t, 3, over, "once nothing is waiting, a zero target releases everything free")
+}
+
+func TestDemandSizedZeroAssignedPodsDoNotCountAsDemand(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	c := demandZeroContext(t, m)
+	ds := c.dataStoreAccess.GetDataStore(defaultNetworkCard)
+	assert.NoError(t, ds.AddIPv4CidrToStore(primaryENIid, net.IPNet{IP: net.ParseIP(ipaddr01), Mask: net.IPv4Mask(255, 255, 255, 255)}, false))
+
+	key := datastore.IPAMKey{NetworkName: "net0", ContainerID: "sandbox-1", IfName: "eth0"}
+	_, _, _, err := ds.AssignPodIPv4Address(key, datastore.IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "pod-a"})
+	assert.NoError(t, err)
+
+	short, over, _ := c.datastoreTargetState(nil, defaultNetworkCard)
+	assert.Equal(t, 0, short, "a pod that holds an address is not demand")
+	assert.Equal(t, 0, over)
+	assert.False(t, c.isDatastorePoolTooLow()[defaultNetworkCard].IsLow)
+
+	_, _, _, _, _, err = ds.UnassignPodIPAddress(key)
+	assert.NoError(t, err)
+	short, over, _ = c.datastoreTargetState(nil, defaultNetworkCard)
+	assert.Equal(t, 0, short)
+	assert.Equal(t, 0, over, "the vacated address is cooling, so it is held for the next pod rather than released")
+}
+
+func TestUnfilledDemandIsKeyedOnThePodNotTheSandbox(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	c := demandZeroContext(t, m)
+	for i := 0; i < 50; i++ {
+		c.recordUnfilledDemand(defaultNetworkCard, unfilledDemandKey("default", "pod-a", fmt.Sprintf("sandbox-%d", i)))
+	}
+	assert.Equal(t, 1, c.unfilledDemandCount(defaultNetworkCard),
+		"kubelet retries with a fresh sandbox, so repeated attempts by one pod are one unit of demand")
+
+	short, _, _ := c.datastoreTargetState(nil, defaultNetworkCard)
+	assert.Equal(t, 1, short)
+
+	c.recordUnfilledDemand(defaultNetworkCard, unfilledDemandKey("other", "pod-a", "sandbox-x"))
+	assert.Equal(t, 2, c.unfilledDemandCount(defaultNetworkCard), "the namespace is part of the identity")
+
+	c.recordUnfilledDemand(defaultNetworkCard, unfilledDemandKey("", "", "sandbox-y"))
+	assert.Equal(t, 3, c.unfilledDemandCount(defaultNetworkCard), "an unnamed pod falls back to the sandbox")
+}
+
+func TestUnfilledDemandExpires(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	c := demandZeroContext(t, m)
+	c.recordUnfilledDemand(defaultNetworkCard, "default/stale")
+	c.recordUnfilledDemand(defaultNetworkCard, "default/fresh")
+	c.unfilledDemand[defaultNetworkCard]["default/stale"] = time.Now().Add(-unfilledDemandTTL - time.Second)
+
+	assert.Equal(t, 1, c.unfilledDemandCount(defaultNetworkCard),
+		"a pod that stopped retrying stops counting, so a deleted pending pod cannot pin the pool open")
+	short, _, _ := c.datastoreTargetState(nil, defaultNetworkCard)
+	assert.Equal(t, 1, short)
+}
+
+func TestUnfilledDemandIsPerNetworkCard(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	c := demandZeroContext(t, m)
+	c.recordUnfilledDemand(defaultNetworkCard, "default/pod-a")
+	c.recordUnfilledDemand(1, "default/pod-a")
+	assert.Equal(t, 1, c.unfilledDemandCount(defaultNetworkCard))
+	assert.Equal(t, 1, c.unfilledDemandCount(1))
+
+	c.clearUnfilledDemand("default/pod-a")
+	assert.Equal(t, 0, c.unfilledDemandCount(defaultNetworkCard))
+	assert.Equal(t, 0, c.unfilledDemandCount(1), "a pod served by one card is no longer demand on any card")
+}
+
+func TestDemandSizedZeroBurstIsOneAllocationCall(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	c := demandZeroContext(t, m)
+	waitingPods(c, defaultNetworkCard, 5)
+
+	assigned := make([]ec2types.AssignedPrivateIpAddress, 0, 5)
+	for i := 0; i < 5; i++ {
+		assigned = append(assigned, ec2types.AssignedPrivateIpAddress{PrivateIpAddress: aws.String(fmt.Sprintf("10.10.20.%d", i+1))})
+	}
+	m.awsutils.EXPECT().AllocIPAddresses(gomock.Any(), primaryENIid, 5).Times(1).
+		Return(&ec2.AssignPrivateIpAddressesOutput{AssignedPrivateIpAddresses: assigned}, nil)
+
+	increased, err := c.tryAssignCidrs(context.Background(), defaultNetworkCard)
+	assert.NoError(t, err)
+	assert.True(t, increased)
+	assert.Equal(t, 5, c.dataStoreAccess.GetDataStore(defaultNetworkCard).GetIPStats(ipV4AddrFamily).TotalIPs)
+
+	increased, err = c.tryAssignCidrs(context.Background(), defaultNetworkCard)
+	assert.NoError(t, err)
+	assert.False(t, increased, "the demand is filled, so the next pool check makes no EC2 call")
+}
+
+func TestDemandSizedZeroHoldsTheENIThatWaitingPodsNeed(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	c := demandZeroContext(t, m)
+	ds := c.dataStoreAccess.GetDataStore(defaultNetworkCard)
+	assert.NoError(t, ds.AddENI(secENIid, secDevice, false, false, false, networkutils.CalculateRouteTableId(secDevice, 0), ""))
+	for i := 1; i <= 14; i++ {
+		assert.NoError(t, ds.AddIPv4CidrToStore(secENIid, net.IPNet{
+			IP: net.ParseIP(fmt.Sprintf("10.20.0.%d", i)), Mask: net.CIDRMask(32, 32),
+		}, false))
+	}
+
+	stats := ds.GetIPStats(ipV4AddrFamily)
+	assert.Equal(t, 14, stats.AvailableAddresses())
+	assert.Equal(t, 0, c.demandSizedWarmIPTarget(c.warmIPTarget, defaultNetworkCard))
+	_, over, _ := c.datastoreTargetState(stats, defaultNetworkCard)
+	assert.Equal(t, 14, over, "with nothing waiting a zero target offers every free address for release")
+
+	waitingPods(c, defaultNetworkCard, 2)
+	assert.Equal(t, 2, c.demandSizedWarmIPTarget(c.warmIPTarget, defaultNetworkCard),
+		"tryFreeENI must pass the waiting-pod count, or getDeletableENI treats the ENI as spare")
+	_, over, _ = c.datastoreTargetState(stats, defaultNetworkCard)
+	assert.Equal(t, 12, over, "two of the fourteen are earmarked for the waiting pods")
+	assert.Equal(t, "", ds.RemoveUnusedENIFromStore(c.warmIPTarget, c.minimumIPTarget, c.warmPrefixTarget),
+		"a young ENI is never deletable, which is the outer rate limit on any attach/detach loop")
+}
+
+func TestUnfilledDemandIsIgnoredUnlessWarmIPTargetIsExplicitlyZero(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	cases := []struct {
+		name               string
+		prefixDelegation   bool
+		warmIPTarget       int
+		warmIPTargetSet    bool
+		minimumIPTarget    int
+		minimumIPTargetSet bool
+		wantShort          int
+	}{
+		{"explicit zero in secondary IP mode is demand sized", false, 0, true, 0, false, 4},
+		{"a nonzero warm target is unaffected", false, 2, true, 0, false, 2},
+		{"an unset warm target leaves rank 1 inactive", false, 0, false, 0, false, 0},
+		{"a minimum only configuration is unaffected", false, 0, false, 3, true, 3},
+		{"explicit zero in prefix mode is unaffected", true, 0, true, 0, false, 0},
+		{"a nonzero warm target in prefix mode is unaffected", true, 32, true, 0, false, 2},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &IPAMContext{
+				awsClient:              m.awsutils,
+				networkClient:          m.network,
+				primaryIP:              make(map[string]string),
+				enablePrefixDelegation: tc.prefixDelegation,
+				maxIPsPerENI:           14,
+				maxPrefixesPerENI:      1,
+				maxENI:                 4,
+				warmENITarget:          defaultWarmENITarget,
+				warmIPTarget:           tc.warmIPTarget,
+				warmIPTargetSet:        tc.warmIPTargetSet,
+				minimumIPTarget:        tc.minimumIPTarget,
+				minimumIPTargetSet:     tc.minimumIPTargetSet,
+				maxPods:                110,
+				numNetworkCards:        1,
+			}
+			if tc.prefixDelegation {
+				c.dataStoreAccess = testDatastorewithPrefix()
+				c.maxIPsPerENI = 16
+			} else {
+				c.dataStoreAccess = testDatastore()
+			}
+			waitingPods(c, defaultNetworkCard, 4)
+
+			short, _, _ := c.datastoreTargetState(nil, defaultNetworkCard)
+			assert.Equal(t, tc.wantShort, short)
+		})
+	}
+}
+
+func TestPrefixModeIsInvariantUnderUnfilledDemand(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	type cell struct {
+		short, over int
+		enabled     bool
+		low, high   bool
+		resources   int
+	}
+
+	observe := func(demand int, warmIPTarget int, set bool, minimumIPTarget int, minSet bool, prefixes int) cell {
+		c := &IPAMContext{
+			awsClient:              m.awsutils,
+			networkClient:          m.network,
+			primaryIP:              make(map[string]string),
+			dataStoreAccess:        testDatastorewithPrefix(),
+			enablePrefixDelegation: true,
+			maxIPsPerENI:           16,
+			maxPrefixesPerENI:      1,
+			maxENI:                 4,
+			warmENITarget:          defaultWarmENITarget,
+			warmIPTarget:           warmIPTarget,
+			warmIPTargetSet:        set,
+			minimumIPTarget:        minimumIPTarget,
+			minimumIPTargetSet:     minSet,
+			warmPrefixTarget:       defaultWarmPrefixTarget,
+			maxPods:                110,
+			numNetworkCards:        1,
+		}
+		ds := c.dataStoreAccess.GetDataStore(defaultNetworkCard)
+		_ = ds.AddENI(primaryENIid, primaryDevice, true, false, false, networkutils.CalculateRouteTableId(primaryDevice, 0), "")
+		for i := 0; i < prefixes; i++ {
+			_, prefix, _ := net.ParseCIDR(fmt.Sprintf("10.%d.0.0/28", i+1))
+			_ = ds.AddIPv4CidrToStore(primaryENIid, *prefix, true)
+		}
+		waitingPods(c, defaultNetworkCard, demand)
+		stats := ds.GetIPStats(ipV4AddrFamily)
+		short, over, enabled := c.datastoreTargetState(stats, defaultNetworkCard)
+		return cell{
+			short:     short,
+			over:      over,
+			enabled:   enabled,
+			low:       c.isDatastorePoolTooLow()[defaultNetworkCard].IsLow,
+			high:      c.isDatastorePoolTooHigh(stats, defaultNetworkCard),
+			resources: c.GetENIResourcesToAllocate(defaultNetworkCard),
+		}
+	}
+
+	for _, warmIPTarget := range []int{0, 1, 16, 32} {
+		for _, set := range []bool{false, true} {
+			for _, minimumIPTarget := range []int{0, 5} {
+				for _, minSet := range []bool{false, true} {
+					for _, prefixes := range []int{0, 1, 2} {
+						want := observe(0, warmIPTarget, set, minimumIPTarget, minSet, prefixes)
+						for _, demand := range []int{1, 3, 17, 40} {
+							got := observe(demand, warmIPTarget, set, minimumIPTarget, minSet, prefixes)
+							assert.Equal(t, want, got,
+								"prefix mode must not see demand: wit=%d set=%v mit=%d minSet=%v prefixes=%d demand=%d",
+								warmIPTarget, set, minimumIPTarget, minSet, prefixes, demand)
+						}
+					}
+				}
+			}
+		}
+	}
+}

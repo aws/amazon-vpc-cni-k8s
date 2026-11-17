@@ -15,6 +15,7 @@ package ipamd
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"testing"
@@ -938,4 +939,110 @@ func TestServer_DelNetwork_PodNotFound(t *testing.T) {
 	// The fix in GetPod() returns raw Kubernetes errors so k8serror.IsNotFound() works correctly.
 	assert.NoError(t, err)
 	assert.True(t, resp.Success, "DelNetwork should return success when pod is not found")
+}
+
+func TestAddNetworkRecordsAndClearsUnfilledDemand(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		awsClient:       m.awsutils,
+		networkClient:   m.network,
+		primaryIP:       make(map[string]string),
+		dataStoreAccess: testDatastore(),
+		enableIPv4:      true,
+		maxIPsPerENI:    14,
+		maxENI:          4,
+		warmENITarget:   1,
+		warmIPTarget:    noWarmIPTarget,
+		warmIPTargetSet: true,
+		maxPods:         110,
+		numNetworkCards: 1,
+	}
+	ds := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard)
+	require.NoError(t, ds.AddENI(primaryENIid, primaryDevice, true, false, false, networkutils.CalculateRouteTableId(primaryDevice, 0), ""))
+
+	m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return([]string{}, nil).AnyTimes()
+	m.network.EXPECT().UseExternalSNAT().Return(true).AnyTimes()
+
+	rpcServer := server{version: "1.2.3", ipamContext: mockContext}
+	req := func(containerID string) *pb.AddNetworkRequest {
+		return &pb.AddNetworkRequest{
+			ClientVersion:     "1.2.3",
+			Netns:             "netns",
+			NetworkName:       "net0",
+			ContainerID:       containerID,
+			IfName:            "eth0",
+			K8S_POD_NAME:      "pod-a",
+			K8S_POD_NAMESPACE: "default",
+		}
+	}
+
+	for i := 0; i < 4; i++ {
+		resp, err := rpcServer.AddNetwork(context.TODO(), req(fmt.Sprintf("sandbox-%d", i)))
+		assert.NoError(t, err)
+		assert.False(t, resp.Success, "there is no address in the data store, so the ADD fails")
+	}
+	assert.Equal(t, 1, mockContext.unfilledDemandCount(defaultNetworkCard),
+		"four sandbox attempts by one pod are one unit of demand")
+
+	short, _, _ := mockContext.datastoreTargetState(nil, defaultNetworkCard)
+	assert.Equal(t, 1, short, "a zero warm IP target is now short by the one waiting pod")
+
+	require.NoError(t, ds.AddIPv4CidrToStore(primaryENIid, net.IPNet{IP: net.ParseIP(ipaddr01), Mask: net.IPv4Mask(255, 255, 255, 255)}, false))
+	resp, err := rpcServer.AddNetwork(context.TODO(), req("sandbox-4"))
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
+	assert.Equal(t, 0, mockContext.unfilledDemandCount(defaultNetworkCard),
+		"the pod has its address, so it is no longer demand")
+
+	short, over, _ := mockContext.datastoreTargetState(nil, defaultNetworkCard)
+	assert.Equal(t, 0, short)
+	assert.Equal(t, 0, over)
+}
+
+func TestAddNetworkRecordsDemandPerPod(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		awsClient:       m.awsutils,
+		networkClient:   m.network,
+		primaryIP:       make(map[string]string),
+		dataStoreAccess: testDatastore(),
+		enableIPv4:      true,
+		maxIPsPerENI:    14,
+		maxENI:          4,
+		warmENITarget:   1,
+		warmIPTarget:    noWarmIPTarget,
+		warmIPTargetSet: true,
+		maxPods:         110,
+		numNetworkCards: 1,
+	}
+	ds := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard)
+	require.NoError(t, ds.AddENI(primaryENIid, primaryDevice, true, false, false, networkutils.CalculateRouteTableId(primaryDevice, 0), ""))
+
+	m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return([]string{}, nil).AnyTimes()
+	m.network.EXPECT().UseExternalSNAT().Return(true).AnyTimes()
+
+	rpcServer := server{version: "1.2.3", ipamContext: mockContext}
+	for i := 0; i < 7; i++ {
+		resp, err := rpcServer.AddNetwork(context.TODO(), &pb.AddNetworkRequest{
+			ClientVersion:     "1.2.3",
+			Netns:             "netns",
+			NetworkName:       "net0",
+			ContainerID:       fmt.Sprintf("sandbox-%d", i),
+			IfName:            "eth0",
+			K8S_POD_NAME:      fmt.Sprintf("pod-%d", i),
+			K8S_POD_NAMESPACE: "default",
+		})
+		assert.NoError(t, err)
+		assert.False(t, resp.Success)
+	}
+
+	assert.Equal(t, 7, mockContext.unfilledDemandCount(defaultNetworkCard))
+	short, _, _ := mockContext.datastoreTargetState(nil, defaultNetworkCard)
+	assert.Equal(t, 7, short)
+	assert.Equal(t, 7, mockContext.GetENIResourcesToAllocate(defaultNetworkCard),
+		"a burst of seven cold pods is sized as one request for seven addresses")
 }
