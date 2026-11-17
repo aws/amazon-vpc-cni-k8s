@@ -167,10 +167,12 @@ var _ = BeforeSuite(func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		subnetID := *createSubnetOutput.Subnet.SubnetId
+		customNetworkingSubnetIDList = append(customNetworkingSubnetIDList, subnetID)
 
 		By("associating the route table with the newly created subnet")
 		rtAssociationID, err := f.CloudServices.EC2().AssociateRouteTableToSubnet(context.TODO(), clusterVPCConfig.PublicRouteTableID, subnetID)
 		Expect(err).ToNot(HaveOccurred())
+		customNetworkingRTAssociationIDs = append(customNetworkingRTAssociationIDs, rtAssociationID)
 
 		eniConfigBuilder := manifest.NewENIConfigBuilder().
 			Name(az).
@@ -180,8 +182,6 @@ var _ = BeforeSuite(func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		// For updating/deleting later
-		customNetworkingSubnetIDList = append(customNetworkingSubnetIDList, subnetID)
-		customNetworkingRTAssociationIDs = append(customNetworkingRTAssociationIDs, rtAssociationID)
 		eniConfigBuilderList = append(eniConfigBuilderList, eniConfigBuilder)
 		eniConfigList = append(eniConfigList, eniConfig.DeepCopy())
 

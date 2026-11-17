@@ -243,22 +243,14 @@ var _ = Describe("Secondary ENI Exclusion Tests", func() {
 
 			BeforeEach(func() {
 				By("Creating an untagged secondary subnet")
-				untaggedSubnetOutput, err := f.CloudServices.EC2().
-					CreateSubnet(context.TODO(), "100.64.64.0/24", f.Options.AWSVPCID, *primaryInstance.Placement.AvailabilityZone)
-				Expect(err).ToNot(HaveOccurred())
-
-				untaggedSubnetID = *untaggedSubnetOutput.Subnet.SubnetId
+				untaggedSubnetID = createSpecSubnet("100.64.64.0/24")
 				untaggedSubnetCIDR = getSubnetCIDR(untaggedSubnetID)
 
 				By("Creating another subnet with cni=1 for comparison")
-				taggedSubnetOutput, err := f.CloudServices.EC2().
-					CreateSubnet(context.TODO(), "100.64.65.0/24", f.Options.AWSVPCID, *primaryInstance.Placement.AvailabilityZone)
-				Expect(err).ToNot(HaveOccurred())
-
-				taggedSubnetID = *taggedSubnetOutput.Subnet.SubnetId
+				taggedSubnetID = createSpecSubnet("100.64.65.0/24")
 
 				By("Tagging comparison subnet with cni=1")
-				_, err = f.CloudServices.EC2().
+				_, err := f.CloudServices.EC2().
 					CreateTags(
 						context.TODO(),
 						[]string{taggedSubnetID},
@@ -280,16 +272,10 @@ var _ = Describe("Secondary ENI Exclusion Tests", func() {
 
 			AfterEach(func() {
 				By("Deleting untagged subnet")
-				err := f.CloudServices.EC2().DeleteSubnet(context.TODO(), untaggedSubnetID)
-				if err != nil {
-					GinkgoWriter.Printf("Warning: Failed to delete untagged subnet %s: %v\n", untaggedSubnetID, err)
-				}
+				deleteSpecSubnet(untaggedSubnetID)
 
 				By("Deleting tagged comparison subnet")
-				err = f.CloudServices.EC2().DeleteSubnet(context.TODO(), taggedSubnetID)
-				if err != nil {
-					GinkgoWriter.Printf("Warning: Failed to delete tagged subnet %s: %v\n", taggedSubnetID, err)
-				}
+				deleteSpecSubnet(taggedSubnetID)
 			})
 
 			It("should not discover secondary subnet without cni tag", func() {
@@ -343,14 +329,10 @@ var _ = Describe("Secondary ENI Exclusion Tests", func() {
 
 			BeforeEach(func() {
 				By("Creating secondary subnet with cni=1 and old cluster tag prefix")
-				subnetOutput, err := f.CloudServices.EC2().
-					CreateSubnet(context.TODO(), "100.64.66.0/24", f.Options.AWSVPCID, *primaryInstance.Placement.AvailabilityZone)
-				Expect(err).ToNot(HaveOccurred())
-
-				secondarySubnetWithOldTagID = *subnetOutput.Subnet.SubnetId
+				secondarySubnetWithOldTagID = createSpecSubnet("100.64.66.0/24")
 
 				By("Tagging test subnet with cni=1 (opt-in) and old-style cluster tag")
-				_, err = f.CloudServices.EC2().
+				_, err := f.CloudServices.EC2().
 					CreateTags(
 						context.TODO(),
 						[]string{secondarySubnetWithOldTagID},
@@ -463,12 +445,8 @@ var _ = Describe("Secondary ENI Exclusion Tests", func() {
 				k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
 					utils.AwsNodeName, map[string]string{"WARM_IP_TARGET": "2", "WARM_ENI_TARGET": "0"})
 
-				// Delete only once the ENIs are gone, retrying to avoid a DependencyViolation
-				// that would leak the subnet into later specs.
 				By("Deleting test subnet once its ENIs are released")
-				Eventually(func() error {
-					return f.CloudServices.EC2().DeleteSubnet(context.TODO(), secondarySubnetWithOldTagID)
-				}, 3*time.Minute, 20*time.Second).Should(Succeed(), "test subnet should delete once its ENIs are released")
+				deleteSpecSubnet(secondarySubnetWithOldTagID)
 
 				// Restore WARM_IP_TARGET to its prior (unset) state so the next spec starts clean.
 				By("Restoring WARM_IP_TARGET to its prior unset value")
@@ -502,14 +480,10 @@ var _ = Describe("Secondary ENI Exclusion Tests", func() {
 
 			BeforeEach(func() {
 				By("Creating secondary subnet for different cluster")
-				subnetOutput, err := f.CloudServices.EC2().
-					CreateSubnet(context.TODO(), "100.64.67.0/24", f.Options.AWSVPCID, *primaryInstance.Placement.AvailabilityZone)
-				Expect(err).ToNot(HaveOccurred())
-
-				secondarySubnetWithDifferentClusterID = *subnetOutput.Subnet.SubnetId
+				secondarySubnetWithDifferentClusterID = createSpecSubnet("100.64.67.0/24")
 
 				By("Tagging with cni=1 and new-style cluster tag for different cluster")
-				_, err = f.CloudServices.EC2().
+				_, err := f.CloudServices.EC2().
 					CreateTags(
 						context.TODO(),
 						[]string{secondarySubnetWithDifferentClusterID},
@@ -535,10 +509,7 @@ var _ = Describe("Secondary ENI Exclusion Tests", func() {
 
 			AfterEach(func() {
 				By("Deleting secondary subnet")
-				err := f.CloudServices.EC2().DeleteSubnet(context.TODO(), secondarySubnetWithDifferentClusterID)
-				if err != nil {
-					GinkgoWriter.Printf("Warning: Failed to delete subnet %s: %v\n", secondarySubnetWithDifferentClusterID, err)
-				}
+				deleteSpecSubnet(secondarySubnetWithDifferentClusterID)
 			})
 
 			It("should exclude subnet with cni=1 if cluster tag belongs to different cluster", func() {
