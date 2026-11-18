@@ -4483,7 +4483,11 @@ func TestDescribeAllENIsReportsENIsWithoutDeleteOnTermination(t *testing.T) {
 
 			metaData, err := cache.DescribeAllENIs(context.Background())
 			assert.NoError(t, err)
-			assert.Len(t, metaData.ENIMetadata, 2)
+			wantENIs := 2
+			if tc.secondaryStatus == ec2types.AttachmentStatusDetaching {
+				wantENIs = 1
+			}
+			assert.Len(t, metaData.ENIMetadata, wantENIs)
 			if tc.expectWithoutDOTENI {
 				assert.Equal(t, map[string]string{eni2ID: attachmentID}, metaData.ENIsWithoutDeleteOnTermination)
 			} else {
