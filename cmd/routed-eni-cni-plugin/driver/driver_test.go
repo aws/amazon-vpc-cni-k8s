@@ -3396,6 +3396,89 @@ func Test_createVethPairContext_runWithPeerNamespace(t *testing.T) {
 	assert.NoError(t, createVethContext.run(hostNS))
 }
 
+// The ownership stamp is written as soon as the host end exists, before the
+// host-side sysctls and bring-up, so a concurrent ADD computing the same name
+// can attribute the link instead of treating it as unowned.
+func Test_createVethPairContext_runStampsBeforeHostBringUp(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	hostVeth := &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Name: "eni8ea2c11fe35", Index: 9}}
+
+	netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
+	netLink.EXPECT().LinkAdd(gomock.Any()).Return(nil)
+	byName := netLink.EXPECT().LinkByName("eni8ea2c11fe35").Return(hostVeth, nil)
+	alias := netLink.EXPECT().LinkSetAlias(hostVeth, hostVethAlias(testPodIdentity)).Return(nil)
+	hostLinkUp := netLink.EXPECT().LinkSetUp(hostVeth).Return(nil)
+
+	procSys := mock_procsyswrapper.NewMockProcSys(ctrl)
+	ra := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_ra", "0").Return(nil)
+	redirects := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_redirects", "0").Return(nil)
+	forwarding := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/forwarding", "0").Return(nil)
+	// The stamp lands after the link is found and before anything brings it up.
+	gomock.InOrder(byName, alias, ra, redirects, forwarding, hostLinkUp)
+
+	hostNS := mock_ns.NewMockNetNS(ctrl)
+	hostNS.EXPECT().Fd().Return(uintptr(3))
+	hostNS.EXPECT().Do(gomock.Any()).DoAndReturn(func(toRun func(ns.NetNS) error) error {
+		return toRun(nil)
+	})
+
+	createVethContext := &createVethPairContext{
+		contVethName: "eth0",
+		hostVethName: "eni8ea2c11fe35",
+		ipAddr:       &net.IPNet{IP: net.ParseIP("192.168.120.1"), Mask: net.CIDRMask(32, 32)},
+		mtu:          9001,
+		netLink:      netLink,
+		procSys:      procSys,
+		hostMACAddr:  net.HardwareAddr("00:00:5e:00:53:af"),
+		podIdentity:  testPodIdentity,
+		log:          testLogger,
+	}
+	// The container-side work is not reached: the stamp fails the run below, and
+	// here it stops at the first container call, which this test does not assert.
+	netLink.EXPECT().LinkByName("eth0").Return(nil, errors.New("stop here")).AnyTimes()
+
+	err := createVethContext.run(hostNS)
+	assert.Error(t, err, "stops at the container end, after the host end is stamped and up")
+}
+
+// A failed stamp aborts setup rather than leaving an unattributable link up.
+func Test_createVethPairContext_runStampFailureAborts(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	hostVeth := &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Name: "eni8ea2c11fe35", Index: 9}}
+
+	netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
+	netLink.EXPECT().LinkAdd(gomock.Any()).Return(nil)
+	netLink.EXPECT().LinkByName("eni8ea2c11fe35").Return(hostVeth, nil)
+	netLink.EXPECT().LinkSetAlias(hostVeth, hostVethAlias(testPodIdentity)).Return(errors.New("ifalias write failed"))
+	// No LinkSetUp and no sysctls: gomock fails the test if the run continues.
+
+	hostNS := mock_ns.NewMockNetNS(ctrl)
+	hostNS.EXPECT().Fd().Return(uintptr(3))
+	hostNS.EXPECT().Do(gomock.Any()).DoAndReturn(func(toRun func(ns.NetNS) error) error {
+		return toRun(nil)
+	})
+
+	createVethContext := &createVethPairContext{
+		contVethName: "eth0",
+		hostVethName: "eni8ea2c11fe35",
+		ipAddr:       &net.IPNet{IP: net.ParseIP("192.168.120.1"), Mask: net.CIDRMask(32, 32)},
+		mtu:          9001,
+		netLink:      netLink,
+		procSys:      mock_procsyswrapper.NewMockProcSys(ctrl),
+		hostMACAddr:  net.HardwareAddr("00:00:5e:00:53:af"),
+		podIdentity:  testPodIdentity,
+		log:          testLogger,
+	}
+
+	err := createVethContext.run(hostNS)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to stamp ownership alias")
+}
+
 // Regression test: with PeerNamespace enabled the host end must be brought up
 // before the IPv6 DAD wait. The container end only has carrier when both veth
 // ends are up, and DAD cannot complete without carrier, so bringing the host
