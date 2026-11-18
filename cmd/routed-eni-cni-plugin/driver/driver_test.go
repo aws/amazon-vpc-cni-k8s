@@ -5710,9 +5710,10 @@ func Test_linuxNetwork_claimHostVethName(t *testing.T) {
 			wantDelete:   true,
 		},
 		{
-			name:       "existing link is not a veth",
-			existing:   &netlink.Dummy{LinkAttrs: netlink.LinkAttrs{Name: vethName, Index: hostIndex}},
-			wantDelete: true,
+			// Not a pod's host veth, so it is never reclaimed.
+			name:     "existing link is not a veth",
+			existing: &netlink.Dummy{LinkAttrs: netlink.LinkAttrs{Name: vethName, Index: hostIndex}},
+			wantErr:  "hostVeth eni8ea2c11fe35 already exists and is not a veth, refusing to delete it",
 		},
 		{
 			name:       "unstamped veth reports no peer index",

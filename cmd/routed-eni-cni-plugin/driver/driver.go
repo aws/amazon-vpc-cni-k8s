@@ -111,9 +111,10 @@ type createVethPairContext struct {
 	index        int
 	log          logger.Logger
 	hostMACAddr  net.HardwareAddr
+	podIdentity  string
 }
 
-func newCreateVethPairContext(contVethName string, hostVethName string, ipAddr *net.IPNet, mtu int, index int, hostMACAddr net.HardwareAddr, log logger.Logger) *createVethPairContext {
+func newCreateVethPairContext(contVethName string, hostVethName string, ipAddr *net.IPNet, mtu int, index int, hostMACAddr net.HardwareAddr, podIdentity string, log logger.Logger) *createVethPairContext {
 	return &createVethPairContext{
 		contVethName: contVethName,
 		hostVethName: hostVethName,
@@ -124,6 +125,7 @@ func newCreateVethPairContext(contVethName string, hostVethName string, ipAddr *
 		procSys:      procsyswrapper.NewProcSys(),
 		index:        index,
 		hostMACAddr:  hostMACAddr,
+		podIdentity:  podIdentity,
 		log:          log,
 	}
 }
@@ -160,6 +162,13 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 		hv, err := createVethContext.netLink.LinkByName(createVethContext.hostVethName)
 		if err != nil {
 			return errors.Wrapf(err, "setup NS network: failed to find host link %q", createVethContext.hostVethName)
+		}
+		// Stamp as soon as the link exists, so a concurrent ADD that computes the same
+		// name can attribute it rather than treating it as unowned.
+		if createVethContext.podIdentity != "" {
+			if err := createVethContext.netLink.LinkSetAlias(hv, hostVethAlias(createVethContext.podIdentity)); err != nil {
+				return errors.Wrapf(err, "setup NS network: failed to stamp ownership alias on host link %q", createVethContext.hostVethName)
+			}
 		}
 		if err := setHostVethV6Sysctls(createVethContext.procSys, createVethContext.hostVethName, createVethContext.log); err != nil {
 			return err
@@ -480,7 +489,7 @@ func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netns
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to parse unique generated mac addr %s", macAddrStr)
 	}
-	createVethContext := newCreateVethPairContext(contVethName, hostVethName, ipAddr, mtu, index, macAddr, log)
+	createVethContext := newCreateVethPairContext(contVethName, hostVethName, ipAddr, mtu, index, macAddr, podIdentity, log)
 	if err := n.ns.WithNetNSPath(netnsPath, createVethContext.run); err != nil {
 		return nil, errors.Wrap(err, "failed to setup veth network")
 	}
@@ -534,6 +543,9 @@ func (n *linuxNetwork) claimHostVethName(hostVethName string, podIdentity string
 		// Stamped for a different pod, which is the name collision this guards against.
 		return errors.Errorf("hostVeth %s is owned by another pod, refusing to delete it for pod %q",
 			hostVethName, podIdentity)
+	case existing.Type() != "veth":
+		// Never a pod's host veth, so it is not a leftover this can reclaim.
+		return errors.Errorf("hostVeth %s already exists and is not a veth, refusing to delete it", hostVethName)
 	default:
 		// Unstamped, so nothing attributes it. Reclaim as the version that created it
 		// did, rather than stranding this pod on a leftover from a deleted one.
