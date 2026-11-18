@@ -514,9 +514,9 @@ func hostVethAlias(podIdentity string) string {
 	return hostVethAliasPrefix + hex.EncodeToString(sum[:])
 }
 
-// claimHostVethName makes hostVethName available for this sandbox, deleting an
-// existing link only when that link can be shown to belong to this sandbox.
-// Otherwise it fails, so the ADD fails rather than the delete proceeding.
+// claimHostVethName makes hostVethName available for this sandbox. A link stamped
+// for another pod is never deleted, so the ADD fails instead. An unstamped link
+// cannot be attributed, so it is reclaimed.
 func (n *linuxNetwork) claimHostVethName(hostVethName string, podIdentity string, netnsPath string, log logger.Logger) error {
 	existing, err := n.netLink.LinkByName(hostVethName)
 	if err != nil {
@@ -535,16 +535,20 @@ func (n *linuxNetwork) claimHostVethName(hostVethName string, podIdentity string
 		return errors.Errorf("hostVeth %s is owned by another pod, refusing to delete it for pod %q",
 			hostVethName, podIdentity)
 	default:
-		// No stamp, so it predates the alias or is not ours. Fall back to the peer.
+		// Unstamped, so nothing attributes it. Reclaim as the version that created it
+		// did, rather than stranding this pod on a leftover from a deleted one.
 		owned, err := n.hostVethPeerInNetns(existing, netnsPath, log)
-		if err != nil {
-			return errors.Wrapf(err, "unable to establish ownership of existing hostVeth %s, refusing to delete it", hostVethName)
+		switch {
+		case err != nil:
+			log.Warnf("Reclaiming unstamped hostVeth %s for pod %q: could not establish ownership (%v). "+
+				"Matches the behavior of versions before ownership stamping.", hostVethName, podIdentity, err)
+		case owned:
+			log.Debugf("Reclaiming unstamped hostVeth %s whose peer is in netns %s", hostVethName, netnsPath)
+		default:
+			log.Warnf("Reclaiming unstamped hostVeth %s for pod %q: its peer is not in netns %s, so it is a "+
+				"leftover from an earlier pod. Matches the behavior of versions before ownership stamping.",
+				hostVethName, podIdentity, netnsPath)
 		}
-		if !owned {
-			return errors.Errorf("hostVeth %s already exists and its peer is not in netns %s, refusing to delete it",
-				hostVethName, netnsPath)
-		}
-		log.Debugf("Reclaiming unstamped hostVeth %s whose peer is in netns %s", hostVethName, netnsPath)
 	}
 
 	if err := n.netLink.LinkDel(existing); err != nil {

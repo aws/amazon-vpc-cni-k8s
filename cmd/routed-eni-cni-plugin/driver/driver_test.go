@@ -5681,43 +5681,43 @@ func Test_linuxNetwork_claimHostVethName(t *testing.T) {
 			wantDelete:     true,
 		},
 		{
+			// The common leftover: owner deleted, so its peer is in the old netns.
 			name:           "unstamped, peer does not point back",
 			existing:       legacy,
 			peer:           &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Index: peerIndex, ParentIndex: 7}},
 			expectPeerCall: true,
-			wantErr:        "hostVeth eni8ea2c11fe35 already exists and its peer is not in netns /proc/42/ns/net, refusing to delete it",
+			wantDelete:     true,
 		},
 		{
 			name:           "unstamped, peer index absent from target netns",
 			existing:       legacy,
 			peer:           nil,
 			expectPeerCall: true,
-			wantErr:        "hostVeth eni8ea2c11fe35 already exists and its peer is not in netns /proc/42/ns/net, refusing to delete it",
+			wantDelete:     true,
 		},
 		{
 			name:           "unstamped, peer in netns is not a veth",
 			existing:       legacy,
 			peer:           &netlink.Dummy{LinkAttrs: netlink.LinkAttrs{Index: peerIndex, ParentIndex: hostIndex}},
 			expectPeerCall: true,
-			wantErr:        "hostVeth eni8ea2c11fe35 already exists and its peer is not in netns /proc/42/ns/net, refusing to delete it",
+			wantDelete:     true,
 		},
 		{
-			// The netns cannot be entered, so the peer cannot be checked and the
-			// existing link is left in place.
+			// The peer cannot be checked, but unstamped links are reclaimed anyway.
 			name:         "unstamped, target netns cannot be entered",
 			existing:     legacy,
 			netnsOpenErr: true,
-			wantErr:      "unable to establish ownership of existing hostVeth eni8ea2c11fe35, refusing to delete it: no such file or directory",
+			wantDelete:   true,
 		},
 		{
-			name:     "existing link is not a veth",
-			existing: &netlink.Dummy{LinkAttrs: netlink.LinkAttrs{Name: vethName, Index: hostIndex}},
-			wantErr:  "hostVeth eni8ea2c11fe35 already exists and its peer is not in netns /proc/42/ns/net, refusing to delete it",
+			name:       "existing link is not a veth",
+			existing:   &netlink.Dummy{LinkAttrs: netlink.LinkAttrs{Name: vethName, Index: hostIndex}},
+			wantDelete: true,
 		},
 		{
-			name:     "unstamped veth reports no peer index",
-			existing: &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Name: vethName, Index: hostIndex}},
-			wantErr:  "unable to establish ownership of existing hostVeth eni8ea2c11fe35, refusing to delete it: existing link eni8ea2c11fe35 reports no veth peer index",
+			name:       "unstamped veth reports no peer index",
+			existing:   &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Name: vethName, Index: hostIndex}},
+			wantDelete: true,
 		},
 		{
 			// An empty sandbox ID can never match a stamp, so even a link carrying
