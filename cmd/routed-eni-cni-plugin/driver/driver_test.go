@@ -734,7 +734,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
-						value: "1",
+						value: "0",
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
@@ -836,7 +836,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
-						value: "1",
+						value: "0",
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
@@ -938,7 +938,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
-						value: "1",
+						value: "0",
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
@@ -1040,7 +1040,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
-						value: "1",
+						value: "0",
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
@@ -1253,7 +1253,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
-						value: "1",
+						value: "0",
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
@@ -1349,7 +1349,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
-						value: "1",
+						value: "0",
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
@@ -3371,7 +3371,7 @@ func Test_createVethPairContext_runWithPeerNamespace(t *testing.T) {
 	// Host-side IPv6 sysctls are applied inside the host namespace, before the
 	// host end is brought up.
 	ra := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_ra", "0").Return(nil)
-	redirects := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_redirects", "1").Return(nil)
+	redirects := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_redirects", "0").Return(nil)
 	forwarding := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/forwarding", "0").Return(nil)
 	gomock.InOrder(ra, redirects, forwarding, hostLinkUp)
 
@@ -3476,7 +3476,7 @@ func Test_createVethPairContext_runWithPeerNamespaceIPv6(t *testing.T) {
 	// Host-side IPv6 sysctls must precede the host-end bring-up: the host end
 	// must never be up while still accepting router advertisements.
 	ra := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_ra", "0").Return(nil)
-	redirects := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_redirects", "1").Return(nil)
+	redirects := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_redirects", "0").Return(nil)
 	forwarding := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/forwarding", "0").Return(nil)
 	gomock.InOrder(ra, redirects, forwarding, hostLinkUp)
 
@@ -3530,7 +3530,7 @@ func Test_createVethPairContext_runHostSysctlFailure(t *testing.T) {
 		value string
 	}{
 		{"net/ipv6/conf/eni8ea2c11fe35/accept_ra", "0"},
-		{"net/ipv6/conf/eni8ea2c11fe35/accept_redirects", "1"},
+		{"net/ipv6/conf/eni8ea2c11fe35/accept_redirects", "0"},
 		{"net/ipv6/conf/eni8ea2c11fe35/forwarding", "0"},
 	}
 	for _, tt := range tests {
@@ -3617,7 +3617,7 @@ func Test_createVethPairContext_runIPv6SysctlsNotSupported(t *testing.T) {
 
 	procSys := mock_procsyswrapper.NewMockProcSys(ctrl)
 	procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_ra", "0").Return(syscall.ENOENT)
-	procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_redirects", "1").Return(syscall.ENOENT)
+	procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_redirects", "0").Return(syscall.ENOENT)
 	procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/forwarding", "0").Return(syscall.ENOENT)
 
 	hostNS := mock_ns.NewMockNetNS(ctrl)
@@ -4060,7 +4060,7 @@ func Test_linuxNetwork_setupVlan(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
-						value: "1",
+						value: "0",
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
@@ -4128,7 +4128,7 @@ func Test_linuxNetwork_setupVlan(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
-						value: "1",
+						value: "0",
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
@@ -4223,7 +4223,7 @@ func Test_linuxNetwork_setupVlan(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
-						value: "1",
+						value: "0",
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
@@ -4278,7 +4278,7 @@ func Test_linuxNetwork_setupVlan(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
-						value: "1",
+						value: "0",
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
