@@ -80,7 +80,7 @@ func (d *defaultDaemonSetManager) UpdateAndWaitTillDaemonSetReady(old *v1.Daemon
 	}
 
 	observed := &v1.DaemonSet{}
-	return observed, wait.PollImmediateUntil(utils.PollIntervalShort, func() (bool, error) {
+	return observed, wait.PollUntilContextTimeout(ctx, utils.PollIntervalShort, utils.DefaultDaemonSetUpdateTimeout, true, func(ctx context.Context) (bool, error) {
 		if err := d.k8sClient.Get(ctx, utils.NamespacedName(new), observed); err != nil {
 			return false, err
 		}
@@ -91,7 +91,7 @@ func (d *defaultDaemonSetManager) UpdateAndWaitTillDaemonSetReady(old *v1.Daemon
 			return true, nil
 		}
 		return false, nil
-	}, ctx.Done())
+	})
 }
 
 // CheckIfDaemonSetIsReady waits up to 2 minutes for the daemonset to be ready.

@@ -378,8 +378,10 @@ func TerminateInstances(f *framework.Framework) error {
 	// Recycling one ASG orphans other nodegroups' instances (stale networking, ENIs
 	// that pin test subnets/SGs) and scaling it to the TOTAL node count inflates it.
 	asgNames := map[string]struct{}{}
+	var instanceIDs []string
 	for _, node := range nodeList.Items {
 		instanceID := k8sUtils.GetInstanceIDFromNode(node)
+		instanceIDs = append(instanceIDs, instanceID)
 		asgName, err := f.CloudServices.AutoScaling().GetASGForInstance(context.TODO(), instanceID)
 		if err != nil {
 			return fmt.Errorf("failed to find ASG for instance %s: %v", instanceID, err)
@@ -469,6 +471,11 @@ func TerminateInstances(f *framework.Framework) error {
 			}
 			return fmt.Errorf("timed out waiting for ASG %s to return to %d InService instances: %v", asgName, desired, err)
 		}
+	}
+
+	// Instances leaving InService still hold ENIs that block subnet and SG deletes until fully terminated.
+	if err := f.CloudServices.EC2().WaitUntilInstancesTerminated(context.TODO(), instanceIDs, 10*time.Minute); err != nil {
+		return fmt.Errorf("timed out waiting for recycled instances %v to terminate: %v", instanceIDs, err)
 	}
 	return nil
 }

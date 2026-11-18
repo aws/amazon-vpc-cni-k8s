@@ -168,7 +168,7 @@ run_tests_for_os() {
     cd "$INTEGRATION_TEST_DIR/cni"
     CGO_ENABLED=0 ginkgo \
         --focus="test SNAT with kube-proxy modes" \
-        -v --timeout 60m --no-color \
+        -v --timeout 60m --grace-period="${GINKGO_GRACE_PERIOD:-10m}" --no-color \
         -- \
         --cluster-kubeconfig="$KUBECONFIG" \
         --cluster-name="$CLUSTER_NAME" \
