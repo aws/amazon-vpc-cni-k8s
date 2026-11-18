@@ -409,6 +409,8 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	if handled {
 		log.Infof("Handled CNI del request with prevResult: ContainerID(%s) Netns(%s) IfName(%s) PodNamespace(%s) PodName(%s)",
 			args.ContainerID, args.Netns, args.IfName, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
+		// Teardown already succeeded; like the prevResult paths below, don't fail the DEL on agent errors.
+		_ = deletePodNp(grpcClient, rpcClient, k8sArgs, log)
 		return nil
 	}
 
@@ -429,6 +431,7 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			log.Infof("Could not teardown pod using prevResult: ContainerID(%s) Netns(%s) IfName(%s) PodNamespace(%s) PodName(%s)",
 				args.ContainerID, args.Netns, args.IfName, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 		}
+		_ = deletePodNp(grpcClient, rpcClient, k8sArgs, log)
 		return nil
 	}
 	defer conn.Close()
@@ -466,6 +469,7 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			log.Infof("Could not teardown pod using prevResult: ContainerID(%s) Netns(%s) IfName(%s) PodNamespace(%s) PodName(%s)",
 				args.ContainerID, args.Netns, args.IfName, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 		}
+		_ = deletePodNp(grpcClient, rpcClient, k8sArgs, log)
 		return nil
 	}
 
@@ -518,13 +522,22 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		log.Infof("NETWORK_POLICY_ENFORCING_MODE is not set")
 		return nil
 	}
+	if err := deletePodNp(grpcClient, rpcClient, k8sArgs, log); err != nil {
+		return errors.Wrap(err, "del cmd: failed to connect to network policy agent")
+	}
+	return nil
+}
+
+// deletePodNp asks the network policy agent to remove the pod's eBPF programs and maps.
+// It returns an error only when the agent cannot be reached; other failures are logged.
+func deletePodNp(grpcClient grpcwrapper.GRPC, rpcClient rpcwrapper.RPC, k8sArgs K8sArgs, log logger.Logger) error {
 	// Set up a connection to the network policy agent
 	ctx, cancel := context.WithTimeout(context.Background(), npAgentConnTimeout*time.Second) // Set timeout
 	defer cancel()
 	npConn, err := grpcClient.DialContext(ctx, "unix://"+npaSocketPath, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err != nil {
 		log.Errorf("Failed to connect to network policy agent: %v. Network Policy agent might not be running", err)
-		return errors.Wrap(err, "del cmd: failed to connect to network policy agent")
+		return err
 	}
 	defer npConn.Close()
 	//Make a GRPC call for network policy agent
