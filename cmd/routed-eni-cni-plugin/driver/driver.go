@@ -443,9 +443,9 @@ func (n *linuxNetwork) TeardownBranchENIPodNetwork(vethMetadata VirtualInterface
 
 // setupVeth sets up veth for the pod.
 // setHostVethV6Sysctls hardens the host-side veth for IPv6: accept_ra=0,
-// accept_redirects=1, forwarding=0. Must be applied before the link is
-// brought up so the host end never accepts router advertisements from the
-// pod side.
+// accept_redirects=0, forwarding=0. Must be applied before the link is
+// brought up so the host end never accepts router advertisements or
+// redirects from the pod side.
 func setHostVethV6Sysctls(procSys procsyswrapper.ProcSys, hostVethName string, log logger.Logger) error {
 	if err := procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_ra", hostVethName), "0"); err != nil {
 		if !os.IsNotExist(err) {
@@ -453,7 +453,7 @@ func setHostVethV6Sysctls(procSys procsyswrapper.ProcSys, hostVethName string, l
 		}
 		log.Debugf("Ignoring '%v' writing to accept_ra: Assuming kernel lacks IPv6 support", err)
 	}
-	if err := procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_redirects", hostVethName), "1"); err != nil {
+	if err := procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_redirects", hostVethName), "0"); err != nil {
 		if !os.IsNotExist(err) {
 			return errors.Wrapf(err, "failed to disable IPv6 ICMP redirects")
 		}
@@ -613,7 +613,7 @@ func (n *linuxNetwork) setupVlan(vlanID int, eniMAC string, subnetGW string, par
 
 	// 3. Set IPv6 sysctls
 	//    accept_ra=0
-	//    accept_redirects=1
+	//    accept_redirects=0
 	//    forwarding=0
 	if err := n.procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_ra", vlanLinkName), "0"); err != nil {
 		if !os.IsNotExist(err) {
@@ -622,9 +622,9 @@ func (n *linuxNetwork) setupVlan(vlanID int, eniMAC string, subnetGW string, par
 		log.Debugf("Ignoring '%v' writing to accept_ra: Assuming kernel lacks IPv6 support", err)
 	}
 
-	if err := n.procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_redirects", vlanLinkName), "1"); err != nil {
+	if err := n.procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_redirects", vlanLinkName), "0"); err != nil {
 		if !os.IsNotExist(err) {
-			return nil, errors.Wrapf(err, "failed to enable IPv6 ICMP redirects")
+			return nil, errors.Wrapf(err, "failed to disable IPv6 ICMP redirects")
 		}
 		log.Debugf("Ignoring '%v' writing to accept_redirects: Assuming kernel lacks IPv6 support", err)
 	}
