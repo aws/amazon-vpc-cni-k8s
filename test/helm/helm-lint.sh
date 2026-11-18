@@ -54,4 +54,11 @@ echo "==========================================================================
 
 helm2 template --name aws-vpc-cni "${HELM_DIR}/aws-vpc-cni" --debug --namespace=kube-system -f "${HELM_DIR}/aws-vpc-cni/values.yaml" > /dev/null
 
+echo "=============================================================================="
+echo "            Generate cni-metrics-helper Template w/ non-default values"
+echo "=============================================================================="
+
+helm template cni-metrics-helper "${HELM_DIR}/cni-metrics-helper" --debug --namespace=kube-system \
+    --set podSecurityContext.runAsNonRoot=true > /dev/null
+
 echo "✅ Helm template generation for v2 and v3 have successfully completed!"
