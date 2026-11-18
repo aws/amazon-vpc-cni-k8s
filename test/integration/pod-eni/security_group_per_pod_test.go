@@ -181,6 +181,15 @@ var _ = Describe("Security Group for Pods Test", func() {
 		})
 
 		It("should have 0% success rate", func() {
+			if isStandardMode {
+				// Standard mode does not enforce security groups for traffic from pods on the same host, so
+				// put the clients on a different node than the servers to test cross-host enforcement.
+				if secondaryNode.Name == "" {
+					Skip("standard mode needs at least two Linux nodes to place clients and servers on different hosts")
+				}
+				serverDeploymentBuilder.NodeName(targetNode.Name)
+			}
+
 			t := agent.TrafficTest{
 				Framework:                      f,
 				TrafficServerDeploymentBuilder: serverDeploymentBuilder,
@@ -194,6 +203,9 @@ var _ = Describe("Security Group for Pods Test", func() {
 				ClientPodLabelVal:              clientPodLabelVal,
 				ValidateServerPods:             ValidatePodsHaveBranchENI,
 				IsV6Enabled:                    !isIPv4Cluster,
+			}
+			if isStandardMode {
+				t.ClientNodeName = secondaryNode.Name
 			}
 
 			successRate, err := t.TestTraffic()
@@ -277,9 +289,14 @@ var _ = Describe("Security Group for Pods Test", func() {
 		Context("when disabling DISABLE_TCP_EARLY_DEMUX", func() {
 			BeforeEach(func() {
 				containerRestartCount = 1
+				if isStandardMode {
+					// Kubelet runs on the same host as the pod, and standard mode does not enforce security
+					// groups for same-host traffic, so the probe succeeds regardless of early demux.
+					containerRestartCount = 0
+				}
 				disableTCPEarlyDemux = "false"
 			})
-			It("TCP liveness probe will fail", func() {})
+			It("TCP liveness probe will fail in strict mode and succeed in standard mode", func() {})
 		})
 
 		Context("when enabling DISABLE_TCP_EARLY_DEMUX", func() {
@@ -297,6 +314,11 @@ var _ = Describe("Security Group for Pods Test", func() {
 			branchPodLabelVal = []string{busyboxPodLabelVal}
 		})
 		It("Deploy BusyBox Pods with branch ENI and verify HostNetworking", func() {
+			if isStandardMode {
+				// The networking tester validates the strict-mode host setup (vlan.eth* ip rules).
+				Skip("host networking validation covers only strict mode routing")
+			}
+
 			// Pin deployment to primary node
 			deployment := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 				Replicas(totalBranchInterface/numNodes).
