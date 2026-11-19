@@ -15,6 +15,7 @@ package core_plugins
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
@@ -89,16 +90,19 @@ var _ = Describe("CNI init container core plugins", func() {
 	})
 
 	Context("when ENABLE_BANDWIDTH_PLUGIN is enabled", func() {
-		AfterEach(func() {
-			By("disabling ENABLE_BANDWIDTH_PLUGIN")
-			k8sUtils.RemoveVarFromDaemonSetAndWaitTillUpdated(f,
-				utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName,
-				map[string]struct{}{
-					"ENABLE_BANDWIDTH_PLUGIN": {},
-				})
-		})
-
 		It("pods should reach Running state", func() {
+			if networkPolicyEnforced() {
+				Skip("bandwidth plugin is not supported with network policy enforcement, see aws/aws-network-policy-agent#68")
+			}
+
+			DeferCleanup(func() {
+				By("disabling ENABLE_BANDWIDTH_PLUGIN")
+				k8sUtils.RemoveVarFromDaemonSetAndWaitTillUpdated(f,
+					utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName,
+					map[string]struct{}{
+						"ENABLE_BANDWIDTH_PLUGIN": {},
+					})
+			})
 			By("enabling ENABLE_BANDWIDTH_PLUGIN on aws-node daemonset")
 			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f,
 				utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName,
@@ -113,6 +117,7 @@ var _ = Describe("CNI init container core plugins", func() {
 				PodAnnotation("kubernetes.io/ingress-bandwidth", "10M").
 				PodAnnotation("kubernetes.io/egress-bandwidth", "10M").
 				Build()
+			DeferCleanup(f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted, deployment)
 
 			deployment, err := f.K8sResourceManagers.DeploymentManager().
 				CreateAndWaitTillDeploymentIsReady(deployment, utils.DefaultDeploymentReadyTimeout)
@@ -126,3 +131,15 @@ var _ = Describe("CNI init container core plugins", func() {
 		})
 	})
 })
+
+func networkPolicyEnforced() bool {
+	ds, err := f.K8sResourceManagers.DaemonSetManager().
+		GetDaemonSet(utils.AwsNodeNamespace, utils.AwsNodeName)
+	Expect(err).ToNot(HaveOccurred())
+	for _, container := range ds.Spec.Template.Spec.Containers {
+		if slices.Contains(container.Args, "--enable-network-policy=true") {
+			return true
+		}
+	}
+	return false
+}
