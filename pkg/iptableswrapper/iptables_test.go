@@ -14,9 +14,13 @@
 package iptableswrapper
 
 import (
+	"errors"
 	"testing"
 
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+
+	mock_iptableswrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/iptableswrapper/mocks"
 )
 
 // TestParseIptablesMode covers parseIptablesMode against captured outputs
@@ -52,4 +56,40 @@ func TestParseIptablesMode(t *testing.T) {
 func TestIptablesModeIsNFTables(t *testing.T) {
 	assert.True(t, IptablesModeNFT.IsNFTables())
 	assert.False(t, IptablesModeLegacy.IsNFTables())
+}
+
+func TestCreateChainIfNotExist(t *testing.T) {
+	createErr := errors.New("opaque chain creation failure")
+	checkErr := errors.New("chain state unavailable")
+
+	tests := []struct {
+		name      string
+		createErr error
+		exists    bool
+		checkErr  error
+		wantErrs  []error
+	}{
+		{name: "created"},
+		{name: "create failed but chain exists", createErr: createErr, exists: true},
+		{name: "create failed and chain missing", createErr: createErr, wantErrs: []error{createErr}},
+		{name: "create and state check failed", createErr: createErr, checkErr: checkErr, wantErrs: []error{createErr, checkErr}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ipt := mock_iptableswrapper.NewMockIPTablesIface(gomock.NewController(t))
+			ipt.EXPECT().NewChain("nat", "TEST-CHAIN").Return(tt.createErr)
+			if tt.createErr != nil {
+				ipt.EXPECT().ChainExists("nat", "TEST-CHAIN").Return(tt.exists, tt.checkErr)
+			}
+
+			err := CreateChainIfNotExist(ipt, "nat", "TEST-CHAIN")
+			if len(tt.wantErrs) == 0 {
+				assert.NoError(t, err)
+			}
+			for _, wantErr := range tt.wantErrs {
+				assert.ErrorIs(t, err, wantErr)
+			}
+		})
+	}
 }

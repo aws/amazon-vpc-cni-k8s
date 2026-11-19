@@ -72,7 +72,8 @@ func Add(ipt iptableswrapper.IPTablesIface, nodeIP, src net.IP, multicastRange, 
 	for _, rule := range rules {
 		_chain := rule[0]
 		if !existingChains[_chain] {
-			if err = ipt.NewChain("nat", _chain); err != nil {
+			// A concurrent ADD may have created the chain after ListChains.
+			if err = iptableswrapper.CreateChainIfNotExist(ipt, "nat", _chain); err != nil {
 				return err
 			}
 			existingChains[_chain] = true
