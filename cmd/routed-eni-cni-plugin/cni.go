@@ -49,6 +49,7 @@ const (
 	ipamdSocketPath         = "/var/run/aws-node/ipamd.sock"
 	dummyInterfacePrefix    = "dummy"
 	npAgentConnTimeout      = 2
+	npAgentRPCTimeout       = 5
 	npaSocketPath           = "/var/run/aws-node/npa.sock"
 	multiNICPodAnnotation   = "k8s.amazonaws.com/nicConfig"
 	multiNICAttachment      = "multi-nic-attachment"
@@ -71,6 +72,9 @@ type NetConf struct {
 
 	// PodSGEnforcingMode is the enforcing mode for Security groups for pods feature
 	PodSGEnforcingMode sgpp.EnforcingMode `json:"podSGEnforcingMode"`
+
+	// NetworkPolicyMode is NETWORK_POLICY_ENFORCING_MODE; empty when the network policy agent is not deployed.
+	NetworkPolicyMode string `json:"networkPolicyMode"`
 
 	PluginLogFile string `json:"pluginLogFile"`
 
@@ -409,8 +413,12 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	if handled {
 		log.Infof("Handled CNI del request with prevResult: ContainerID(%s) Netns(%s) IfName(%s) PodNamespace(%s) PodName(%s)",
 			args.ContainerID, args.Netns, args.IfName, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
-		// Teardown already succeeded; like the prevResult paths below, don't fail the DEL on agent errors.
-		_ = deletePodNp(grpcClient, rpcClient, k8sArgs, log)
+		// An empty Netns can be a stale DEL, and a same-named replacement pod may own the policy state.
+		if conf.NetworkPolicyMode != "" && !isNetnsEmpty(args.Netns) {
+			if err := deletePodNp(grpcClient, rpcClient, k8sArgs, log); err != nil {
+				log.Errorf("Failed to connect to network policy agent: %v. Network Policy agent might not be running", err)
+			}
+		}
 		return nil
 	}
 
@@ -427,11 +435,15 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		if teardownPodNetworkWithPrevResult(driverClient, conf, k8sArgs, args.IfName, log) {
 			log.Infof("Handled pod teardown using prevResult: ContainerID(%s) Netns(%s) IfName(%s) PodNamespace(%s) PodName(%s)",
 				args.ContainerID, args.Netns, args.IfName, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
+			if conf.NetworkPolicyMode != "" {
+				if err := deletePodNp(grpcClient, rpcClient, k8sArgs, log); err != nil {
+					log.Errorf("Failed to connect to network policy agent: %v. Network Policy agent might not be running", err)
+				}
+			}
 		} else {
 			log.Infof("Could not teardown pod using prevResult: ContainerID(%s) Netns(%s) IfName(%s) PodNamespace(%s) PodName(%s)",
 				args.ContainerID, args.Netns, args.IfName, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 		}
-		_ = deletePodNp(grpcClient, rpcClient, k8sArgs, log)
 		return nil
 	}
 	defer conn.Close()
@@ -465,11 +477,15 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		if teardownPodNetworkWithPrevResult(driverClient, conf, k8sArgs, args.IfName, log) {
 			log.Infof("Handled pod teardown using prevResult: ContainerID(%s) Netns(%s) IfName(%s) PodNamespace(%s) PodName(%s)",
 				args.ContainerID, args.Netns, args.IfName, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
+			if conf.NetworkPolicyMode != "" {
+				if err := deletePodNp(grpcClient, rpcClient, k8sArgs, log); err != nil {
+					log.Errorf("Failed to connect to network policy agent: %v. Network Policy agent might not be running", err)
+				}
+			}
 		} else {
 			log.Infof("Could not teardown pod using prevResult: ContainerID(%s) Netns(%s) IfName(%s) PodNamespace(%s) PodName(%s)",
 				args.ContainerID, args.Netns, args.IfName, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 		}
-		_ = deletePodNp(grpcClient, rpcClient, k8sArgs, log)
 		return nil
 	}
 
@@ -523,6 +539,7 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		return nil
 	}
 	if err := deletePodNp(grpcClient, rpcClient, k8sArgs, log); err != nil {
+		log.Errorf("Failed to connect to network policy agent: %v. Network Policy agent might not be running", err)
 		return errors.Wrap(err, "del cmd: failed to connect to network policy agent")
 	}
 	return nil
@@ -536,14 +553,15 @@ func deletePodNp(grpcClient grpcwrapper.GRPC, rpcClient rpcwrapper.RPC, k8sArgs 
 	defer cancel()
 	npConn, err := grpcClient.DialContext(ctx, "unix://"+npaSocketPath, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err != nil {
-		log.Errorf("Failed to connect to network policy agent: %v. Network Policy agent might not be running", err)
 		return err
 	}
 	defer npConn.Close()
 	//Make a GRPC call for network policy agent
 	npc := rpcClient.NewNPBackendClient(npConn)
 
-	npr, err := npc.DeletePodNp(context.Background(),
+	rpcCtx, rpcCancel := context.WithTimeout(context.Background(), npAgentRPCTimeout*time.Second)
+	defer rpcCancel()
+	npr, err := npc.DeletePodNp(rpcCtx,
 		&pb.DeleteNpRequest{
 			K8S_POD_NAME:      string(k8sArgs.K8S_POD_NAME),
 			K8S_POD_NAMESPACE: string(k8sArgs.K8S_POD_NAMESPACE),

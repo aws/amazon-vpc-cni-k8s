@@ -100,6 +100,38 @@ func TestEgressCNIPluginIPv6EgressTakesMTUEnvVar(t *testing.T) {
 	assert.Equal(t, "8000", plugins[1].(map[string]interface{})["mtu"])
 }
 
+func TestGenerateJSONNetworkPolicyMode(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		mode      string
+		unset     bool
+		bandwidth string
+	}{
+		{name: "unset", unset: true, bandwidth: "false"},
+		{name: "standard", mode: "standard", bandwidth: "false"},
+		{name: "standard with chained plugin", mode: "standard", bandwidth: "true"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(envEnBandwidthPlugin, tc.bandwidth)
+			t.Setenv(envDisablePodV6, "false")
+			t.Setenv(envNetworkPolicyMode, tc.mode)
+			if tc.unset {
+				_ = os.Unsetenv(envNetworkPolicyMode)
+			}
+			out := t.TempDir() + "/10-aws.conflist"
+			assert.NoError(t, generateJSON(awsConflist, out, getPrimaryIPMock))
+
+			var jsonData map[string]interface{}
+			jsonFile, err := os.ReadFile(out)
+			assert.NoError(t, err)
+			assert.NoError(t, json.Unmarshal(jsonFile, &jsonData))
+			plugins, _ := jsonData["plugins"].([]interface{})
+			got, _ := plugins[0].(map[string]interface{})["networkPolicyMode"].(string)
+			assert.Equal(t, tc.mode, got)
+		})
+	}
+}
+
 func TestMTUValidation(t *testing.T) {
 	// By default, ENI MTU and pod MTU should be valid
 	assert.True(t, validateMTU(envEniMTU))

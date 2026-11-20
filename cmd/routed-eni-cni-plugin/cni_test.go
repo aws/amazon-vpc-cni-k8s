@@ -14,10 +14,12 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
@@ -105,6 +107,37 @@ func expectDeletePodNp(ctrl *gomock.Controller, mocksGRPC *mock_grpcwrapper.Mock
 	mocksRPC.EXPECT().NewNPBackendClient(npConn).Return(mockNP)
 	mockNP.EXPECT().DeletePodNp(gomock.Any(), &rpc.DeleteNpRequest{K8S_POD_NAME: podName, K8S_POD_NAMESPACE: podNamespace}).
 		Return(&rpc.DeleteNpReply{Success: true}, nil)
+}
+
+// netConfStdin marshals conf with NetworkPolicyMode set; json.Marshal of NetConf emits only the embedded types.NetConf.
+func netConfStdin(conf *NetConf, networkPolicyMode string) []byte {
+	b, _ := json.Marshal(conf)
+	m := map[string]interface{}{}
+	_ = json.Unmarshal(b, &m)
+	m["networkPolicyMode"] = networkPolicyMode
+	b, _ = json.Marshal(m)
+	return b
+}
+
+func prevResultStdin(dummyMac, networkPolicyMode string) []byte {
+	return netConfStdin(&NetConf{
+		NetConf: types.NetConf{
+			CNIVersion: cniVersionStr,
+			Name:       cniName,
+			Type:       cniType,
+			RawPrevResult: map[string]interface{}{
+				"cniVersion": cniVersionStr,
+				"ips": []map[string]interface{}{
+					{"interface": 1, "address": ipAddr + "/32", "gateway": gw, "version": "4"},
+				},
+				"interfaces": []map[string]interface{}{
+					{"name": "eni" + podVethSuffix},
+					{"name": "eth0", "sandbox": netNS, "mac": "2"},
+					{"name": "dummy" + podVethSuffix, "mac": dummyMac, "sandbox": "1"},
+				},
+			},
+		},
+	}, networkPolicyMode)
 }
 
 func TestCmdAdd(t *testing.T) {
@@ -563,7 +596,7 @@ func TestCmdDelWithPrevResultForBranchENI(t *testing.T) {
 		PluginLogFile:      pluginLogFile,
 	}
 
-	stdinData, _ := json.Marshal(netConfForBranchENIPods)
+	stdinData := netConfStdin(netConfForBranchENIPods, "standard")
 
 	cmdArgs := &skel.CmdArgs{ContainerID: containerID,
 		Netns:     netNS,
@@ -621,7 +654,7 @@ func TestCmdDelWhenIPAMIsDown(t *testing.T) {
 		PluginLogFile:      pluginLogFile,
 	}
 
-	stdinData, _ := json.Marshal(netConfForBranchENIPods)
+	stdinData := netConfStdin(netConfForBranchENIPods, "standard")
 
 	cmdArgs := &skel.CmdArgs{ContainerID: containerID,
 		Netns:     netNS,
@@ -682,7 +715,7 @@ func TestCmdDelWhenIPAMIsDownAndPrevResultDeletionFails(t *testing.T) {
 		PluginLogFile:      pluginLogFile,
 	}
 
-	stdinData, _ := json.Marshal(netConfForBranchENIPods)
+	stdinData := netConfStdin(netConfForBranchENIPods, "standard")
 
 	cmdArgs := &skel.CmdArgs{ContainerID: containerID,
 		Netns:     netNS,
@@ -697,7 +730,6 @@ func TestCmdDelWhenIPAMIsDownAndPrevResultDeletionFails(t *testing.T) {
 	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, errors.New("IPAM is down"))
 
 	mocksNetwork.EXPECT().TeardownPodNetwork(gomock.Any(), gomock.Any()).Return(errors.New("error on TeardownPodNetwork"))
-	expectDeletePodNp(ctrl, mocksGRPC, mocksRPC, podName, podNamespace)
 
 	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
 	assert.Nil(t, err)
@@ -731,7 +763,6 @@ func TestCmdDelErrDelNetwork(t *testing.T) {
 	delNetworkReply := &rpc.DelNetworkReply{Success: false, IPAllocationMetadata: addrs}
 
 	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, errors.New("error on DelNetwork"))
-	expectDeletePodNp(ctrl, mocksGRPC, mocksRPC, podName, podNamespace)
 
 	// On DelNetwork fail, the CNI must not return an error to kubelet as deletes are best-effort.
 	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
@@ -741,28 +772,7 @@ func TestCmdDelErrDelNetwork(t *testing.T) {
 func TestCmdDelWithPrevResultForBranchENINPAgentUnreachable(t *testing.T) {
 	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
 	defer ctrl.Finish()
-	conf := &NetConf{
-		NetConf: types.NetConf{
-			CNIVersion: cniVersionStr,
-			Name:       cniName,
-			Type:       cniType,
-			RawPrevResult: map[string]interface{}{
-				"cniVersion": cniVersionStr,
-				"ips": []map[string]interface{}{
-					{"interface": 1, "address": ipAddr + "/32", "gateway": gw, "version": "4"},
-				},
-				"interfaces": []map[string]interface{}{
-					{"name": "eni" + podVethSuffix},
-					{"name": "eth0", "sandbox": netNS, "mac": macAddr},
-					{"name": "dummy" + podVethSuffix, "mac": "4"},
-				},
-			},
-		},
-		PodSGEnforcingMode: sgpp.DefaultEnforcingMode,
-		PluginLogLevel:     pluginLogLevel,
-		PluginLogFile:      pluginLogFile,
-	}
-	stdinData, _ := json.Marshal(conf)
+	stdinData := prevResultStdin("4", "standard")
 	cmdArgs := &skel.CmdArgs{ContainerID: containerID, Netns: netNS, IfName: ifName, StdinData: stdinData}
 
 	expectPodArgs(mocksTypes, podName, podNamespace)
@@ -771,6 +781,84 @@ func TestCmdDelWithPrevResultForBranchENINPAgentUnreachable(t *testing.T) {
 
 	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
 	assert.Nil(t, err)
+}
+
+func TestCmdDelWithPrevResultForBranchENIEmptyNetns(t *testing.T) {
+	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
+	defer ctrl.Finish()
+	stdinData := prevResultStdin("4", "standard")
+	cmdArgs := &skel.CmdArgs{ContainerID: containerID, Netns: "", IfName: ifName, StdinData: stdinData}
+
+	expectPodArgs(mocksTypes, podName, podNamespace)
+
+	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
+	assert.Nil(t, err)
+}
+
+func TestCmdDelWithPrevResultForBranchENINetworkPolicyModeUnset(t *testing.T) {
+	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
+	defer ctrl.Finish()
+	stdinData := prevResultStdin("4", "")
+	cmdArgs := &skel.CmdArgs{ContainerID: containerID, Netns: netNS, IfName: ifName, StdinData: stdinData}
+
+	expectPodArgs(mocksTypes, podName, podNamespace)
+	mocksNetwork.EXPECT().TeardownBranchENIPodNetwork(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+
+	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
+	assert.Nil(t, err)
+}
+
+func TestCmdDelErrDelNetworkWithPrevResult(t *testing.T) {
+	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
+	defer ctrl.Finish()
+	stdinData := prevResultStdin("0", "standard")
+	cmdArgs := &skel.CmdArgs{ContainerID: containerID, Netns: netNS, IfName: ifName, StdinData: stdinData}
+
+	expectPodArgs(mocksTypes, podName, podNamespace)
+	conn, _ := grpc.Dial("unix://"+ipamdSocketPath, grpc.WithInsecure())
+	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
+	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
+	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
+	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(nil, errors.New("error on DelNetwork"))
+	mocksNetwork.EXPECT().TeardownPodNetwork(gomock.Any(), gomock.Any()).Return(nil)
+	expectDeletePodNp(ctrl, mocksGRPC, mocksRPC, podName, podNamespace)
+
+	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
+	assert.Nil(t, err)
+}
+
+func TestCmdDelWhenIPAMIsDownNetworkPolicyModeUnset(t *testing.T) {
+	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
+	defer ctrl.Finish()
+	stdinData := prevResultStdin("0", "")
+	cmdArgs := &skel.CmdArgs{ContainerID: containerID, Netns: netNS, IfName: ifName, StdinData: stdinData}
+
+	expectPodArgs(mocksTypes, podName, podNamespace)
+	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(nil, errors.New("IPAM is down"))
+	mocksNetwork.EXPECT().TeardownPodNetwork(gomock.Any(), gomock.Any()).Return(nil)
+
+	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
+	assert.Nil(t, err)
+}
+
+func TestDeletePodNpSetsRPCDeadline(t *testing.T) {
+	ctrl, _, mocksGRPC, mocksRPC, _ := setup(t)
+	defer ctrl.Finish()
+
+	npConn, _ := grpc.Dial("unix://"+npaSocketPath, grpc.WithInsecure())
+	mocksGRPC.EXPECT().DialContext(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(npConn, nil)
+	mockNP := mock_rpc.NewMockNPBackendClient(ctrl)
+	mocksRPC.EXPECT().NewNPBackendClient(npConn).Return(mockNP)
+	mockNP.EXPECT().DeletePodNp(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, _ *rpc.DeleteNpRequest, _ ...grpc.CallOption) (*rpc.DeleteNpReply, error) {
+			deadline, ok := ctx.Deadline()
+			assert.True(t, ok)
+			assert.WithinDuration(t, time.Now().Add(npAgentRPCTimeout*time.Second), deadline, time.Second)
+			return &rpc.DeleteNpReply{Success: true}, nil
+		})
+
+	k8sArgs := K8sArgs{K8S_POD_NAME: podName, K8S_POD_NAMESPACE: podNamespace}
+	assert.NoError(t, deletePodNp(mocksGRPC, mocksRPC, k8sArgs, logger.DefaultLogger()))
 }
 
 func TestCmdDelErrTeardown(t *testing.T) {
