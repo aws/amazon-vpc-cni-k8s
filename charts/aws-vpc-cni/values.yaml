@@ -47,6 +47,7 @@ nodeAgent:
     privileged: true
   enableCloudWatchLogs: "false"
   enablePolicyEventLogs: "false"
+  policyEventLogsScope: ""
   networkPolicyAgentLogFileLocation: "/var/log/aws-routed-eni/network-policy-agent.log"
   enableIpv6: "false"
   metricsBindAddr: "8162"
