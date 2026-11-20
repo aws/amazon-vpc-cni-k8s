@@ -535,6 +535,9 @@ func (n *linuxNetwork) claimHostVethName(hostVethName string, podIdentity string
 
 	alias := existing.Attrs().Alias
 	switch {
+	case existing.Type() != "veth":
+		// Never a pod's host veth, whatever its alias says, so not a leftover to reclaim.
+		return errors.Errorf("hostVeth %s already exists and is not a veth, refusing to delete it", hostVethName)
 	case podIdentity != "" && alias == hostVethAlias(podIdentity):
 		// Stamped for this pod. An earlier sandbox of the same pod may still hold the link,
 		// because CNI DEL does not delete it and the kernel only reaps it with the old netns.
@@ -543,9 +546,6 @@ func (n *linuxNetwork) claimHostVethName(hostVethName string, podIdentity string
 		// Stamped for a different pod, which is the name collision this guards against.
 		return errors.Errorf("hostVeth %s is owned by another pod, refusing to delete it for pod %q",
 			hostVethName, podIdentity)
-	case existing.Type() != "veth":
-		// Never a pod's host veth, so it is not a leftover this can reclaim.
-		return errors.Errorf("hostVeth %s already exists and is not a veth, refusing to delete it", hostVethName)
 	default:
 		// Unstamped, so nothing attributes it. Reclaim as the version that created it
 		// did, rather than stranding this pod on a leftover from a deleted one.

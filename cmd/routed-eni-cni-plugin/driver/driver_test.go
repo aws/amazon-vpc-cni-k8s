@@ -5799,6 +5799,15 @@ func Test_linuxNetwork_claimHostVethName(t *testing.T) {
 			wantErr:  "hostVeth eni8ea2c11fe35 already exists and is not a veth, refusing to delete it",
 		},
 		{
+			// The type check runs before the alias cases, so a device carrying this
+			// pod's stamp is still refused when it is not a veth.
+			name: "non-veth link carrying this pod's alias",
+			existing: &netlink.Dummy{LinkAttrs: netlink.LinkAttrs{
+				Name: vethName, Index: hostIndex, Alias: hostVethAlias(testPodIdentity),
+			}},
+			wantErr: "hostVeth eni8ea2c11fe35 already exists and is not a veth, refusing to delete it",
+		},
+		{
 			name:       "unstamped veth reports no peer index",
 			existing:   &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Name: vethName, Index: hostIndex}},
 			wantDelete: true,
