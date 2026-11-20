@@ -163,6 +163,10 @@ spec:
           {{- if eq (toString .Values.nodeAgent.enableTcpResetOnDeny) "true" }}
             - --enable-tcp-reset-on-deny=true
           {{- end }}
+          {{- /* Rendered only when set: an agent without the flag exits on it. */}}
+          {{- if .Values.nodeAgent.policyEventLogsScope }}
+            - --policy-event-logs-scope={{ .Values.nodeAgent.policyEventLogsScope }}
+          {{- end }}
             - --log-level={{ .Values.nodeAgent.logLevel }}
           {{- with default .Values.resources .Values.nodeAgent.resources }}
           resources:

@@ -83,6 +83,7 @@ The following table lists the configurable parameters for this chart and their d
 | `nodeAgent.enableCloudWatchLogs`  | Enable CW logging for Node Agent              | `false`                             |
 | `nodeAgent.networkPolicyAgentLogFileLocation`  | Log File location of Network Policy Agent | `/var/log/aws-routed-eni/network-policy-agent.log` |
 | `nodeAgent.enablePolicyEventLogs` | Enable policy decision logs for Node Agent    | `false`                             |
+| `nodeAgent.policyEventLogsScope` | Which verdicts produce policy events: `all` (ACCEPT and DENY) or `deny` (DENY only). Needs `enablePolicyEventLogs=true`, and a Node Agent image with [aws-network-policy-agent#763](https://github.com/aws/aws-network-policy-agent/pull/763); an older agent exits on the flag | `""` (not passed; agent default `all`) |
 | `nodeAgent.metricsBindAddr` | Node Agent port for metrics                         | `8162`                              |
 | `nodeAgent.healthProbeBindAddr` | Node Agent port for health probes               | `8163`                              |
 | `nodeAgent.conntrackCacheCleanupPeriod` | Cleanup interval for network policy agent conntrack cache | 300               |
