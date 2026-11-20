@@ -3818,12 +3818,6 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 						netNSPath: "/proc/42/ns/net",
 					},
 				},
-				linkSetAliasCalls: []linkSetAliasCall{
-					{
-						link:  hostVethWithIndex9,
-						alias: hostVethAlias(testPodIdentity),
-					},
-				},
 			},
 			args: args{
 				hostVethName: "eni8ea2c11fe35",
@@ -3834,9 +3828,8 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 			want: hostVethWithIndex9,
 		},
 		{
-			// Without a sandbox ID there is nothing to stamp, so LinkSetAlias must
-			// not be called at all. No linkSetAliasCalls are registered below, so
-			// gomock fails this case if setupVeth tries to stamp anyway.
+			// The stamp is written inside run, which this table stubs out, so
+			// setupVeth itself must never call LinkSetAlias.
 			name: "successfully setup veth - empty sandboxID leaves the link unstamped",
 			fields: fields{
 				linkByNameCalls: []linkByNameCall{
@@ -3884,12 +3877,6 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 				withNetNSPathCalls: []withNetNSPathCall{
 					{
 						netNSPath: "/proc/42/ns/net",
-					},
-				},
-				linkSetAliasCalls: []linkSetAliasCall{
-					{
-						link:  hostVethWithIndex9,
-						alias: hostVethAlias(testPodIdentity),
 					},
 				},
 			},

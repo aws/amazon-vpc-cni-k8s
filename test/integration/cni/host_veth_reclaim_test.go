@@ -110,8 +110,10 @@ var _ = Describe("test host veth reclaim", func() {
 					Namespace: utils.DefaultTestNamespace,
 				})
 				g.Expect(err).ToNot(HaveOccurred())
+				// Matched on UID, not name: events outlive pods and this spec reuses
+				// the name, so a stale event could otherwise satisfy it.
 				g.Expect(events.Items).To(ContainElement(SatisfyAll(
-					HaveField("Regarding.Name", pod.Name),
+					HaveField("Regarding.UID", pod.UID),
 					HaveField("Reason", "FailedCreatePodSandBox"),
 					HaveField("Note", ContainSubstring(refusalText)),
 				)), "the CNI must refuse the ADD because the link belongs to another pod")

@@ -502,12 +502,6 @@ func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netns
 		return nil, errors.Wrapf(err, "failed to find hostVeth %s", hostVethName)
 	}
 
-	// Record the owner so a later ADD can check it.
-	if podIdentity != "" {
-		if err := n.netLink.LinkSetAlias(hostVeth, hostVethAlias(podIdentity)); err != nil {
-			return nil, errors.Wrapf(err, "failed to stamp ownership alias on hostVeth %s", hostVethName)
-		}
-	}
 	return hostVeth, nil
 }
 
