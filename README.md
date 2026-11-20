@@ -298,7 +298,11 @@ Type: Integer
 
 Default: None
 
-Specifies the number of free IP addresses that the `ipamd` daemon should attempt to keep available for pod assignment on the node. Setting this to a non-positive value is the same as setting this to 0 or not setting the variable.
+Specifies the number of free IP addresses that the `ipamd` daemon should attempt to keep available for pod assignment on the node.
+A negative value is treated as not set. An explicit `0` is a valid target and is **not** the same as not setting the variable:
+`WARM_IP_TARGET=0` asks for no free addresses, which overrides `WARM_ENI_TARGET`, whereas leaving it unset falls back to
+`WARM_ENI_TARGET` and reserves a whole interface's worth of addresses. What `0` means depends on the addressing mode, see
+NOTE 3 and NOTE 4 below.
 With `ENABLE_PREFIX_DELEGATION` set to `true` then `ipamd` daemon will check if the existing (/28) prefixes are enough to maintain the
 `WARM_IP_TARGET` if it is not sufficient then more prefixes will be attached.
 
@@ -344,6 +348,19 @@ private IPs, which may be throttled, especially at scaling-related times.
 **NOTE!**
 1. If `MINIMUM_IP_TARGET` is set, `WARM_ENI_TARGET` will be ignored. Please utilize `WARM_IP_TARGET` instead.
 2. If `MINIMUM_IP_TARGET` is set and `WARM_IP_TARGET` is not set, `WARM_IP_TARGET` is assumed to be 0, which leads to the number of IPs attached to the node will be the value of `MINIMUM_IP_TARGET`. This configuration will prevent future ENIs/IPs from being allocated. It is strongly recommended that `WARM_IP_TARGET` should be set greater than 0 when `MINIMUM_IP_TARGET` is set.
+3. With `ENABLE_PREFIX_DELEGATION` set to `true`, `WARM_IP_TARGET=0` has the same consequence as NOTE 2, by the same arithmetic:
+nothing can raise the shortfall, so the pool stops growing once it holds `MINIMUM_IP_TARGET` addresses and pods beyond that fail to
+start. `ipamd` logs a warning at startup when this configuration is detected. A prefix is 16 addresses and there is no smaller unit,
+so serving one pod necessarily acquires 15 spare and a target of `0` would then ask for those 15 to be released. Set
+`WARM_IP_TARGET` greater than 0 in prefix mode unless you intend a pool of fixed size.
+4. In secondary IP mode, `WARM_IP_TARGET=0` is demand-sized rather than fixed. The node holds no free address while it is idle. When
+a pod cannot be given an address, `ipamd` counts that pod as unfilled demand, and the next pool check allocates exactly the number of
+addresses the waiting pods need in a single `AssignPrivateIpAddresses` call. kubelet retries the pod sandbox, so the pod starts on a
+retry once its address lands. The address quantum in this mode is 1, so the node never acquires a spare it was not asked for.
+The cost is one EC2 call on the path of a pod that arrives when the node holds no free address, and the pod waits for the next pool
+check. A pod can also wait up to `IP_COOLDOWN_PERIOD` when the only free addresses on the node are still cooling, since the pool is
+not grown to cover an address that is about to become reusable. Use `MINIMUM_IP_TARGET` to pre-scale a floor if either cost matters,
+or set `WARM_IP_TARGET` greater than 0 for a conventional warm pool.
 
 #### `MAX_ENI`
 
@@ -575,7 +592,9 @@ Type: Integer
 
 Default: None
 
-Specifies the number of free IPv4(/28) prefixes that the `ipamd` daemon should attempt to keep available for pod assignment on the node. Setting to a non-positive value is same as setting this to 0 or not setting the variable.
+Specifies the number of free IPv4(/28) prefixes that the `ipamd` daemon should attempt to keep available for pod assignment on the node.
+A negative value is treated as not set. An explicit `0` is a valid target and is not the same as not setting the variable: `0` asks for
+no free prefix, so a fully free prefix is released, whereas not setting it leaves prefix scale-down off.
 This environment variable works when `ENABLE_PREFIX_DELEGATION` is set to `true` and is overridden when `WARM_IP_TARGET` and `MINIMUM_IP_TARGET` are configured.
 
 #### `DISABLE_NETWORK_RESOURCE_PROVISIONING` (v1.9.1+)
@@ -721,7 +740,11 @@ Default: `30`
 Specifies the number of seconds an IP address is in cooldown after pod deletion. The cooldown period gives network proxies, such as kube-proxy, time to update node iptables rules when the IP was registered as a valid endpoint, such as for a service. Modify this value with caution, as kube-proxy update time scales with the number of nodes and services.
 
 **Note:** 0 is a supported value, however it is highly discouraged.
-**Note:** Higher cooldown periods may lead to a higher number of EC2 API calls as IPs are in cooldown cache.
+**Note:** An address in cooldown is retained for the next pod on the node. It is not counted as surplus, so the warm-target
+arithmetic will not release it to EC2 while it is cooling, and `getDeletableENI` will not detach an interface holding one. A longer
+cooldown therefore widens the window in which a pod can reuse an address without an EC2 call. It does not widen the window in which
+the address can be reassigned: a cooling address is unavailable to new pods for the whole period, so raising this value raises the
+number of free addresses the node must hold to serve the same churn.
 
 #### `DISABLE_POD_V6` (v1.15.0+)
 
