@@ -34,6 +34,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/vishvananda/netlink"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
@@ -51,6 +52,7 @@ import (
 	mock_awsutils "github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/mocks"
 	mock_eniconfig "github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
+	mock_netlinkwrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	mock_networkutils "github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/vpc"
@@ -4608,4 +4610,121 @@ func TestInitHyperPodDisablesMultiNIC(t *testing.T) {
 	assert.NoError(t, c.initHyperPod(context.Background(), "aws:///us-west-2a/sagemaker/cluster/hyperpod-abc-i-0abc123def4567890"))
 	assert.False(t, c.enableMultiNICSupport)
 	assert.Equal(t, []bool{false, true, true}, c.markUnmanagedNetworkCards(efaOnly, enisByCard))
+}
+
+// newReconcileTestContext returns an IPAMContext on a single network card whose instance has enis, plus a netlink
+// mock for the host veth lookup that keeps force-removed IPs reserved.
+func newReconcileTestContext(m *testMocks, enis ...awsutils.ENIMetadata) (*IPAMContext, *datastore.DataStore, *mock_netlinkwrapper.MockNetLink) {
+	c := &IPAMContext{
+		awsClient:       m.awsutils,
+		networkClient:   m.network,
+		primaryIP:       make(map[string]string),
+		maxENI:          4,
+		numNetworkCards: 1,
+	}
+	c.dataStoreAccess = testDatastore()
+	c.reconcileCooldownCache.cache = make(map[string]time.Time)
+
+	eniIDs := make([]string, 0, len(enis))
+	for _, eni := range enis {
+		eniIDs = append(eniIDs, eni.ENIID)
+	}
+	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
+	m.awsutils.EXPECT().IsUnmanagedENI(gomock.Any()).AnyTimes().Return(false)
+	m.awsutils.EXPECT().IsUnmanagedNIC(gomock.Any()).AnyTimes().Return(false)
+	m.awsutils.EXPECT().IsEfaOnlyENI(gomock.Any(), gomock.Any()).AnyTimes().Return(false)
+	m.awsutils.EXPECT().TagENI(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+	m.awsutils.EXPECT().SetUnmanagedNetworkCards(gomock.Any()).AnyTimes()
+	m.awsutils.EXPECT().DescribeAllENIs(gomock.Any()).AnyTimes().Return(awsutils.DescribeAllENIsResult{
+		ENIMetadata:             enis,
+		TagMap:                  map[string]awsutils.TagMap{},
+		EFAENIs:                 map[string]bool{},
+		EFAOnlyENIByNetworkCard: []string{""},
+		ENIsByNetworkCard:       [][]string{defaultNetworkCard: eniIDs},
+	}, nil)
+	m.network.EXPECT().GetRouteTableNumberForENI(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+	m.network.EXPECT().SetupENINetwork(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+
+	ds := c.dataStoreAccess.GetDataStore(defaultNetworkCard)
+	netLink := mock_netlinkwrapper.NewMockNetLink(m.ctrl)
+	ds.SetNetLink(netLink)
+	return c, ds, netLink
+}
+
+func assignReconcileTestPods(t *testing.T, ds *datastore.DataStore, names ...string) (ips []string, veths []netlink.Link) {
+	for _, name := range names {
+		ip, _, _, err := ds.AssignPodIPv4Address(datastore.IPAMKey{NetworkName: "net0", ContainerID: name, IfName: "eth0"},
+			datastore.IPAMMetadata{K8SPodNamespace: "default", K8SPodName: name})
+		require.NoError(t, err)
+		ips = append(ips, ip)
+		veths = append(veths, &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Name: "eni" + networkutils.GeneratePodHostVethNameSuffix("default", name)}})
+	}
+	return ips, veths
+}
+
+func TestNodeIPPoolReconcileENIDetachReattachKeepsLiveIP(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+	ctx := context.Background()
+
+	primaryENI := getPrimaryENIMetadata()
+	secENI := getSecondaryENIMetadata()
+	both := []awsutils.ENIMetadata{primaryENI, secENI}
+	c, ds, netLink := newReconcileTestContext(m, both...)
+	m.awsutils.EXPECT().GetAttachedENIs().Return(both, nil)
+	m.awsutils.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{primaryENI}, nil)
+	m.awsutils.EXPECT().GetAttachedENIs().Return(both, nil)
+
+	c.nodeIPPoolReconcile(ctx, 0)
+	victimIP := *secENI.IPv4Addresses[1].PrivateIpAddress
+	ips, veths := assignReconcileTestPods(t, ds, "pod-a", "pod-b", "pod-c")
+	assert.Contains(t, ips, victimIP, "one pod should hold the secondary ENI's IP")
+	netLink.EXPECT().LinkList().Return(veths, nil)
+
+	c.nodeIPPoolReconcile(ctx, 0)
+	c.nodeIPPoolReconcile(ctx, 0)
+	assert.True(t, isAllocated(ds, victimIP), "victim's assignment should be restored")
+
+	_, _, _, err := ds.AssignPodIPv4Address(datastore.IPAMKey{NetworkName: "net0", ContainerID: "pod-next", IfName: "eth0"},
+		datastore.IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "pod-next"})
+	assert.ErrorIs(t, err, datastore.ErrNoAvailableIPInDataStore, "live pod's IP handed to a new pod after detach/re-attach")
+}
+
+func TestENIIPPoolReconcileUnassignReassignKeepsLiveIP(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+	ctx := context.Background()
+
+	full := getPrimaryENIMetadata()
+	stripped := getPrimaryENIMetadata()
+	stripped.IPv4Addresses = []ec2types.NetworkInterfacePrivateIpAddress{full.IPv4Addresses[0], full.IPv4Addresses[2]}
+	secondaryIP := *full.IPv4Addresses[1].PrivateIpAddress
+	c, ds, netLink := newReconcileTestContext(m, full)
+	m.awsutils.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{full}, nil)
+	m.awsutils.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{stripped}, nil)
+	m.awsutils.EXPECT().GetIPv4sFromEC2(gomock.Any(), primaryENIid).Return(stripped.IPv4Addresses, nil)
+	m.awsutils.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{full}, nil)
+	m.awsutils.EXPECT().GetIPv4sFromEC2(gomock.Any(), primaryENIid).Return(full.IPv4Addresses, nil)
+
+	c.nodeIPPoolReconcile(ctx, 0)
+	ips, veths := assignReconcileTestPods(t, ds, "pod-a", "pod-b")
+	assert.Contains(t, ips, secondaryIP)
+	netLink.EXPECT().LinkList().Return(veths, nil)
+
+	c.nodeIPPoolReconcile(ctx, 0)
+	c.nodeIPPoolReconcile(ctx, 0)
+	assert.True(t, isAllocated(ds, secondaryIP), "victim's assignment should be restored")
+
+	_, _, _, err := ds.AssignPodIPv4Address(datastore.IPAMKey{NetworkName: "net0", ContainerID: "pod-next", IfName: "eth0"},
+		datastore.IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "pod-next"})
+	assert.ErrorIs(t, err, datastore.ErrNoAvailableIPInDataStore)
+}
+
+func isAllocated(ds *datastore.DataStore, ip string) bool {
+	for _, info := range ds.AllocatedIPs() {
+		if info.IP == ip {
+			return true
+		}
+	}
+	return false
 }

@@ -1753,6 +1753,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 			delete(c.primaryIP, eni)
 			prometheusmetrics.ReconcileCnt.With(prometheus.Labels{"fn": "eniReconcileDel"}).Inc()
 		}
+		ds.PruneOrphanedAddresses()
 
 		log.Debug("Successfully Reconciled ENI/IP pool")
 		c.logPoolStats(ds.GetIPStats(ipV4AddrFamily), networkCard)

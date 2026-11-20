@@ -666,6 +666,9 @@ func (n *linuxNetwork) teardownVlan(vlanID int, log logger.Logger) error {
 // traffic to container(to containerAddr) will be routed via the `main` route table.
 // traffic from container(from containerAddr) will be routed via the specified rtTable.
 func (n *linuxNetwork) setupIPBasedContainerRouteRules(hostVeth netlink.Link, containerAddr *net.IPNet, rtTable int, log logger.Logger) error {
+	if err := n.ensureAddrNotRoutedToOtherPod(hostVeth, containerAddr); err != nil {
+		return err
+	}
 	route := netlink.Route{
 		LinkIndex: hostVeth.Attrs().Index,
 		Scope:     netlink.SCOPE_LINK,
@@ -700,6 +703,38 @@ func (n *linuxNetwork) setupIPBasedContainerRouteRules(hostVeth netlink.Link, co
 		log.Debugf("Successfully setup fromContainer rule, containerAddr=%s, rtTable=%v", containerAddr.String(), rtTable)
 	}
 
+	return nil
+}
+
+// ensureAddrNotRoutedToOtherPod fails when containerAddr is still routed to another host veth. A veth only
+// exists while its pod netns does, so such a route means a running pod may still use the address.
+func (n *linuxNetwork) ensureAddrNotRoutedToOtherPod(hostVeth netlink.Link, containerAddr *net.IPNet) error {
+	family := unix.AF_INET
+	if !networkutils.IsIPv4(containerAddr.IP) {
+		family = unix.AF_INET6
+	}
+	routes, err := n.netLink.RouteList(nil, family)
+	if err != nil {
+		return errors.Wrapf(err, "failed to list routes for containerAddr=%s", containerAddr.String())
+	}
+	for _, route := range routes {
+		if route.Dst == nil || route.Dst.String() != containerAddr.String() || route.LinkIndex == 0 || route.LinkIndex == hostVeth.Attrs().Index {
+			continue
+		}
+		link, err := n.netLink.LinkByIndex(route.LinkIndex)
+		if err != nil {
+			var notFound netlink.LinkNotFoundError
+			if errors.As(err, &notFound) {
+				continue
+			}
+			return errors.Wrapf(err, "failed to look up link %d routing containerAddr=%s", route.LinkIndex, containerAddr.String())
+		}
+		if link.Type() != "veth" {
+			continue
+		}
+		return errors.Errorf("containerAddr=%s is still routed to hostVeth %s of another pod, refusing to take it over",
+			containerAddr.String(), link.Attrs().Name)
+	}
 	return nil
 }
 
