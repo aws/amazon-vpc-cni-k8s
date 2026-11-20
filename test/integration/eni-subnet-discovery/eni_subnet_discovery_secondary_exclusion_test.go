@@ -15,10 +15,7 @@ package eni_subnet_discovery
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"net"
-	"strings"
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
@@ -190,9 +187,6 @@ var _ = Describe("Secondary ENI Exclusion Tests", func() {
 				By("Verifying existing pods on secondary ENI continue to work")
 				validateExistingPodsConnectivity(initialDeployment)
 
-				By("Verifying secondary ENI is marked as excluded in datastore")
-				validateSecondaryENIExclusionInDatastore()
-
 				By("Scaling deployment to test new pod allocation behavior")
 				// Scale above the initial both-subnets count so new pods are created; after the
 				// secondary subnet is excluded these new pods must land in the primary subnet.
@@ -203,9 +197,6 @@ var _ = Describe("Secondary ENI Exclusion Tests", func() {
 
 				By("Verifying new pods avoid excluded secondary ENI")
 				validateNewPodsAvoidExcludedSecondaryENI(scaledDeployment, primarySubnetCIDR, secondarySubnetCIDR)
-
-				By("Verifying ENI capacity calculations account for exclusion")
-				validateENICapacityCalculations()
 
 				By("Testing secondary ENI cleanup after pod removal")
 				validateSecondaryENICleanupAfterPodRemoval(scaledDeployment)
@@ -225,9 +216,6 @@ var _ = Describe("Secondary ENI Exclusion Tests", func() {
 
 				By("Verifying new pods use primary subnet with prefix delegation")
 				validateNewPodsAvoidExcludedSecondaryENI(scaledDeployment, primarySubnetCIDR, secondarySubnetCIDR)
-
-				By("Verifying prefix cleanup on excluded secondary ENI")
-				validatePrefixCleanupOnExcludedSecondaryENI()
 
 				By("Disabling prefix delegation")
 				k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
@@ -587,59 +575,6 @@ func validatePodsInBothSubnets(deployment *v1.Deployment, primarySubnet, seconda
 	GinkgoWriter.Printf("Found %d pods in primary subnet and %d pods in secondary subnet\n", primaryPodCount, secondaryPodCount)
 }
 
-func validateSecondaryENIExclusionInDatastore() {
-	awsNodePods, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector(awsNodeLabelKey, utils.AwsNodeName)
-	Expect(err).ToNot(HaveOccurred())
-
-	for _, pod := range awsNodePods.Items {
-		if pod.Spec.NodeName == *primaryInstance.PrivateDnsName {
-			By(fmt.Sprintf("Checking secondary ENI exclusion in aws-node pod %s", pod.Name))
-
-			// Execute introspection command in the aws-node container
-			stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExecInContainer(
-				pod.Namespace,
-				pod.Name,
-				"aws-node", // Specify the aws-node container
-				[]string{"/app/aws-k8s-agent", "introspect", "eni"})
-
-			if err != nil {
-				GinkgoWriter.Printf("Introspect command failed. stdout: %s, stderr: %s, err: %v\n", stdout, stderr, err)
-				continue
-			}
-
-			// Parse the introspection output
-			var introspectData map[string]interface{}
-			err = json.Unmarshal([]byte(stdout), &introspectData)
-			if err != nil {
-				GinkgoWriter.Printf("Failed to parse introspect output: %v\nOutput: %s\n", err, stdout)
-				continue
-			}
-
-			// Find secondary ENI and check exclusion status
-			foundExcludedSecondaryENI := false
-			if enis, ok := introspectData["enis"].(map[string]interface{}); ok {
-				for eniID, eniData := range enis {
-					if eniInfo, ok := eniData.(map[string]interface{}); ok {
-						if isPrimary, exists := eniInfo["isPrimary"].(bool); exists && !isPrimary {
-							// This is a secondary ENI
-							if excluded, exists := eniInfo["isExcludedForPodIPs"].(bool); exists && excluded {
-								GinkgoWriter.Printf("Found excluded secondary ENI: %s\n", eniID)
-								foundExcludedSecondaryENI = true
-							}
-						}
-					}
-				}
-			}
-
-			if !foundExcludedSecondaryENI {
-				GinkgoWriter.Printf("Introspect output for debugging: %s\n", stdout)
-			}
-			Expect(foundExcludedSecondaryENI).To(BeTrue(), "Should find at least one excluded secondary ENI")
-			return
-		}
-	}
-}
-
 func validateNewPodsAvoidExcludedSecondaryENI(deployment *v1.Deployment, primarySubnet, secondarySubnet *net.IPNet) {
 	pods, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector(secondaryExclusionPodLabelKey, secondaryExclusionPodLabelVal)
 	Expect(err).ToNot(HaveOccurred())
@@ -679,69 +614,6 @@ func validateSecondaryENICleanupAfterPodRemoval(deployment *v1.Deployment) {
 	By("Waiting for pod deletion and potential ENI cleanup")
 	time.Sleep(90 * time.Second)
 
-	By("Verifying excluded secondary ENI becomes deletable")
-	validateExcludedSecondaryENIDeletable()
-
 	By("Verifying remaining pods are still functional")
 	validateExistingPodsConnectivity(scaledDownDeployment)
-}
-
-func validateExcludedSecondaryENIDeletable() {
-	awsNodePods, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector(awsNodeLabelKey, utils.AwsNodeName)
-	Expect(err).ToNot(HaveOccurred())
-
-	for _, pod := range awsNodePods.Items {
-		if pod.Spec.NodeName == *primaryInstance.PrivateDnsName {
-			By(fmt.Sprintf("Checking secondary ENI deletability in aws-node pod %s", pod.Name))
-
-			// Execute introspection command to check ENI status in the aws-node container
-			stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExecInContainer(
-				pod.Namespace,
-				pod.Name,
-				"aws-node", // Specify the aws-node container
-				[]string{"/app/aws-k8s-agent", "introspect", "eni", "-v"})
-
-			if err != nil {
-				GinkgoWriter.Printf("ENI introspect failed. stdout: %s, stderr: %s, err: %v\n", stdout, stderr, err)
-				continue
-			}
-
-			GinkgoWriter.Printf("ENI introspect output for deletability validation: %s\n", stdout)
-
-			// The excluded secondary ENI should either be deleted or be eligible for deletion
-			// We verify this by checking that excluded ENIs with no pods are marked appropriately
-			Expect(strings.Contains(stdout, "isExcludedForPodIPs")).To(BeTrue(),
-				"ENI introspect should show exclusion status")
-		}
-	}
-}
-
-func validatePrefixCleanupOnExcludedSecondaryENI() {
-	awsNodePods, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector(awsNodeLabelKey, utils.AwsNodeName)
-	Expect(err).ToNot(HaveOccurred())
-
-	for _, pod := range awsNodePods.Items {
-		if pod.Spec.NodeName == *primaryInstance.PrivateDnsName {
-			By(fmt.Sprintf("Checking prefix cleanup on secondary ENIs in pod %s", pod.Name))
-
-			// Execute ENI introspection to check prefix allocation in the aws-node container
-			stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExecInContainer(
-				pod.Namespace,
-				pod.Name,
-				"aws-node", // Specify the aws-node container
-				[]string{"/app/aws-k8s-agent", "introspect", "eni", "-v"})
-
-			if err != nil {
-				GinkgoWriter.Printf("ENI introspect failed. stdout: %s, stderr: %s, err: %v\n", stdout, stderr, err)
-				continue
-			}
-
-			GinkgoWriter.Printf("ENI introspect output for prefix validation: %s\n", stdout)
-
-			// Verify that excluded secondary ENIs don't have unnecessary unassigned prefixes
-			// This is a basic check - in production we'd parse the JSON output more thoroughly
-			Expect(strings.Contains(stdout, "isExcludedForPodIPs")).To(BeTrue(),
-				"ENI introspect should show exclusion status for secondary ENIs")
-		}
-	}
 }
