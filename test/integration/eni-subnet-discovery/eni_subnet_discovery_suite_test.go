@@ -36,6 +36,10 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func TestCustomNetworking(t *testing.T) {
@@ -62,6 +66,8 @@ func init() {
 	flag.BoolVar(&useIPv6, "use-ipv6", false, "Use IPv6 for subnet discovery tests")
 }
 
+var primaryNodeName string
+
 var _ = BeforeSuite(func() {
 	f = framework.New(framework.GlobalOptions)
 
@@ -86,6 +92,15 @@ var _ = BeforeSuite(func() {
 	instanceID := k8sUtils.GetInstanceIDFromNode(*primaryNode)
 	primaryInstance, err = f.CloudServices.EC2().DescribeInstance(context.TODO(), instanceID)
 	Expect(err).ToNot(HaveOccurred())
+
+	// Pods that are not DaemonSet-owned (e.g. CoreDNS) can hold IPs on the primary node's
+	// secondary ENIs, which blocks the ENI drain below. Move them to other nodes, then
+	// uncordon right away: ipamd does not attach or detach ENIs on an unschedulable node.
+	primaryNodeName = primaryNode.Name
+	By(fmt.Sprintf("evicting non-DaemonSet pods from %s", primaryNodeName))
+	setNodeUnschedulable(primaryNodeName, true)
+	evictNonDaemonSetPods(primaryNodeName)
+	setNodeUnschedulable(primaryNodeName, false)
 
 	// Adjust default CIDR if IPv6 is enabled and no custom CIDR provided
 	if useIPv6 && cidrRangeString == "100.64.0.0/16" {
@@ -202,10 +217,7 @@ var _ = BeforeSuite(func() {
 	createdSubnet = *createSubnetOutput.Subnet.SubnetId
 
 	By("tagging the subnet for test ownership")
-	_, err = f.CloudServices.EC2().CreateTags(context.TODO(), []string{createdSubnet}, []ec2types.Tag{
-		{Key: aws.String(staleSubnetTag), Value: aws.String("true")},
-	})
-	Expect(err).ToNot(HaveOccurred())
+	tagSubnetForOwnership(createdSubnet)
 
 	By("associating the route table with the newly created subnet")
 	rtAssociationID, err = f.CloudServices.EC2().AssociateRouteTableToSubnet(context.TODO(), clusterVPCConfig.PublicRouteTableID, createdSubnet)
@@ -227,6 +239,12 @@ var _ = AfterSuite(func() {
 	// internally), the failed aggregate cannot skip the restore, and it still runs
 	// after the subnet delete so the CNI drains ENIs instead of warming a new one
 	// into the subnet being deleted.
+	DeferCleanup(func() {
+		if primaryNodeName != "" {
+			By(fmt.Sprintf("ensuring %s is uncordoned", primaryNodeName))
+			setNodeUnschedulable(primaryNodeName, false)
+		}
+	})
 	DeferCleanup(func() {
 		By("restoring WARM_ENI_TARGET to 1")
 		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
@@ -269,7 +287,77 @@ func createSpecSubnet(cidrBlock string) string {
 	Expect(err).ToNot(HaveOccurred())
 	subnetID := *out.Subnet.SubnetId
 	specSubnetIDs = append(specSubnetIDs, subnetID)
+	tagSubnetForOwnership(subnetID)
 	return subnetID
+}
+
+// tagSubnetForOwnership retries until the new subnet is visible to EC2 (CreateTags can
+// return InvalidSubnetID.NotFound right after CreateSubnet), so callers can tag it next.
+func tagSubnetForOwnership(subnetID string) {
+	Eventually(func() error {
+		_, err := f.CloudServices.EC2().CreateTags(context.TODO(), []string{subnetID}, []ec2types.Tag{
+			{Key: aws.String(staleSubnetTag), Value: aws.String("true")},
+		})
+		return err
+	}, 2*time.Minute, 5*time.Second).Should(Succeed(), "subnet %s should become taggable", subnetID)
+}
+
+func setNodeUnschedulable(nodeName string, unschedulable bool) {
+	Eventually(func() error {
+		node := &corev1.Node{}
+		if err := f.K8sClient.Get(context.TODO(), client.ObjectKey{Name: nodeName}, node); err != nil {
+			return err
+		}
+		patch := client.MergeFrom(node.DeepCopy())
+		node.Spec.Unschedulable = unschedulable
+		return f.K8sClient.Patch(context.TODO(), node, patch)
+	}, time.Minute, 5*time.Second).Should(Succeed())
+}
+
+// evictablePodsOnNode returns running pods on the node that would hold a secondary ENI IP
+// and are not recreated on the node by a DaemonSet.
+func evictablePodsOnNode(nodeName string) ([]corev1.Pod, error) {
+	podList := &corev1.PodList{}
+	if err := f.K8sClient.List(context.TODO(), podList); err != nil {
+		return nil, err
+	}
+	var pods []corev1.Pod
+	for _, pod := range podList.Items {
+		if pod.Spec.NodeName != nodeName || pod.Spec.HostNetwork ||
+			pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
+			continue
+		}
+		if _, mirror := pod.Annotations[corev1.MirrorPodAnnotationKey]; mirror {
+			continue
+		}
+		if owner := metav1.GetControllerOf(&pod); owner != nil && owner.Kind == "DaemonSet" {
+			continue
+		}
+		pods = append(pods, pod)
+	}
+	return pods, nil
+}
+
+func evictNonDaemonSetPods(nodeName string) {
+	Eventually(func() ([]string, error) {
+		pods, err := evictablePodsOnNode(nodeName)
+		if err != nil {
+			return nil, err
+		}
+		var remaining []string
+		for i := range pods {
+			pod := &pods[i]
+			remaining = append(remaining, pod.Namespace+"/"+pod.Name)
+			if pod.DeletionTimestamp != nil {
+				continue
+			}
+			eviction := &policyv1.Eviction{ObjectMeta: metav1.ObjectMeta{Name: pod.Name, Namespace: pod.Namespace}}
+			if err := f.K8sClient.SubResource("eviction").Create(context.TODO(), pod, eviction); err != nil && !apierrors.IsNotFound(err) {
+				GinkgoWriter.Printf("eviction of %s/%s not yet allowed: %v\n", pod.Namespace, pod.Name, err)
+			}
+		}
+		return remaining, nil
+	}, 5*time.Minute, 10*time.Second).Should(BeEmpty(), "non-DaemonSet pods should be evicted from %s", nodeName)
 }
 
 func deleteSpecSubnet(subnetID string) {
