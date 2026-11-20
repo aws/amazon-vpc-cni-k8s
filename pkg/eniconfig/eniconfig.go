@@ -47,6 +47,18 @@ const (
 	//   This will set eniConfigLabelDef to eniConfigOverride
 	envEniConfigAnnotationDef = "ENI_CONFIG_ANNOTATION_DEF"
 	envEniConfigLabelDef      = "ENI_CONFIG_LABEL_DEF"
+
+	// NodeAddressingModeKey is the annotation and label key a node uses to declare
+	// which address shape ipamd should use on it, overriding the cluster-wide
+	// ENABLE_PREFIX_DELEGATION value for that node only.
+	NodeAddressingModeKey = "k8s.amazonaws.com/addressing-mode"
+
+	AddressingModePrefix    = "prefix"
+	AddressingModeSecondary = "secondary"
+
+	// Sources reported by ResolveNodeAddressingMode.
+	SourceAnnotation = "annotation"
+	SourceLabel      = "label"
 )
 
 // ENIConfig interface
@@ -120,6 +132,46 @@ func getEniConfigLabelDef() string {
 		return inputStr
 	}
 	return defaultEniConfigLabelDef
+}
+
+// ResolveNodeAddressingMode reads the addressing mode declared on the node ipamd
+// is running on and returns the value enablePrefixDelegation should take there,
+// plus the source it came from. A nil value means the node declares nothing and
+// the caller keeps its cluster-wide ENABLE_PREFIX_DELEGATION value.
+//
+// Precedence is annotation then label, matching GetNodeSpecificENIConfigName.
+func ResolveNodeAddressingMode(ctx context.Context, k8sClient client.Client) (*bool, string) {
+	node, err := k8sapi.GetNode(ctx, k8sClient)
+	if err != nil {
+		log.Warnf("Unable to fetch node, per-node addressing mode not resolved: %s", err)
+		return nil, ""
+	}
+
+	if mode, ok := parseAddressingMode(node.GetAnnotations()[NodeAddressingModeKey]); ok {
+		return mode, SourceAnnotation
+	}
+	if mode, ok := parseAddressingMode(node.GetLabels()[NodeAddressingModeKey]); ok {
+		return mode, SourceLabel
+	}
+	return nil, ""
+}
+
+// parseAddressingMode maps a declared mode onto the prefix delegation boolean.
+// An empty value is "not declared"; any other unrecognised value is ignored.
+func parseAddressingMode(value string) (*bool, bool) {
+	switch value {
+	case "":
+		return nil, false
+	case AddressingModePrefix:
+		enabled := true
+		return &enabled, true
+	case AddressingModeSecondary:
+		enabled := false
+		return &enabled, true
+	default:
+		log.Warnf("Ignoring unrecognised %s value %q, expected %q or %q", NodeAddressingModeKey, value, AddressingModePrefix, AddressingModeSecondary)
+		return nil, false
+	}
 }
 
 func GetNodeSpecificENIConfigName(node corev1.Node) (string, error) {
