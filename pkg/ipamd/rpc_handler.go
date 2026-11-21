@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	multiErr "github.com/hashicorp/go-multierror"
 	"github.com/pkg/errors"
@@ -41,6 +42,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/rpc"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
 	k8serror "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 const (
@@ -50,6 +52,12 @@ const (
 	vpccniPodIPKey = "vpc.amazonaws.com/pod-ips"
 
 	defaultIpPerPodRequired = 1
+
+	ipAssignmentPollInterval = 250 * time.Millisecond
+	ipAssignmentPollJitter   = 0.2
+
+	waitResultServed  = "served"
+	waitResultTimeout = "timeout"
 )
 
 // server controls RPC service responses.
@@ -209,50 +217,87 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 			return &failureResponse, nil
 		}
 
-		for _, ds := range s.ipamContext.dataStoreAccess.DataStores {
-			networkCard := ds.GetNetworkCard()
-			if ipsAllocated == ipsRequired {
-				break
-			}
+		deadline := time.Now().Add(s.ipamContext.ipAssignmentWaitPeriod)
+		waiting := false
+		var waitStart time.Time
 
-			ipamKey = datastore.IPAMKey{
-				ContainerID: in.ContainerID,
-				IfName:      in.IfName,
-				NetworkName: in.NetworkName,
-			}
+		for {
+			ipsAllocated, ipAddrs, errors = 0, ipAddrs[:0], nil
 
-			ipamMetadata = datastore.IPAMMetadata{
-				K8SPodNamespace: in.K8S_POD_NAMESPACE,
-				K8SPodName:      in.K8S_POD_NAME,
-				InterfacesCount: ipsRequired,
-			}
-
-			ipv4Addr, ipv6Addr, deviceNumber, routeTableId, err = ds.AssignPodIPAddress(ipamKey, ipamMetadata, s.ipamContext.enableIPv4, s.ipamContext.enableIPv6)
-
-			if err != nil {
-				log.Warnf("Failed to assign IPs from network card %d: %v", networkCard, err)
-				// continue to look through other datastores till you are unable to find an IP address when ONLY 1 ip is required
-				// if the last datastore also return ErrNoAvailableIPInDataStore, return an error
-				if err == datastore.ErrNoAvailableIPInDataStore && ipsRequired == defaultIpPerPodRequired && networkCard != len(s.ipamContext.dataStoreAccess.DataStores)-1 {
-					continue
+			for _, ds := range s.ipamContext.dataStoreAccess.DataStores {
+				networkCard := ds.GetNetworkCard()
+				if ipsAllocated == ipsRequired {
+					break
 				}
-				errors = multiErr.Append(errors, err)
-				break
+
+				ipamKey = datastore.IPAMKey{
+					ContainerID: in.ContainerID,
+					IfName:      in.IfName,
+					NetworkName: in.NetworkName,
+				}
+
+				ipamMetadata = datastore.IPAMMetadata{
+					K8SPodNamespace: in.K8S_POD_NAMESPACE,
+					K8SPodName:      in.K8S_POD_NAME,
+					InterfacesCount: ipsRequired,
+				}
+
+				ipv4Addr, ipv6Addr, deviceNumber, routeTableId, err = ds.AssignPodIPAddress(ipamKey, ipamMetadata, s.ipamContext.enableIPv4, s.ipamContext.enableIPv6)
+
+				if err != nil {
+					if !waiting {
+						log.Warnf("Failed to assign IPs from network card %d: %v", networkCard, err)
+					}
+					// continue to look through other datastores till you are unable to find an IP address when ONLY 1 ip is required
+					// if the last datastore also return ErrNoAvailableIPInDataStore, return an error
+					if err == datastore.ErrNoAvailableIPInDataStore && ipsRequired == defaultIpPerPodRequired && networkCard != len(s.ipamContext.dataStoreAccess.DataStores)-1 {
+						continue
+					}
+					errors = multiErr.Append(errors, err)
+					break
+				}
+
+				log.Infof("Assigned IP from network card: %d -> IPv4: %s, IPv6: %s, device number: %d, ", networkCard, ipv4Addr, ipv6Addr, deviceNumber)
+				ipAddrs = append(ipAddrs, &rpc.IPAllocationMetadata{
+					IPv4Addr:     ipv4Addr,
+					IPv6Addr:     ipv6Addr,
+					DeviceNumber: int32(deviceNumber),
+					RouteTableId: int32(routeTableId),
+				})
+
+				ipsAllocated += 1
 			}
 
-			log.Infof("Assigned IP from network card: %d -> IPv4: %s, IPv6: %s, device number: %d, ", networkCard, ipv4Addr, ipv6Addr, deviceNumber)
-			ipAddrs = append(ipAddrs, &rpc.IPAllocationMetadata{
-				IPv4Addr:     ipv4Addr,
-				IPv6Addr:     ipv6Addr,
-				DeviceNumber: int32(deviceNumber),
-				RouteTableId: int32(routeTableId),
-			})
+			if errors == nil || !onlyNoAvailableIPInDataStore(errors) || !time.Now().Before(deadline) {
+				break
+			}
+			if !waiting {
+				waiting = true
+				waitStart = time.Now()
+				prometheusmetrics.AddIPWaiters.Inc()
+			}
+			sleep := wait.Jitter(ipAssignmentPollInterval, ipAssignmentPollJitter)
+			if remaining := time.Until(deadline); sleep > remaining {
+				sleep = remaining
+			}
+			time.Sleep(sleep)
+		}
 
-			ipsAllocated += 1
+		if waiting {
+			prometheusmetrics.AddIPWaiters.Dec()
+			result := waitResultServed
+			if errors != nil {
+				result = waitResultTimeout
+			}
+			prometheusmetrics.AddIPWaitDuration.WithLabelValues(result).Observe(time.Since(waitStart).Seconds())
 		}
 	}
 
 	if errors != nil {
+		if onlyNoAvailableIPInDataStore(errors) {
+			prometheusmetrics.NoAvailableIPAddrs.Inc()
+			log.Errorf("DataStore has no available IP/Prefix addresses")
+		}
 		log.Errorf("Returning failure response for AddNetwork: %v", errors)
 	} else {
 		log.Infof("Address assigned from datastores:  %d", len(ipAddrs))
@@ -311,6 +356,19 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 	resp.Success = errors == nil
 	log.Infof("Send AddNetworkReply: Success: %t IPAddr: %v, resp: %s, err: %v", resp.Success, resp.IPAllocationMetadata, &resp, err)
 	return &resp, nil
+}
+
+func onlyNoAvailableIPInDataStore(errs error) bool {
+	merr, ok := errs.(*multiErr.Error)
+	if !ok || len(merr.Errors) == 0 {
+		return false
+	}
+	for _, err := range merr.Errors {
+		if err != datastore.ErrNoAvailableIPInDataStore {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *server) validateVersion(clientVersion string) error {

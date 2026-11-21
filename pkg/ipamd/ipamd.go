@@ -208,6 +208,10 @@ const (
 	// This configures the ENIs on Network Card > 0 which is be used by pods that require multi-nic attachments
 	envEnableMultiNICSupport = "ENABLE_MULTI_NIC"
 
+	envIPAssignmentWaitPeriod = "IP_ASSIGNMENT_WAIT_PERIOD"
+
+	defaultIPAssignmentWaitPeriod = 10
+
 	// Scale config for network cards > 0
 	DefaultWarmIPTarget    = 1
 	DefaultMinimumIPTarget = 1
@@ -256,6 +260,7 @@ type IPAMContext struct {
 	networkPolicyMode         string
 	enableMultiNICSupport     bool
 	withApiServer             bool
+	ipAssignmentWaitPeriod    time.Duration
 }
 
 type kubeletConfig struct {
@@ -446,6 +451,7 @@ func New(ctx context.Context, k8sClient client.Client, withApiServer bool) (*IPA
 	c.enableManageUntaggedMode = enableManageUntaggedMode()
 	c.enablePodIPAnnotation = EnablePodIPAnnotation()
 	c.enableMultiNICSupport = enableMultiNICSupport()
+	c.ipAssignmentWaitPeriod = getIPAssignmentWaitPeriod()
 	c.networkPolicyMode, err = getNetworkPolicyMode()
 	if err != nil {
 		return nil, err
@@ -2136,6 +2142,16 @@ func EnablePodENI() bool {
 
 func enableMultiNICSupport() bool {
 	return utils.GetBoolAsStringEnvVar(envEnableMultiNICSupport, false)
+}
+
+func getIPAssignmentWaitPeriod() time.Duration {
+	waitPeriod, err, input := utils.GetIntFromStringEnvVar(envIPAssignmentWaitPeriod, defaultIPAssignmentWaitPeriod)
+	if err != nil || waitPeriod < 0 {
+		log.Errorf("%s must be a non-negative integer number of seconds, %q is invalid, falling back to %d",
+			envIPAssignmentWaitPeriod, input, defaultIPAssignmentWaitPeriod)
+		waitPeriod = defaultIPAssignmentWaitPeriod
+	}
+	return time.Duration(waitPeriod) * time.Second
 }
 
 func getNetworkPolicyMode() (string, error) {
