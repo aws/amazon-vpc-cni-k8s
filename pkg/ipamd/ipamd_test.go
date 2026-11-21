@@ -4609,3 +4609,48 @@ func TestInitHyperPodDisablesMultiNIC(t *testing.T) {
 	assert.False(t, c.enableMultiNICSupport)
 	assert.Equal(t, []bool{false, true, true}, c.markUnmanagedNetworkCards(efaOnly, enisByCard))
 }
+
+func TestIncreaseDatastorePoolBacksOffAfterFailedENIAllocation(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+	ctx := context.Background()
+
+	c := &IPAMContext{
+		awsClient:              m.awsutils,
+		k8sClient:              m.k8sClient,
+		networkClient:          m.network,
+		maxIPsPerENI:           14,
+		maxPrefixesPerENI:      16,
+		maxENI:                 4,
+		warmENITarget:          1,
+		warmPrefixTarget:       1,
+		enablePrefixDelegation: true,
+		primaryIP:              make(map[string]string),
+		unmanagedENI:           []int{0},
+		dataStoreAccess:        testDatastorewithPrefix(),
+	}
+
+	// EC2 reports subnet exhaustion for CreateNetworkInterface with a code the InsufficientCidr matcher does not know.
+	noPrefixes := &smithy.GenericAPIError{Code: "InvalidParameterValue", Message: "There aren't sufficient free Ipv4 addresses or prefixes"}
+	m.awsutils.EXPECT().IsTrunkingCompatible().AnyTimes().Return(false)
+	m.awsutils.EXPECT().AllocENI(gomock.Any(), nil, "", 1, defaultNetworkCard).Times(1).Return("", noPrefixes)
+
+	assert.NoError(t, c.increaseDatastorePool(ctx, defaultNetworkCard))
+	// The next pool-check tick must not call EC2 again.
+	assert.NoError(t, c.increaseDatastorePool(ctx, defaultNetworkCard))
+}
+
+func TestRecordPoolIncreaseResult(t *testing.T) {
+	c := &IPAMContext{}
+	failure := errors.New("ec2 error")
+	var got []time.Duration
+	for range 7 {
+		c.recordPoolIncreaseResult(failure)
+		got = append(got, c.poolIncreaseBackoff)
+	}
+	assert.Equal(t, []time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 40 * time.Second, 80 * time.Second, 120 * time.Second, 120 * time.Second}, got)
+	assert.True(t, c.inPoolIncreaseBackoff())
+
+	c.recordPoolIncreaseResult(nil)
+	assert.False(t, c.inPoolIncreaseBackoff())
+}
