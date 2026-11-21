@@ -51,7 +51,7 @@ func TestServer_VersionCheck(t *testing.T) {
 		warmENITarget:   1,
 		warmIPTarget:    3,
 		networkClient:   m.network,
-		dataStoreAccess: datastore.InitializeDataStores([]bool{false}, "test", false, log),
+		dataStoreAccess: datastore.InitializeDataStores([]bool{false}, "test", false, false, log),
 	}
 
 	m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return([]string{}, nil).AnyTimes()
@@ -489,7 +489,7 @@ func TestServer_AddNetwork(t *testing.T) {
 			}
 			var dsList []*datastore.DataStore
 			for i := 0; i < tt.fields.managedNetworkCards; i++ {
-				dsList = append(dsList, datastore.NewDataStore(log, datastore.NullCheckpoint{}, tt.fields.prefixDelegationEnabled, i))
+				dsList = append(dsList, datastore.NewDataStore(log, datastore.NullCheckpoint{}, tt.fields.prefixDelegationEnabled, false, i))
 			}
 
 			dsAccess := &datastore.DataStoreAccess{DataStores: dsList}
@@ -651,7 +651,7 @@ func TestRunRPCHandler_UnixSocket(t *testing.T) {
 	mockContext := &IPAMContext{
 		awsClient:       m.awsutils,
 		networkClient:   m.network,
-		dataStoreAccess: datastore.InitializeDataStores([]bool{false}, "test", false, log),
+		dataStoreAccess: datastore.InitializeDataStores([]bool{false}, "test", false, false, log),
 	}
 
 	errCh := make(chan error, 1)
@@ -700,7 +700,7 @@ func TestRunRPCHandler_RemovesStaleSocket(t *testing.T) {
 	mockContext := &IPAMContext{
 		awsClient:       m.awsutils,
 		networkClient:   m.network,
-		dataStoreAccess: datastore.InitializeDataStores([]bool{false}, "test", false, log),
+		dataStoreAccess: datastore.InitializeDataStores([]bool{false}, "test", false, false, log),
 	}
 
 	errCh := make(chan error, 1)
@@ -743,7 +743,7 @@ func TestRunRPCHandler_CreatesSocketDirectory(t *testing.T) {
 	mockContext := &IPAMContext{
 		awsClient:       m.awsutils,
 		networkClient:   m.network,
-		dataStoreAccess: datastore.InitializeDataStores([]bool{false}, "test", false, log),
+		dataStoreAccess: datastore.InitializeDataStores([]bool{false}, "test", false, false, log),
 	}
 
 	errCh := make(chan error, 1)
@@ -781,7 +781,7 @@ func TestServer_DelNetwork_PodENI_InvalidAnnotation(t *testing.T) {
 		enablePodENI:    true,
 		enableIPv4:      true,
 		networkClient:   m.network,
-		dataStoreAccess: datastore.InitializeDataStores([]bool{false}, "test", false, log),
+		dataStoreAccess: datastore.InitializeDataStores([]bool{false}, "test", false, false, log),
 	}
 
 	tests := []struct {
@@ -898,7 +898,7 @@ func TestServer_DelNetwork_PodNotFound(t *testing.T) {
 	k8sClient := testclient.NewClientBuilder().WithScheme(k8sSchema).Build()
 
 	// Create an empty datastore to simulate pod not in datastore (will return ErrUnknownPod)
-	dsAccess := datastore.InitializeDataStores([]bool{false}, "test", false, log)
+	dsAccess := datastore.InitializeDataStores([]bool{false}, "test", false, false, log)
 
 	mockContext := &IPAMContext{
 		awsClient:       m.awsutils,
