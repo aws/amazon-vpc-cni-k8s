@@ -15,6 +15,7 @@ package ipamd
 
 import (
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"net"
 	"os"
@@ -22,6 +23,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	multiErr "github.com/hashicorp/go-multierror"
 	"github.com/pkg/errors"
@@ -39,6 +41,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/rpc"
+	"github.com/aws/amazon-vpc-cni-k8s/utils/eksinsight"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
 	k8serror "k8s.io/apimachinery/pkg/api/errors"
 )
@@ -94,6 +97,8 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 	var ipamMetadata datastore.IPAMMetadata
 	var errors error
 	var resp rpc.AddNetworkReply
+	// starvedCards are the network cards that ran out of addresses for this pod.
+	var starvedCards []int
 
 	// This will be a list of IPs. For now it's just one
 	ipAddrs := []*rpc.IPAllocationMetadata{}
@@ -231,9 +236,12 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 
 			if err != nil {
 				log.Warnf("Failed to assign IPs from network card %d: %v", networkCard, err)
+				if stderrors.Is(err, datastore.ErrNoAvailableIPInDataStore) {
+					starvedCards = append(starvedCards, networkCard)
+				}
 				// continue to look through other datastores till you are unable to find an IP address when ONLY 1 ip is required
 				// if the last datastore also return ErrNoAvailableIPInDataStore, return an error
-				if err == datastore.ErrNoAvailableIPInDataStore && ipsRequired == defaultIpPerPodRequired && networkCard != len(s.ipamContext.dataStoreAccess.DataStores)-1 {
+				if stderrors.Is(err, datastore.ErrNoAvailableIPInDataStore) && ipsRequired == defaultIpPerPodRequired && networkCard != len(s.ipamContext.dataStoreAccess.DataStores)-1 {
 					continue
 				}
 				errors = multiErr.Append(errors, err)
@@ -254,6 +262,9 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 
 	if errors != nil {
 		log.Errorf("Returning failure response for AddNetwork: %v", errors)
+		// starvedCards is empty unless a card ran out of addresses, so this does nothing
+		// for a failure with any other cause.
+		s.recordPodIPAllocationFailure(starvedCards)
 	} else {
 		log.Infof("Address assigned from datastores:  %d", len(ipAddrs))
 		var pbVPCV4cidrs, pbVPCV6cidrs []string
@@ -551,4 +562,70 @@ func (c *IPAMContext) shutdownListener() {
 	log.Info("Received shutdown signal, setting 'terminating' to true")
 	// We received an interrupt signal, shut down.
 	c.setTerminating()
+}
+
+// recordPodIPAllocationFailure records the subnets to report as eks_insight after a failed
+// AddNetwork. starvedCards are the network cards that ran out of addresses for this pod. A
+// subnet is named only if EC2 recently refused it for lack of addresses, so a failure with
+// any other cause names nothing.
+func (s *server) recordPodIPAllocationFailure(starvedCards []int) {
+	refused := s.ipamContext.eksInsightRefusals().Recent()
+	if len(refused) == 0 {
+		return
+	}
+	refusedSet := make(map[string]struct{}, len(refused))
+	for _, subnet := range refused {
+		refusedSet[subnet] = struct{}{}
+	}
+
+	var named []string
+	cooldown := time.Duration(0)
+	for _, networkCard := range starvedCards {
+		ds := s.ipamContext.dataStoreAccess.GetDataStore(networkCard)
+		if ds == nil {
+			continue
+		}
+		named = append(named, s.namedForCard(ds, refused, refusedSet)...)
+		if c := ds.GetIPCooldownPeriod(); c > cooldown {
+			cooldown = c
+		}
+	}
+	if len(named) == 0 {
+		return
+	}
+	s.ipamContext.eksInsightRegistry().Record(named, eksinsight.HoldDownFor(cooldown))
+}
+
+// namedForCard returns the refused subnets this card draws pod addresses from. Two cases
+// have nothing to narrow by and name every refused subnet: a card whose ENIs can take no
+// more addresses, where the only way to grow was a new ENI in a subnet that refused one, and
+// custom networking, where pod addresses come from the ENIConfig subnet rather than the
+// node's own.
+func (s *server) namedForCard(ds *datastore.DataStore, refused []string, refusedSet map[string]struct{}) []string {
+	var named []string
+	for _, candidate := range ds.GetPodIPSubnets() {
+		if _, ok := refusedSet[candidate]; ok {
+			named = append(named, candidate)
+		}
+	}
+	if len(named) == 0 {
+		if s.ipamContext.useCustomNetworking {
+			return refused
+		}
+		if !s.hasENIWithRoom(ds) {
+			return refused
+		}
+	}
+	return named
+}
+
+// hasENIWithRoom reports whether any ENI on this card can still take more addresses or
+// prefixes, counting them the way the pool manager does before it decides to create an ENI.
+// Reached only with custom networking off, where the primary ENI serves pod IPs and so counts.
+func (s *server) hasENIWithRoom(ds *datastore.DataStore) bool {
+	maxPerENI := s.ipamContext.maxIPsPerENI
+	if s.ipamContext.enablePrefixDelegation {
+		maxPerENI = s.ipamContext.maxPrefixesPerENI
+	}
+	return len(ds.GetAllocatableENIs(maxPerENI, false)) > 0
 }

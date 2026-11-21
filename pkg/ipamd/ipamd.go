@@ -50,6 +50,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/utils"
+	"github.com/aws/amazon-vpc-cni-k8s/utils/eksinsight"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
 	rcv1alpha1 "github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1alpha1"
 )
@@ -256,6 +257,27 @@ type IPAMContext struct {
 	networkPolicyMode         string
 	enableMultiNICSupport     bool
 	withApiServer             bool
+	// eksInsights and eksRefusals default to the process-wide ones when nil. Only tests set
+	// them, to get their own state on a clock they control. A test that sets eksRefusals sees
+	// only the refusals ipamd records, since awsutils writes the process-wide one directly.
+	eksInsights *eksinsight.Registry
+	eksRefusals *eksinsight.Refusals
+}
+
+// eksInsightRegistry returns the registry to record pod IP allocation failures in.
+func (c *IPAMContext) eksInsightRegistry() *eksinsight.Registry {
+	if c.eksInsights != nil {
+		return c.eksInsights
+	}
+	return eksinsight.Subnets
+}
+
+// eksInsightRefusals returns the record of subnets EC2 refused.
+func (c *IPAMContext) eksInsightRefusals() *eksinsight.Refusals {
+	if c.eksRefusals != nil {
+		return c.eksRefusals
+	}
+	return eksinsight.Refused
 }
 
 type kubeletConfig struct {
@@ -1165,11 +1187,15 @@ func (c *IPAMContext) tryAssignIPs(ctx context.Context, networkCard int) (increa
 				output, err = c.awsClient.AllocIPAddresses(ctx, eni.ID, 1)
 				if err != nil && !containsPrivateIPAddressLimitExceededError(err) {
 					ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
+					c.eksInsightRefusals().RefusedIf(err, eni.SubnetID)
 					if c.useSubnetDiscovery && containsInsufficientCIDRsOrSubnetIPs(err) {
 						continue
 					}
 					return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IP addresses on ENI %s, err ", eni.ID))
 				}
+			}
+			if err == nil {
+				c.eksInsightRefusals().Supplied(eni.SubnetID)
 			}
 
 			var ec2ip4s []ec2types.NetworkInterfacePrivateIpAddress
@@ -1279,11 +1305,15 @@ func (c *IPAMContext) tryAssignPrefixes(ctx context.Context, networkCard int) (i
 			output, err = c.awsClient.AllocIPAddresses(ctx, eni.ID, 1)
 			if err != nil && !containsPrivateIPAddressLimitExceededError(err) {
 				ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
+				c.eksInsightRefusals().RefusedIf(err, eni.SubnetID)
 				if c.useSubnetDiscovery && containsInsufficientCIDRsOrSubnetIPs(err) {
 					continue
 				}
 				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IPv4 prefix on ENI %s, err: %v", eni.ID, err))
 			}
+		}
+		if err == nil {
+			c.eksInsightRefusals().Supplied(eni.SubnetID)
 		}
 
 		var ec2Prefixes []ec2types.Ipv4PrefixSpecification

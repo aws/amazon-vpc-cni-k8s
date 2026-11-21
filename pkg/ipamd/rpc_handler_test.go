@@ -119,6 +119,7 @@ func TestServer_AddNetwork(t *testing.T) {
 		IPs          []string
 		DeviceNumber int
 		IsPrimary    bool
+		Subnet       string
 	}
 
 	type fields struct {
@@ -134,12 +135,17 @@ func TestServer_AddNetwork(t *testing.T) {
 		prefixDelegationEnabled       bool
 		enableMultiNICSupport         bool
 		podsRequireMultiNICAttachment bool
+		// refusedSubnets are the subnets EC2 recently refused for lack of addresses.
+		refusedSubnets []string
 	}
 	tests := []struct {
-		name    string
-		fields  fields
-		want    *pb.AddNetworkReply
-		wantErr error
+		name   string
+		fields fields
+		want   *pb.AddNetworkReply
+		// wantInsightSubnets are the subnets eks_insight must name once the failure has
+		// persisted. Empty means no series at all.
+		wantInsightSubnets []string
+		wantErr            error
 	}{
 		{
 			name: "successfully allocated IPv4Address & use externalSNAT",
@@ -274,6 +280,25 @@ func TestServer_AddNetwork(t *testing.T) {
 				Success:              false,
 				IPAllocationMetadata: []*rpc.IPAllocationMetadata{},
 			},
+		},
+		// Covers the wiring: a failed ADD must reach the eks_insight hook. The naming
+		// rules themselves are covered in eksinsight_handler_test.go.
+		{
+			name: "failed allocating IPv4Address names the refused subnet",
+			fields: fields{
+				managedNetworkCards: 1,
+				ipV4AddressByENIID: map[int]map[string]ENIConfig{
+					0: {"eni-1": {IPs: nil, DeviceNumber: 0, IsPrimary: true, Subnet: "subnet-0aaa000000000001"}},
+				},
+				ipV4Enabled:    true,
+				ipV6Enabled:    false,
+				refusedSubnets: []string{"subnet-0aaa000000000001"},
+			},
+			want: &pb.AddNetworkReply{
+				Success:              false,
+				IPAllocationMetadata: []*rpc.IPAllocationMetadata{},
+			},
+			wantInsightSubnets: []string{"subnet-0aaa000000000001"},
 		},
 		{
 			name: "failed allocating IPv4Address from any datastore - no IPs available",
@@ -445,18 +470,21 @@ func TestServer_AddNetwork(t *testing.T) {
 				IPAllocationMetadata: []*rpc.IPAllocationMetadata{},
 			},
 		},
+		// The datastore refuses this for a reason other than a shortage, so the subnet is
+		// not named even though EC2 refused it.
 		{
 			name: "failed allocating IPv6Address - PD disabled",
 			fields: fields{
 				managedNetworkCards: 1,
 				ipV6PrefixByENIID: map[int]map[string]ENIConfig{
 					0: {
-						"eni-1": {IPs: []string{"2001:db8::/64"}, DeviceNumber: 0, IsPrimary: true},
+						"eni-1": {IPs: []string{"2001:db8::/64"}, DeviceNumber: 0, IsPrimary: true, Subnet: "subnet-0aaa000000000001"},
 					},
 				},
 				ipV4Enabled:             false,
 				ipV6Enabled:             true,
 				prefixDelegationEnabled: false,
+				refusedSubnets:          []string{"subnet-0aaa000000000001"},
 			},
 			want: &pb.AddNetworkReply{
 				Success:              false,
@@ -496,7 +524,7 @@ func TestServer_AddNetwork(t *testing.T) {
 
 			for networkCard, eniMap := range tt.fields.ipV4AddressByENIID {
 				for eniID, eniConfig := range eniMap {
-					dsAccess.GetDataStore(networkCard).AddENI(eniID, eniConfig.DeviceNumber, eniConfig.IsPrimary, false, false, networkutils.CalculateRouteTableId(eniConfig.DeviceNumber, networkCard), "")
+					dsAccess.GetDataStore(networkCard).AddENI(eniID, eniConfig.DeviceNumber, eniConfig.IsPrimary, false, false, networkutils.CalculateRouteTableId(eniConfig.DeviceNumber, networkCard), eniConfig.Subnet)
 					for _, ipv4Address := range eniConfig.IPs {
 						ipv4Addr := net.IPNet{IP: net.ParseIP(ipv4Address), Mask: net.IPv4Mask(255, 255, 255, 255)}
 						dsAccess.GetDataStore(networkCard).AddIPv4CidrToStore(eniID, ipv4Addr, false)
@@ -506,7 +534,7 @@ func TestServer_AddNetwork(t *testing.T) {
 
 			for networkCard, eniMap := range tt.fields.ipV6PrefixByENIID {
 				for eniID, eniConfig := range eniMap {
-					dsAccess.GetDataStore(networkCard).AddENI(eniID, eniConfig.DeviceNumber, eniConfig.IsPrimary, false, false, networkutils.CalculateRouteTableId(eniConfig.DeviceNumber, networkCard), "")
+					dsAccess.GetDataStore(networkCard).AddENI(eniID, eniConfig.DeviceNumber, eniConfig.IsPrimary, false, false, networkutils.CalculateRouteTableId(eniConfig.DeviceNumber, networkCard), eniConfig.Subnet)
 					for _, ipv6Prefix := range eniConfig.IPs {
 						_, ipnet, _ := net.ParseCIDR(ipv6Prefix)
 						dsAccess.GetDataStore(networkCard).AddIPv6CidrToStore(eniID, *ipnet, true)
@@ -527,6 +555,10 @@ func TestServer_AddNetwork(t *testing.T) {
 				dataStoreAccess:        dsAccess,
 				enableMultiNICSupport:  tt.fields.enableMultiNICSupport,
 			}
+			// Its own registry on a hand-wound clock, so the test can serve the 60 second
+			// hold-down without sleeping and without sharing process-wide state.
+			clk := withInsights(mockContext)
+			refuse(mockContext, tt.fields.refusedSubnets...)
 
 			s := &server{
 				version:     "1.2.3",
@@ -542,7 +574,10 @@ func TestServer_AddNetwork(t *testing.T) {
 				RequiresMultiNICAttachment: tt.fields.podsRequireMultiNICAttachment,
 			}
 
+			before := testutil.ToFloat64(prometheusmetrics.AddIPCnt)
 			resp, err := s.AddNetwork(context.Background(), req)
+			assert.Equal(t, before+1, testutil.ToFloat64(prometheusmetrics.AddIPCnt),
+				"AddNetwork must increment AddIPCnt exactly once")
 			if tt.wantErr != nil {
 				assert.EqualError(t, err, tt.wantErr.Error())
 			} else {
@@ -560,9 +595,21 @@ func TestServer_AddNetwork(t *testing.T) {
 				assert.Equal(t, tt.want.Success, resp.Success)
 			}
 
-			// Add more detailed assertion messages
-			assert.Equal(t, float64(1), testutil.ToFloat64(prometheusmetrics.AddIPCnt),
-				"AddIPCnt should be incremented exactly once for test case: %s", tt.name)
+			// A single failed ADD never publishes, which is the hold-down keeping ordinary
+			// pod churn out of the metric. Retry every failure as kubelet does until the
+			// hold-down is served, then assert on the series a scrape would see.
+			if tt.want != nil && !tt.want.Success {
+				for i := 0; i < 4; i++ {
+					clk.advance(20 * time.Second)
+					before := testutil.ToFloat64(prometheusmetrics.AddIPCnt)
+					_, err := s.AddNetwork(context.Background(), req)
+					require.NoError(t, err)
+					assert.Equal(t, before+1, testutil.ToFloat64(prometheusmetrics.AddIPCnt),
+						"AddNetwork must increment AddIPCnt exactly once")
+				}
+			}
+			assert.Equal(t, tt.wantInsightSubnets, published(t, mockContext),
+				"eks_insight must name exactly the refused subnets this node draws from")
 		})
 	}
 }
