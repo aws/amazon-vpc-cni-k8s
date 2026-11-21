@@ -111,9 +111,10 @@ type createVethPairContext struct {
 	index        int
 	log          logger.Logger
 	hostMACAddr  net.HardwareAddr
+	podIdentity  string
 }
 
-func newCreateVethPairContext(contVethName string, hostVethName string, ipAddr *net.IPNet, mtu int, index int, hostMACAddr net.HardwareAddr, log logger.Logger) *createVethPairContext {
+func newCreateVethPairContext(contVethName string, hostVethName string, ipAddr *net.IPNet, mtu int, index int, hostMACAddr net.HardwareAddr, podIdentity string, log logger.Logger) *createVethPairContext {
 	return &createVethPairContext{
 		contVethName: contVethName,
 		hostVethName: hostVethName,
@@ -124,6 +125,7 @@ func newCreateVethPairContext(contVethName string, hostVethName string, ipAddr *
 		procSys:      procsyswrapper.NewProcSys(),
 		index:        index,
 		hostMACAddr:  hostMACAddr,
+		podIdentity:  podIdentity,
 		log:          log,
 	}
 }
@@ -160,6 +162,13 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 		hv, err := createVethContext.netLink.LinkByName(createVethContext.hostVethName)
 		if err != nil {
 			return errors.Wrapf(err, "setup NS network: failed to find host link %q", createVethContext.hostVethName)
+		}
+		// Stamp as soon as the link exists, so a concurrent ADD that computes the same
+		// name can attribute it rather than treating it as unowned.
+		if createVethContext.podIdentity != "" {
+			if err := createVethContext.netLink.LinkSetAlias(hv, hostVethAlias(createVethContext.podIdentity)); err != nil {
+				return errors.Wrapf(err, "setup NS network: failed to stamp ownership alias on host link %q", createVethContext.hostVethName)
+			}
 		}
 		if err := setHostVethV6Sysctls(createVethContext.procSys, createVethContext.hostVethName, createVethContext.log); err != nil {
 			return err
@@ -480,7 +489,7 @@ func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netns
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to parse unique generated mac addr %s", macAddrStr)
 	}
-	createVethContext := newCreateVethPairContext(contVethName, hostVethName, ipAddr, mtu, index, macAddr, log)
+	createVethContext := newCreateVethPairContext(contVethName, hostVethName, ipAddr, mtu, index, macAddr, podIdentity, log)
 	if err := n.ns.WithNetNSPath(netnsPath, createVethContext.run); err != nil {
 		return nil, errors.Wrap(err, "failed to setup veth network")
 	}
@@ -493,12 +502,6 @@ func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netns
 		return nil, errors.Wrapf(err, "failed to find hostVeth %s", hostVethName)
 	}
 
-	// Record the owner so a later ADD can check it.
-	if podIdentity != "" {
-		if err := n.netLink.LinkSetAlias(hostVeth, hostVethAlias(podIdentity)); err != nil {
-			return nil, errors.Wrapf(err, "failed to stamp ownership alias on hostVeth %s", hostVethName)
-		}
-	}
 	return hostVeth, nil
 }
 
@@ -514,9 +517,9 @@ func hostVethAlias(podIdentity string) string {
 	return hostVethAliasPrefix + hex.EncodeToString(sum[:])
 }
 
-// claimHostVethName makes hostVethName available for this sandbox, deleting an
-// existing link only when that link can be shown to belong to this sandbox.
-// Otherwise it fails, so the ADD fails rather than the delete proceeding.
+// claimHostVethName makes hostVethName available for this sandbox. A link stamped
+// for another pod is never deleted, so the ADD fails instead. An unstamped link
+// cannot be attributed, so it is reclaimed.
 func (n *linuxNetwork) claimHostVethName(hostVethName string, podIdentity string, netnsPath string, log logger.Logger) error {
 	existing, err := n.netLink.LinkByName(hostVethName)
 	if err != nil {
@@ -526,6 +529,9 @@ func (n *linuxNetwork) claimHostVethName(hostVethName string, podIdentity string
 
 	alias := existing.Attrs().Alias
 	switch {
+	case existing.Type() != "veth":
+		// Never a pod's host veth, whatever its alias says, so not a leftover to reclaim.
+		return errors.Errorf("hostVeth %s already exists and is not a veth, refusing to delete it", hostVethName)
 	case podIdentity != "" && alias == hostVethAlias(podIdentity):
 		// Stamped for this pod. An earlier sandbox of the same pod may still hold the link,
 		// because CNI DEL does not delete it and the kernel only reaps it with the old netns.
@@ -535,16 +541,20 @@ func (n *linuxNetwork) claimHostVethName(hostVethName string, podIdentity string
 		return errors.Errorf("hostVeth %s is owned by another pod, refusing to delete it for pod %q",
 			hostVethName, podIdentity)
 	default:
-		// No stamp, so it predates the alias or is not ours. Fall back to the peer.
+		// Unstamped, so nothing attributes it. Reclaim as the version that created it
+		// did, rather than stranding this pod on a leftover from a deleted one.
 		owned, err := n.hostVethPeerInNetns(existing, netnsPath, log)
-		if err != nil {
-			return errors.Wrapf(err, "unable to establish ownership of existing hostVeth %s, refusing to delete it", hostVethName)
+		switch {
+		case err != nil:
+			log.Warnf("Reclaiming unstamped hostVeth %s for pod %q: could not establish ownership (%v). "+
+				"Matches the behavior of versions before ownership stamping.", hostVethName, podIdentity, err)
+		case owned:
+			log.Debugf("Reclaiming unstamped hostVeth %s whose peer is in netns %s", hostVethName, netnsPath)
+		default:
+			log.Warnf("Reclaiming unstamped hostVeth %s for pod %q: its peer is not in netns %s, so it is a "+
+				"leftover from an earlier pod. Matches the behavior of versions before ownership stamping.",
+				hostVethName, podIdentity, netnsPath)
 		}
-		if !owned {
-			return errors.Errorf("hostVeth %s already exists and its peer is not in netns %s, refusing to delete it",
-				hostVethName, netnsPath)
-		}
-		log.Debugf("Reclaiming unstamped hostVeth %s whose peer is in netns %s", hostVethName, netnsPath)
 	}
 
 	if err := n.netLink.LinkDel(existing); err != nil {

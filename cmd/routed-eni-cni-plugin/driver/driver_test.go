@@ -3396,6 +3396,89 @@ func Test_createVethPairContext_runWithPeerNamespace(t *testing.T) {
 	assert.NoError(t, createVethContext.run(hostNS))
 }
 
+// The ownership stamp is written as soon as the host end exists, before the
+// host-side sysctls and bring-up, so a concurrent ADD computing the same name
+// can attribute the link instead of treating it as unowned.
+func Test_createVethPairContext_runStampsBeforeHostBringUp(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	hostVeth := &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Name: "eni8ea2c11fe35", Index: 9}}
+
+	netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
+	netLink.EXPECT().LinkAdd(gomock.Any()).Return(nil)
+	byName := netLink.EXPECT().LinkByName("eni8ea2c11fe35").Return(hostVeth, nil)
+	alias := netLink.EXPECT().LinkSetAlias(hostVeth, hostVethAlias(testPodIdentity)).Return(nil)
+	hostLinkUp := netLink.EXPECT().LinkSetUp(hostVeth).Return(nil)
+
+	procSys := mock_procsyswrapper.NewMockProcSys(ctrl)
+	ra := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_ra", "0").Return(nil)
+	redirects := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_redirects", "0").Return(nil)
+	forwarding := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/forwarding", "0").Return(nil)
+	// The stamp lands after the link is found and before anything brings it up.
+	gomock.InOrder(byName, alias, ra, redirects, forwarding, hostLinkUp)
+
+	hostNS := mock_ns.NewMockNetNS(ctrl)
+	hostNS.EXPECT().Fd().Return(uintptr(3))
+	hostNS.EXPECT().Do(gomock.Any()).DoAndReturn(func(toRun func(ns.NetNS) error) error {
+		return toRun(nil)
+	})
+
+	createVethContext := &createVethPairContext{
+		contVethName: "eth0",
+		hostVethName: "eni8ea2c11fe35",
+		ipAddr:       &net.IPNet{IP: net.ParseIP("192.168.120.1"), Mask: net.CIDRMask(32, 32)},
+		mtu:          9001,
+		netLink:      netLink,
+		procSys:      procSys,
+		hostMACAddr:  net.HardwareAddr("00:00:5e:00:53:af"),
+		podIdentity:  testPodIdentity,
+		log:          testLogger,
+	}
+	// The container-side work is not reached: the stamp fails the run below, and
+	// here it stops at the first container call, which this test does not assert.
+	netLink.EXPECT().LinkByName("eth0").Return(nil, errors.New("stop here")).AnyTimes()
+
+	err := createVethContext.run(hostNS)
+	assert.Error(t, err, "stops at the container end, after the host end is stamped and up")
+}
+
+// A failed stamp aborts setup rather than leaving an unattributable link up.
+func Test_createVethPairContext_runStampFailureAborts(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	hostVeth := &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Name: "eni8ea2c11fe35", Index: 9}}
+
+	netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
+	netLink.EXPECT().LinkAdd(gomock.Any()).Return(nil)
+	netLink.EXPECT().LinkByName("eni8ea2c11fe35").Return(hostVeth, nil)
+	netLink.EXPECT().LinkSetAlias(hostVeth, hostVethAlias(testPodIdentity)).Return(errors.New("ifalias write failed"))
+	// No LinkSetUp and no sysctls: gomock fails the test if the run continues.
+
+	hostNS := mock_ns.NewMockNetNS(ctrl)
+	hostNS.EXPECT().Fd().Return(uintptr(3))
+	hostNS.EXPECT().Do(gomock.Any()).DoAndReturn(func(toRun func(ns.NetNS) error) error {
+		return toRun(nil)
+	})
+
+	createVethContext := &createVethPairContext{
+		contVethName: "eth0",
+		hostVethName: "eni8ea2c11fe35",
+		ipAddr:       &net.IPNet{IP: net.ParseIP("192.168.120.1"), Mask: net.CIDRMask(32, 32)},
+		mtu:          9001,
+		netLink:      netLink,
+		procSys:      mock_procsyswrapper.NewMockProcSys(ctrl),
+		hostMACAddr:  net.HardwareAddr("00:00:5e:00:53:af"),
+		podIdentity:  testPodIdentity,
+		log:          testLogger,
+	}
+
+	err := createVethContext.run(hostNS)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to stamp ownership alias")
+}
+
 // Regression test: with PeerNamespace enabled the host end must be brought up
 // before the IPv6 DAD wait. The container end only has carrier when both veth
 // ends are up, and DAD cannot complete without carrier, so bringing the host
@@ -3735,12 +3818,6 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 						netNSPath: "/proc/42/ns/net",
 					},
 				},
-				linkSetAliasCalls: []linkSetAliasCall{
-					{
-						link:  hostVethWithIndex9,
-						alias: hostVethAlias(testPodIdentity),
-					},
-				},
 			},
 			args: args{
 				hostVethName: "eni8ea2c11fe35",
@@ -3751,9 +3828,8 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 			want: hostVethWithIndex9,
 		},
 		{
-			// Without a sandbox ID there is nothing to stamp, so LinkSetAlias must
-			// not be called at all. No linkSetAliasCalls are registered below, so
-			// gomock fails this case if setupVeth tries to stamp anyway.
+			// The stamp is written inside run, which this table stubs out, so
+			// setupVeth itself must never call LinkSetAlias.
 			name: "successfully setup veth - empty sandboxID leaves the link unstamped",
 			fields: fields{
 				linkByNameCalls: []linkByNameCall{
@@ -3801,12 +3877,6 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 				withNetNSPathCalls: []withNetNSPathCall{
 					{
 						netNSPath: "/proc/42/ns/net",
-					},
-				},
-				linkSetAliasCalls: []linkSetAliasCall{
-					{
-						link:  hostVethWithIndex9,
-						alias: hostVethAlias(testPodIdentity),
 					},
 				},
 			},
@@ -5681,43 +5751,53 @@ func Test_linuxNetwork_claimHostVethName(t *testing.T) {
 			wantDelete:     true,
 		},
 		{
+			// The common leftover: owner deleted, so its peer is in the old netns.
 			name:           "unstamped, peer does not point back",
 			existing:       legacy,
 			peer:           &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Index: peerIndex, ParentIndex: 7}},
 			expectPeerCall: true,
-			wantErr:        "hostVeth eni8ea2c11fe35 already exists and its peer is not in netns /proc/42/ns/net, refusing to delete it",
+			wantDelete:     true,
 		},
 		{
 			name:           "unstamped, peer index absent from target netns",
 			existing:       legacy,
 			peer:           nil,
 			expectPeerCall: true,
-			wantErr:        "hostVeth eni8ea2c11fe35 already exists and its peer is not in netns /proc/42/ns/net, refusing to delete it",
+			wantDelete:     true,
 		},
 		{
 			name:           "unstamped, peer in netns is not a veth",
 			existing:       legacy,
 			peer:           &netlink.Dummy{LinkAttrs: netlink.LinkAttrs{Index: peerIndex, ParentIndex: hostIndex}},
 			expectPeerCall: true,
-			wantErr:        "hostVeth eni8ea2c11fe35 already exists and its peer is not in netns /proc/42/ns/net, refusing to delete it",
+			wantDelete:     true,
 		},
 		{
-			// The netns cannot be entered, so the peer cannot be checked and the
-			// existing link is left in place.
+			// The peer cannot be checked, but unstamped links are reclaimed anyway.
 			name:         "unstamped, target netns cannot be entered",
 			existing:     legacy,
 			netnsOpenErr: true,
-			wantErr:      "unable to establish ownership of existing hostVeth eni8ea2c11fe35, refusing to delete it: no such file or directory",
+			wantDelete:   true,
 		},
 		{
+			// Not a pod's host veth, so it is never reclaimed.
 			name:     "existing link is not a veth",
 			existing: &netlink.Dummy{LinkAttrs: netlink.LinkAttrs{Name: vethName, Index: hostIndex}},
-			wantErr:  "hostVeth eni8ea2c11fe35 already exists and its peer is not in netns /proc/42/ns/net, refusing to delete it",
+			wantErr:  "hostVeth eni8ea2c11fe35 already exists and is not a veth, refusing to delete it",
 		},
 		{
-			name:     "unstamped veth reports no peer index",
-			existing: &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Name: vethName, Index: hostIndex}},
-			wantErr:  "unable to establish ownership of existing hostVeth eni8ea2c11fe35, refusing to delete it: existing link eni8ea2c11fe35 reports no veth peer index",
+			// The type check runs before the alias cases, so a device carrying this
+			// pod's stamp is still refused when it is not a veth.
+			name: "non-veth link carrying this pod's alias",
+			existing: &netlink.Dummy{LinkAttrs: netlink.LinkAttrs{
+				Name: vethName, Index: hostIndex, Alias: hostVethAlias(testPodIdentity),
+			}},
+			wantErr: "hostVeth eni8ea2c11fe35 already exists and is not a veth, refusing to delete it",
+		},
+		{
+			name:       "unstamped veth reports no peer index",
+			existing:   &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Name: vethName, Index: hostIndex}},
+			wantDelete: true,
 		},
 		{
 			// An empty sandbox ID can never match a stamp, so even a link carrying
