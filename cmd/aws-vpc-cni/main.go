@@ -92,6 +92,7 @@ const (
 	envPodMTU                = "POD_MTU"
 	envEnablePodEni          = "ENABLE_POD_ENI"
 	envPodSGEnforcingMode    = "POD_SECURITY_GROUP_ENFORCING_MODE"
+	envNetworkPolicyMode     = "NETWORK_POLICY_ENFORCING_MODE"
 	envPluginLogFile         = "AWS_VPC_K8S_PLUGIN_LOG_FILE"
 	envPluginLogLevel        = "AWS_VPC_K8S_PLUGIN_LOG_LEVEL"
 	envEgressV4PluginLogFile = "AWS_VPC_K8S_EGRESS_V4_PLUGIN_LOG_FILE"
@@ -144,6 +145,8 @@ type NetConf struct {
 	VethPrefix string `json:"vethPrefix,omitempty"`
 
 	PodSGEnforcingMode string `json:"podSGEnforcingMode,omitempty"`
+
+	NetworkPolicyMode string `json:"networkPolicyMode,omitempty"`
 
 	RandomizeSNAT string `json:"randomizeSNAT,omitempty"`
 
@@ -265,6 +268,7 @@ func generateJSON(jsonFile string, outFile string, getPrimaryIP func(ipv4 bool) 
 	// If pod MTU environment variable is set, overwrite ENI MTU.
 	podMTU := utils.GetEnv(envPodMTU, eniMTU)
 	podSGEnforcingMode := utils.GetEnv(envPodSGEnforcingMode, defaultPodSGEnforcingMode)
+	networkPolicyMode := utils.GetEnv(envNetworkPolicyMode, "")
 	pluginLogFile := utils.GetEnv(envPluginLogFile, defaultPluginLogFile)
 	pluginLogLevel := utils.GetEnv(envPluginLogLevel, defaultPluginLogLevel)
 	randomizeSNAT := utils.GetEnv(envRandomizeSNAT, defaultRandomizeSNAT)
@@ -273,6 +277,7 @@ func generateJSON(jsonFile string, outFile string, getPrimaryIP func(ipv4 bool) 
 	netconf = strings.Replace(netconf, "__VETHPREFIX__", vethPrefix, -1)
 	netconf = strings.Replace(netconf, "__MTU__", podMTU, -1)
 	netconf = strings.Replace(netconf, "__PODSGENFORCINGMODE__", podSGEnforcingMode, -1)
+	netconf = strings.Replace(netconf, "__NETWORKPOLICYMODE__", networkPolicyMode, -1)
 	netconf = strings.Replace(netconf, "__PLUGINLOGFILE__", pluginLogFile, -1)
 	netconf = strings.Replace(netconf, "__PLUGINLOGLEVEL__", pluginLogLevel, -1)
 	netconf = strings.Replace(netconf, "__EGRESSPLUGINLOGFILE__", egressPluginLogFile, -1)
