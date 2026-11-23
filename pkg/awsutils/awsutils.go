@@ -43,6 +43,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/vpc"
+	"github.com/aws/amazon-vpc-cni-k8s/utils/eksinsight"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
 	vpcControllerVpc "github.com/aws/amazon-vpc-resource-controller-k8s/pkg/aws/vpc"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -281,6 +282,10 @@ type EC2InstanceMetadataCache struct {
 
 	awsCfg        aws.Config
 	sagemakerMeta sagemakerMetadata
+
+	// refusals records the subnets EC2 refused for lack of addresses, for the eks_insight
+	// metric. A nil recorder records nothing, which is what a cache built without one does.
+	refusals *eksinsight.Refusals
 }
 
 // sagemakerMetadata holds SageMaker HyperPod state. On HyperPod nodes the ENI attach is
@@ -440,13 +445,14 @@ func (i instrumentedIMDS) GetMetadataWithContext(ctx context.Context, p string) 
 }
 
 // New creates an EC2InstanceMetadataCache
-func New(ctx context.Context, useSubnetDiscovery, useCustomNetworking, disableLeakedENICleanup, v4Enabled, v6Enabled bool) (*EC2InstanceMetadataCache, error) {
+func New(ctx context.Context, useSubnetDiscovery, useCustomNetworking, disableLeakedENICleanup, v4Enabled, v6Enabled bool, refusals *eksinsight.Refusals) (*EC2InstanceMetadataCache, error) {
 	awsconfig, err := awssession.New(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create aws session")
 	}
 	ec2Metadata := ec2metadata.NewFromConfig(awsconfig)
 	cache := &EC2InstanceMetadataCache{}
+	cache.refusals = refusals
 	cache.imds = TypedIMDS{instrumentedIMDS{ec2Metadata}}
 	cache.clusterName = os.Getenv(clusterNameEnvVar)
 	cache.additionalENITags = loadAdditionalENITags()
@@ -1259,8 +1265,10 @@ func (cache *EC2InstanceMetadataCache) createENI(ctx context.Context, sg []*stri
 
 		networkInterfaceID, err = cache.tryCreateNetworkInterface(ctx, input)
 		if err == nil {
+			cache.refusals.Supplied(eniCfgSubnet)
 			return networkInterfaceID, nil
 		}
+		cache.refusals.RefusedIf(err, eniCfgSubnet)
 	} else {
 		if cache.useSubnetDiscovery {
 			subnetResult, vpcErr := cache.GetVpcSubnets(ctx)
@@ -1279,8 +1287,10 @@ func (cache *EC2InstanceMetadataCache) createENI(ctx context.Context, sg []*stri
 
 				networkInterfaceID, err = cache.tryCreateNetworkInterface(ctx, input)
 				if err == nil {
+					cache.refusals.Supplied(cache.subnetID)
 					return networkInterfaceID, nil
 				}
+				cache.refusals.RefusedIf(err, cache.subnetID)
 			} else {
 				validSubnetsFound := false
 				for _, subnet := range subnetResult {
@@ -1301,8 +1311,11 @@ func (cache *EC2InstanceMetadataCache) createENI(ctx context.Context, sg []*stri
 					input.SubnetId = subnet.SubnetId
 					networkInterfaceID, err = cache.tryCreateNetworkInterface(ctx, input)
 					if err == nil {
+						cache.refusals.Supplied(*subnet.SubnetId)
 						return networkInterfaceID, nil
 					}
+					// Noted per attempt, since only the last subnet's error is returned.
+					cache.refusals.RefusedIf(err, *subnet.SubnetId)
 				}
 
 				// If no valid subnets found, return appropriate error
@@ -1323,8 +1336,10 @@ func (cache *EC2InstanceMetadataCache) createENI(ctx context.Context, sg []*stri
 
 			networkInterfaceID, err = cache.tryCreateNetworkInterface(ctx, input)
 			if err == nil {
+				cache.refusals.Supplied(cache.subnetID)
 				return networkInterfaceID, nil
 			}
+			cache.refusals.RefusedIf(err, cache.subnetID)
 		}
 	}
 	return "", errors.Wrap(err, "failed to create network interface")

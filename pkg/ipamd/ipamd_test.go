@@ -232,6 +232,9 @@ func TestNodeInit(t *testing.T) {
 	os.Setenv("MY_NODE_NAME", myNodeName)
 	err := mockContext.nodeInit(context.Background())
 	assert.NoError(t, err)
+	// nodeInit caches IP_COOLDOWN_PERIOD so the eks_insight hold-down does not take the
+	// datastore lock on every failed pod ADD.
+	assert.Equal(t, 30*time.Second, mockContext.ipCooldown)
 }
 
 func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {

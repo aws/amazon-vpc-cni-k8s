@@ -21,6 +21,7 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
+	"github.com/aws/amazon-vpc-cni-k8s/utils/eksinsight"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -276,6 +277,17 @@ func PrometheusRegister() {
 	prometheus.MustRegister(ConnmarkReconcileCount)
 	ConnmarkReconcileCount.WithLabelValues("success")
 	ConnmarkReconcileCount.WithLabelValues("error")
+}
+
+// RegisterEksInsight adds one registry's collectors to the default registry, which is what
+// promhttp.Handler serves. Separate from PrometheusRegister because the registry belongs to
+// an ipamd instance, and cni-metrics-helper has no ipamd and never records into one.
+//
+// eks_insight is a collector rather than a gauge: whether a series exists is decided at
+// scrape time from how recently the problem was last seen.
+func RegisterEksInsight(r *eksinsight.Registry) {
+	prometheus.MustRegister(r)
+	prometheus.MustRegister(r.Dropped())
 }
 
 // This can be enhanced to get it programatically.
