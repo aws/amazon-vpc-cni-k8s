@@ -24,7 +24,7 @@ const (
 	MultusContainerName  = "kube-multus"
 
 	// See https://gallery.ecr.aws/eks/aws-vpc-cni-test-helper
-	TestAgentImage = "networking-e2e-test-images/aws-vpc-cni-test-helper:20260925"
+	TestAgentImage = "networking-e2e-test-images/aws-vpc-cni-test-helper:20261105"
 	BusyBoxImage   = "networking-e2e-test-images/busybox:1.38.0"
 	NginxImage     = "networking-e2e-test-images/nginx:1.31.6"
 	NetCatImage    = "networking-e2e-test-images/netcat-openbsd:v1.0"
@@ -36,4 +36,8 @@ const (
 
 	DefaultDeploymentReadyTimeout = time.Second * 300
 	ShortDeploymentReadyTimeout   = time.Second * 120
+
+	DefaultJobCompletionTimeout = time.Second * 300
+
+	DefaultDaemonSetUpdateTimeout = time.Minute * 15
 )
