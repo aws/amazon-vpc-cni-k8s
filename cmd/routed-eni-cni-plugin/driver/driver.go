@@ -16,9 +16,12 @@ package driver
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
@@ -61,6 +64,10 @@ type VirtualInterfaceMetadata struct {
 	RouteTable        int
 	HostVethName      string
 	ContainerVethName string
+	// PodIdentity is the pod's namespace and name. It records which pod a host veth
+	// belongs to. See claimHostVethName.
+	PodIdentity     string
+	AltHostVethName string
 }
 
 // NetworkAPIs defines network API calls
@@ -104,9 +111,10 @@ type createVethPairContext struct {
 	index        int
 	log          logger.Logger
 	hostMACAddr  net.HardwareAddr
+	podIdentity  string
 }
 
-func newCreateVethPairContext(contVethName string, hostVethName string, ipAddr *net.IPNet, mtu int, index int, hostMACAddr net.HardwareAddr, log logger.Logger) *createVethPairContext {
+func newCreateVethPairContext(contVethName string, hostVethName string, ipAddr *net.IPNet, mtu int, index int, hostMACAddr net.HardwareAddr, podIdentity string, log logger.Logger) *createVethPairContext {
 	return &createVethPairContext{
 		contVethName: contVethName,
 		hostVethName: hostVethName,
@@ -117,6 +125,7 @@ func newCreateVethPairContext(contVethName string, hostVethName string, ipAddr *
 		procSys:      procsyswrapper.NewProcSys(),
 		index:        index,
 		hostMACAddr:  hostMACAddr,
+		podIdentity:  podIdentity,
 		log:          log,
 	}
 }
@@ -153,6 +162,13 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 		hv, err := createVethContext.netLink.LinkByName(createVethContext.hostVethName)
 		if err != nil {
 			return errors.Wrapf(err, "setup NS network: failed to find host link %q", createVethContext.hostVethName)
+		}
+		// Stamp as soon as the link exists, so a concurrent ADD that computes the same
+		// name can attribute it rather than treating it as unowned.
+		if createVethContext.podIdentity != "" {
+			if err := createVethContext.netLink.LinkSetAlias(hv, hostVethAlias(createVethContext.podIdentity)); err != nil {
+				return errors.Wrapf(err, "setup NS network: failed to stamp ownership alias on host link %q", createVethContext.hostVethName)
+			}
 		}
 		if err := setHostVethV6Sysctls(createVethContext.procSys, createVethContext.hostVethName, createVethContext.log); err != nil {
 			return err
@@ -293,7 +309,10 @@ func (n *linuxNetwork) SetupPodNetwork(vethMetadata []VirtualInterfaceMetadata, 
 		log.Debugf("SetupPodNetwork: hostVethName=%s, contVethName=%s, netnsPath=%s, ipAddr=%v, routeTableNumber=%d, mtu=%d",
 			vethData.HostVethName, vethData.ContainerVethName, netnsPath, vethData.IPAddress, vethData.RouteTable, mtu)
 
-		hostVeth, err := n.setupVeth(vethData.HostVethName, vethData.ContainerVethName, netnsPath, vethData.IPAddress, mtu, log, index)
+		if err := n.claimAltHostVethName(vethData, netnsPath, log); err != nil {
+			return errors.Wrapf(err, "SetupPodNetwork: failed to setup veth pair")
+		}
+		hostVeth, err := n.setupVeth(vethData.HostVethName, vethData.ContainerVethName, netnsPath, vethData.IPAddress, mtu, vethData.PodIdentity, log, index)
 		if err != nil {
 			return errors.Wrapf(err, "SetupPodNetwork: failed to setup veth pair")
 		}
@@ -358,7 +377,10 @@ func (n *linuxNetwork) SetupBranchENIPodNetwork(vethMetadata VirtualInterfaceMet
 		return errors.Wrap(err, "SetupBranchENIPodNetwork")
 	}
 
-	hostVeth, err := n.setupVeth(vethMetadata.HostVethName, vethMetadata.ContainerVethName, netnsPath, vethMetadata.IPAddress, mtu, log, 0)
+	if err := n.claimAltHostVethName(vethMetadata, netnsPath, log); err != nil {
+		return errors.Wrapf(err, "SetupBranchENIPodNetwork: failed to setup veth pair")
+	}
+	hostVeth, err := n.setupVeth(vethMetadata.HostVethName, vethMetadata.ContainerVethName, netnsPath, vethMetadata.IPAddress, mtu, vethMetadata.PodIdentity, log, 0)
 	if err != nil {
 		return errors.Wrapf(err, "SetupBranchENIPodNetwork: failed to setup veth pair")
 	}
@@ -430,9 +452,9 @@ func (n *linuxNetwork) TeardownBranchENIPodNetwork(vethMetadata VirtualInterface
 
 // setupVeth sets up veth for the pod.
 // setHostVethV6Sysctls hardens the host-side veth for IPv6: accept_ra=0,
-// accept_redirects=1, forwarding=0. Must be applied before the link is
-// brought up so the host end never accepts router advertisements from the
-// pod side.
+// accept_redirects=0, forwarding=0. Must be applied before the link is
+// brought up so the host end never accepts router advertisements or
+// redirects from the pod side.
 func setHostVethV6Sysctls(procSys procsyswrapper.ProcSys, hostVethName string, log logger.Logger) error {
 	if err := procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_ra", hostVethName), "0"); err != nil {
 		if !os.IsNotExist(err) {
@@ -440,7 +462,7 @@ func setHostVethV6Sysctls(procSys procsyswrapper.ProcSys, hostVethName string, l
 		}
 		log.Debugf("Ignoring '%v' writing to accept_ra: Assuming kernel lacks IPv6 support", err)
 	}
-	if err := procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_redirects", hostVethName), "1"); err != nil {
+	if err := procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_redirects", hostVethName), "0"); err != nil {
 		if !os.IsNotExist(err) {
 			return errors.Wrapf(err, "failed to disable IPv6 ICMP redirects")
 		}
@@ -455,13 +477,9 @@ func setHostVethV6Sysctls(procSys procsyswrapper.ProcSys, hostVethName string, l
 	return nil
 }
 
-func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netnsPath string, ipAddr *net.IPNet, mtu int, log logger.Logger, index int) (netlink.Link, error) {
-	// Clean up if hostVeth exists.
-	if oldHostVeth, err := n.netLink.LinkByName(hostVethName); err == nil {
-		if err = n.netLink.LinkDel(oldHostVeth); err != nil {
-			return nil, errors.Wrapf(err, "failed to delete old hostVeth %s", hostVethName)
-		}
-		log.Debugf("Successfully deleted old hostVeth %s", hostVethName)
+func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netnsPath string, ipAddr *net.IPNet, mtu int, podIdentity string, log logger.Logger, index int) (netlink.Link, error) {
+	if err := n.claimHostVethName(hostVethName, podIdentity, netnsPath, log); err != nil {
+		return nil, err
 	}
 	macAddrStr, err := NewMACGenerator().generateUniqueRandomMAC()
 	if err != nil {
@@ -471,7 +489,7 @@ func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netns
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to parse unique generated mac addr %s", macAddrStr)
 	}
-	createVethContext := newCreateVethPairContext(contVethName, hostVethName, ipAddr, mtu, index, macAddr, log)
+	createVethContext := newCreateVethPairContext(contVethName, hostVethName, ipAddr, mtu, index, macAddr, podIdentity, log)
 	if err := n.ns.WithNetNSPath(netnsPath, createVethContext.run); err != nil {
 		return nil, errors.Wrap(err, "failed to setup veth network")
 	}
@@ -483,7 +501,107 @@ func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netns
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to find hostVeth %s", hostVethName)
 	}
+
 	return hostVeth, nil
+}
+
+// hostVethAliasPrefix namespaces the ownership stamp written to the link alias.
+const hostVethAliasPrefix = "aws-vpc-cni:"
+
+// hostVethAlias stamps a hash rather than the identity itself. A namespace and pod name can
+// reach 63 and 253 bytes, and IFLA_IFALIAS caps at 256, so storing them raw would fail the
+// ADD for long names. SHA-256 is used in full because the attacker grinds the truncated
+// SHA-1 in the veth name itself, so a truncated stamp would be worthless.
+func hostVethAlias(podIdentity string) string {
+	sum := sha256.Sum256([]byte(podIdentity))
+	return hostVethAliasPrefix + hex.EncodeToString(sum[:])
+}
+
+// claimHostVethName makes hostVethName available for this sandbox. A link stamped
+// for another pod is never deleted, so the ADD fails instead. An unstamped link
+// cannot be attributed, so it is reclaimed.
+func (n *linuxNetwork) claimHostVethName(hostVethName string, podIdentity string, netnsPath string, log logger.Logger) error {
+	existing, err := n.netLink.LinkByName(hostVethName)
+	if err != nil {
+		// Name is free, nothing to reclaim.
+		return nil
+	}
+
+	alias := existing.Attrs().Alias
+	switch {
+	case existing.Type() != "veth":
+		// Never a pod's host veth, whatever its alias says, so not a leftover to reclaim.
+		return errors.Errorf("hostVeth %s already exists and is not a veth, refusing to delete it", hostVethName)
+	case podIdentity != "" && alias == hostVethAlias(podIdentity):
+		// Stamped for this pod. An earlier sandbox of the same pod may still hold the link,
+		// because CNI DEL does not delete it and the kernel only reaps it with the old netns.
+		log.Debugf("Reclaiming hostVeth %s previously created for pod %s", hostVethName, podIdentity)
+	case strings.HasPrefix(alias, hostVethAliasPrefix):
+		// Stamped for a different pod, which is the name collision this guards against.
+		return errors.Errorf("hostVeth %s is owned by another pod, refusing to delete it for pod %q",
+			hostVethName, podIdentity)
+	default:
+		// Unstamped, so nothing attributes it. Reclaim as the version that created it
+		// did, rather than stranding this pod on a leftover from a deleted one.
+		owned, err := n.hostVethPeerInNetns(existing, netnsPath, log)
+		switch {
+		case err != nil:
+			log.Warnf("Reclaiming unstamped hostVeth %s for pod %q: could not establish ownership (%v). "+
+				"Matches the behavior of versions before ownership stamping.", hostVethName, podIdentity, err)
+		case owned:
+			log.Debugf("Reclaiming unstamped hostVeth %s whose peer is in netns %s", hostVethName, netnsPath)
+		default:
+			log.Warnf("Reclaiming unstamped hostVeth %s for pod %q: its peer is not in netns %s, so it is a "+
+				"leftover from an earlier pod. Matches the behavior of versions before ownership stamping.",
+				hostVethName, podIdentity, netnsPath)
+		}
+	}
+
+	if err := n.netLink.LinkDel(existing); err != nil {
+		return errors.Wrapf(err, "failed to delete old hostVeth %s", hostVethName)
+	}
+	log.Debugf("Successfully deleted old hostVeth %s", hostVethName)
+	return nil
+}
+
+func (n *linuxNetwork) claimAltHostVethName(v VirtualInterfaceMetadata, netnsPath string, log logger.Logger) error {
+	if v.AltHostVethName == "" || v.AltHostVethName == v.HostVethName {
+		return nil
+	}
+	return n.claimHostVethName(v.AltHostVethName, v.PodIdentity, netnsPath, log)
+}
+
+// hostVethPeerInNetns reports whether link is one half of a veth pair whose other
+// half lives in netnsPath. ParentIndex carries the peer's ifindex, which is only
+// meaningful inside the peer's netns, so it is resolved there.
+func (n *linuxNetwork) hostVethPeerInNetns(link netlink.Link, netnsPath string, log logger.Logger) (bool, error) {
+	if link.Type() != "veth" {
+		return false, nil
+	}
+	peerIndex := link.Attrs().ParentIndex
+	hostIndex := link.Attrs().Index
+	if peerIndex == 0 {
+		return false, errors.Errorf("existing link %s reports no veth peer index", link.Attrs().Name)
+	}
+
+	owned := false
+	err := n.ns.WithNetNSPath(netnsPath, func(ns.NetNS) error {
+		peer, err := n.netLink.LinkByIndex(peerIndex)
+		if err != nil {
+			// Does not resolve here, so the peer is elsewhere.
+			log.Debugf("veth peer index %d not present in netns %s: %v", peerIndex, netnsPath, err)
+			return nil
+		}
+		// Require the pair to point back at each other.
+		if peer.Type() == "veth" && peer.Attrs().ParentIndex == hostIndex {
+			owned = true
+		}
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return owned, nil
 }
 
 // setupVlan sets up the vlan interface for branchENI, and configures default routes in specified route table
@@ -505,7 +623,7 @@ func (n *linuxNetwork) setupVlan(vlanID int, eniMAC string, subnetGW string, par
 
 	// 3. Set IPv6 sysctls
 	//    accept_ra=0
-	//    accept_redirects=1
+	//    accept_redirects=0
 	//    forwarding=0
 	if err := n.procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_ra", vlanLinkName), "0"); err != nil {
 		if !os.IsNotExist(err) {
@@ -514,9 +632,9 @@ func (n *linuxNetwork) setupVlan(vlanID int, eniMAC string, subnetGW string, par
 		log.Debugf("Ignoring '%v' writing to accept_ra: Assuming kernel lacks IPv6 support", err)
 	}
 
-	if err := n.procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_redirects", vlanLinkName), "1"); err != nil {
+	if err := n.procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_redirects", vlanLinkName), "0"); err != nil {
 		if !os.IsNotExist(err) {
-			return nil, errors.Wrapf(err, "failed to enable IPv6 ICMP redirects")
+			return nil, errors.Wrapf(err, "failed to disable IPv6 ICMP redirects")
 		}
 		log.Debugf("Ignoring '%v' writing to accept_redirects: Assuming kernel lacks IPv6 support", err)
 	}

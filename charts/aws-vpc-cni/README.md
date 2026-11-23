@@ -48,7 +48,7 @@ The following table lists the configurable parameters for this chart and their d
 | `minimumWindowsIPTarget`| Minimum IP target value for Windows prefix delegation   | `3`                                 |
 | `branchENICooldown`     | Number of seconds that branch ENIs remain in cooldown   | `60`                                |
 | `fullnameOverride`      | Override the fullname of the chart                      | `aws-node`                          |
-| `image.tag`             | Image tag                                               | `v1.23.2`                           |
+| `image.tag`             | Image tag                                               | `v1.23.3`                           |
 | `image.domain`          | ECR repository domain                                   | `amazonaws.com`                     |
 | `image.region`          | ECR repository region to use. Should match your cluster | `us-west-2`                         |
 | `image.endpoint`        | ECR repository endpoint to use.                         | `ecr`                               |
@@ -57,7 +57,7 @@ The following table lists the configurable parameters for this chart and their d
 | `image.overrideRepository` | Repository override for the image (does not change the tag) | `nil`                        |
 | `image.override`        | A custom docker image to use                            | `nil`                               |
 | `imagePullSecrets`      | Docker registry pull secret                             | `[]`                                |
-| `init.image.tag`        | Image tag                                               | `v1.23.2`                           |
+| `init.image.tag`        | Image tag                                               | `v1.23.3`                           |
 | `init.image.domain`     | ECR repository domain                                   | `amazonaws.com`                     |
 | `init.image.region`     | ECR repository region to use. Should match your cluster | `us-west-2`                         |
 | `init.image.endpoint`   | ECR repository endpoint to use.                         | `ecr`                               |
@@ -71,7 +71,7 @@ The following table lists the configurable parameters for this chart and their d
 | `originalMatchLabels`   | Use the original daemonset matchLabels                  | `false`                             |
 | `nameOverride`          | Override the name of the chart                          | `aws-node`                          |
 | `nodeAgent.enabled`     | If the Node Agent container should be created           | `true`                              |
-| `nodeAgent.image.tag`   | Image tag for Node Agent                                | `v1.4.3`                            |
+| `nodeAgent.image.tag`   | Image tag for Node Agent                                | `v1.5.0`                            |
 | `nodeAgent.image.domain`| ECR repository domain                                   | `amazonaws.com`                     |
 | `nodeAgent.image.region`| ECR repository region to use. Should match your cluster | `us-west-2`                         |
 | `nodeAgent.image.endpoint`   | ECR repository endpoint to use.                    | `ecr`                               |
@@ -83,10 +83,12 @@ The following table lists the configurable parameters for this chart and their d
 | `nodeAgent.enableCloudWatchLogs`  | Enable CW logging for Node Agent              | `false`                             |
 | `nodeAgent.networkPolicyAgentLogFileLocation`  | Log File location of Network Policy Agent | `/var/log/aws-routed-eni/network-policy-agent.log` |
 | `nodeAgent.enablePolicyEventLogs` | Enable policy decision logs for Node Agent    | `false`                             |
+| `nodeAgent.policyEventLogsScope` | Which verdicts produce policy events: `all` (ACCEPT and DENY) or `deny` (DENY only). Needs `enablePolicyEventLogs=true`, and a Node Agent image with [aws-network-policy-agent#763](https://github.com/aws/aws-network-policy-agent/pull/763); an older agent exits on the flag | `""` (not passed; agent default `all`) |
 | `nodeAgent.metricsBindAddr` | Node Agent port for metrics                         | `8162`                              |
 | `nodeAgent.healthProbeBindAddr` | Node Agent port for health probes               | `8163`                              |
 | `nodeAgent.conntrackCacheCleanupPeriod` | Cleanup interval for network policy agent conntrack cache | 300               |
 | `nodeAgent.conntrackCacheTableSize` | Size of the conntrack cache table (valid range: 32K-1024K) | `524288`            |
+| `nodeAgent.enableTcpResetOnDeny` | Answer a TCP connection that a network policy denies with a reset instead of dropping it. Needs a Node Agent image with [aws-network-policy-agent#782](https://github.com/aws/aws-network-policy-agent/pull/782); an older agent exits on the flag | `false`                             |
 | `nodeAgent.enableIpv6`  | Enable IPv6 support for Node Agent                      | `false`                             |
 | `nodeAgent.resources`   | Node Agent resources, will defualt to .Values.resources if not set | `{}`                     |
 | `nodeAgent.logLevel`    | Node Agent logging verbosity level.                     | `debug`                             |

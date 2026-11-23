@@ -53,6 +53,7 @@ var (
 	rtAssociationID        string
 	primaryInstance        ec2types.Instance
 	useIPv6                bool
+	specSubnetIDs          []string
 )
 
 // Parse test specific variable from flag
@@ -198,16 +199,16 @@ var _ = BeforeSuite(func() {
 		CreateSubnet(context.TODO(), subnetCidr.String(), f.Options.AWSVPCID, *primaryInstance.Placement.AvailabilityZone)
 	Expect(err).ToNot(HaveOccurred())
 
-	subnetID := *createSubnetOutput.Subnet.SubnetId
+	createdSubnet = *createSubnetOutput.Subnet.SubnetId
 
 	By("tagging the subnet for test ownership")
-	_, err = f.CloudServices.EC2().CreateTags(context.TODO(), []string{subnetID}, []ec2types.Tag{
+	_, err = f.CloudServices.EC2().CreateTags(context.TODO(), []string{createdSubnet}, []ec2types.Tag{
 		{Key: aws.String(staleSubnetTag), Value: aws.String("true")},
 	})
 	Expect(err).ToNot(HaveOccurred())
 
 	By("associating the route table with the newly created subnet")
-	rtAssociationID, err = f.CloudServices.EC2().AssociateRouteTableToSubnet(context.TODO(), clusterVPCConfig.PublicRouteTableID, subnetID)
+	rtAssociationID, err = f.CloudServices.EC2().AssociateRouteTableToSubnet(context.TODO(), clusterVPCConfig.PublicRouteTableID, createdSubnet)
 	Expect(err).ToNot(HaveOccurred())
 
 	By("try detaching all ENIs by setting WARM_ENI_TARGET to 0")
@@ -216,8 +217,6 @@ var _ = BeforeSuite(func() {
 
 	By("waiting for the CNI to delete unused ENIs")
 	waitForSecondaryENIsDrained()
-
-	createdSubnet = subnetID
 })
 
 var _ = AfterSuite(func() {
@@ -243,10 +242,17 @@ var _ = AfterSuite(func() {
 		errs.Append(common.EnsureRouteTableDisassociated(f, rtAssociationID))
 	}
 
+	for _, subnetID := range specSubnetIDs {
+		By(fmt.Sprintf("deleting the spec subnet %s", subnetID))
+		errs.Append(common.EnsureSubnetDeleted(f, subnetID))
+	}
+
 	// WARM_ENI_TARGET stays 0 (set in BeforeSuite) until the subnet is gone; the
 	// bounded delete poll absorbs the ENI drain, no fixed sleep needed.
-	By(fmt.Sprintf("deleting the subnet %s", createdSubnet))
-	errs.Append(common.EnsureSubnetDeleted(f, createdSubnet))
+	if createdSubnet != "" {
+		By(fmt.Sprintf("deleting the subnet %s", createdSubnet))
+		errs.Append(common.EnsureSubnetDeleted(f, createdSubnet))
+	}
 
 	if cidrBlockAssociationID != "" {
 		By("disassociating the CIDR range from the VPC")
@@ -256,6 +262,21 @@ var _ = AfterSuite(func() {
 	// Fail the suite on a cleanup error rather than swallowing it, so leaks surface in CI.
 	Expect(errs.MaybeUnwrap()).ToNot(HaveOccurred(), "cleanup operations failed")
 })
+
+func createSpecSubnet(cidrBlock string) string {
+	out, err := f.CloudServices.EC2().
+		CreateSubnet(context.TODO(), cidrBlock, f.Options.AWSVPCID, *primaryInstance.Placement.AvailabilityZone)
+	Expect(err).ToNot(HaveOccurred())
+	subnetID := *out.Subnet.SubnetId
+	specSubnetIDs = append(specSubnetIDs, subnetID)
+	return subnetID
+}
+
+func deleteSpecSubnet(subnetID string) {
+	if err := common.EnsureSubnetDeleted(f, subnetID); err != nil {
+		GinkgoWriter.Printf("Warning: %v; AfterSuite will retry\n", err)
+	}
+}
 
 // staleSubnetTag is applied to all subnets created by this test suite so that
 // cleanupStaleSubnetsInCIDR only removes resources it owns.
