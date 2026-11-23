@@ -426,6 +426,203 @@ func TestNodeInitwithPDenabledIPv6Mode(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// shortenENIAttachTime removes the wait between setupENI retries for the duration of a test.
+func shortenENIAttachTime(t *testing.T) {
+	orig := eniAttachTime
+	eniAttachTime = 0
+	t.Cleanup(func() { eniAttachTime = orig })
+}
+
+// TestNodeInitENISetupFailureIPv4 checks that nodeInit fails, and leaves the checkpoint
+// untouched, when a secondary ENI cannot be set up after every retry.
+func TestNodeInitENISetupFailureIPv4(t *testing.T) {
+	tests := []struct {
+		name            string
+		setupNetworkErr error
+		wantErr         bool
+	}{
+		{
+			name:            "secondary ENI network setup keeps failing",
+			setupNetworkErr: errors.New("netlink: device or resource busy"),
+			wantErr:         true,
+		},
+		{
+			name:            "secondary ENI has no matching link is still skipped",
+			setupNetworkErr: errors.New("setupENINetwork: failed to find the link which uses MAC address " + secMAC),
+			wantErr:         false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			shortenENIAttachTime(t)
+			m := setup(t)
+			defer m.ctrl.Finish()
+			ctx := context.Background()
+
+			fakeCheckpoint := datastore.CheckpointData{
+				Version: datastore.CheckpointFormatVersion,
+				Allocations: []datastore.CheckpointEntry{
+					{IPAMKey: datastore.IPAMKey{NetworkName: "net0", ContainerID: "sandbox-id", IfName: "eth0"}, IPv4: ipaddr11},
+				},
+			}
+			checkpoint := datastore.NewTestCheckpoint(fakeCheckpoint)
+			mockContext := &IPAMContext{
+				awsClient:       m.awsutils,
+				k8sClient:       m.k8sClient,
+				maxIPsPerENI:    14,
+				maxENI:          4,
+				warmENITarget:   1,
+				warmIPTarget:    3,
+				numNetworkCards: 1,
+				primaryIP:       make(map[string]string),
+				terminating:     int32(0),
+				networkClient:   m.network,
+				dataStoreAccess: &datastore.DataStoreAccess{
+					DataStores: []*datastore.DataStore{datastore.NewDataStore(log, checkpoint, false, defaultNetworkCard)},
+				},
+				myNodeName:    myNodeName,
+				enableIPv4:    true,
+				enableIPv6:    false,
+				withApiServer: true,
+			}
+			mockContext.unmanagedENI = make([]int, mockContext.numNetworkCards)
+
+			eni1, eni2, _ := getDummyENIMetadata()
+			var cidrs []string
+			primaryIP := net.ParseIP(ipaddr01)
+			m.awsutils.EXPECT().GetENILimit().Return(4)
+			m.awsutils.EXPECT().GetENIIPv4Limit().Return(14)
+			m.awsutils.EXPECT().GetNetworkCards().Return([]vpc.NetworkCard{{NetworkCardIndex: 0, MaximumNetworkInterfaces: 4}}).AnyTimes()
+			m.awsutils.EXPECT().SetUnmanagedNetworkCards(gomock.Any()).AnyTimes()
+			m.awsutils.EXPECT().IsUnmanagedNIC(gomock.Any()).Return(false).AnyTimes()
+			m.awsutils.EXPECT().IsUnmanagedENI(gomock.Any()).Return(false).AnyTimes()
+			m.awsutils.EXPECT().IsEfaOnlyENI(gomock.Any(), gomock.Any()).Return(false).AnyTimes()
+			m.awsutils.EXPECT().GetIPv4sFromEC2(gomock.Any(), eni1.ENIID).AnyTimes().Return(eni1.IPv4Addresses, nil)
+			m.awsutils.EXPECT().GetIPv4sFromEC2(gomock.Any(), eni2.ENIID).AnyTimes().Return(eni2.IPv4Addresses, nil)
+			m.awsutils.EXPECT().TagENI(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+			m.network.EXPECT().GetRouteTableNumberForENI(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), false).AnyTimes()
+			m.awsutils.EXPECT().GetVPCIPv4CIDRs().AnyTimes().Return(cidrs, nil)
+			m.awsutils.EXPECT().GetPrimaryENImac().Return("")
+			m.network.EXPECT().SetupHostNetwork(cidrs, "", &primaryIP, false, false).Return(nil)
+			m.network.EXPECT().CleanUpStaleAWSChains(true, false).Return(nil)
+			m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
+			m.awsutils.EXPECT().RefreshSGIDs(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+			resp := awsutils.DescribeAllENIsResult{
+				ENIMetadata:             []awsutils.ENIMetadata{eni1, eni2},
+				TagMap:                  map[string]awsutils.TagMap{},
+				EFAENIs:                 make(map[string]bool),
+				EFAOnlyENIByNetworkCard: []string{""},
+				ENIsByNetworkCard:       [][]string{defaultNetworkCard: {eni1.ENIID, eni2.ENIID}},
+			}
+			m.awsutils.EXPECT().DescribeAllENIs(gomock.Any()).Return(resp, nil)
+			m.awsutils.EXPECT().SetEFAOnlyENIs(resp.EFAOnlyENIByNetworkCard).Times(1)
+			m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, defaultNetworkCard, secSubnet, maxENIPerNIC, false, gomock.Any(), gomock.Any()).Return(tt.setupNetworkErr).AnyTimes()
+			m.awsutils.EXPECT().GetLocalIPv4().Return(primaryIP).AnyTimes()
+			m.network.EXPECT().GetRuleList(false).Return([]netlink.Rule{}, nil).AnyTimes()
+			m.network.EXPECT().UpdateRuleListBySrc(gomock.Any(), gomock.Any()).AnyTimes()
+			m.network.EXPECT().GetExternalServiceCIDRs().Return(nil).AnyTimes()
+			m.network.EXPECT().UpdateExternalServiceIpRules(gomock.Any(), gomock.Any()).AnyTimes()
+			m.awsutils.EXPECT().InitHyperPodFromProviderID(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+			m.awsutils.EXPECT().AllocIPAddresses(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+
+			maxPods, _ := resource.ParseQuantity("500")
+			m.k8sClient.Create(ctx, &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
+				Spec:       v1.NodeSpec{ProviderID: testNodeProviderID},
+				Status:     v1.NodeStatus{Capacity: v1.ResourceList{v1.ResourcePods: maxPods}},
+			})
+			os.Setenv("MY_NODE_NAME", myNodeName)
+
+			err := mockContext.nodeInit(ctx)
+			if !tt.wantErr {
+				assert.NoError(t, err)
+				return
+			}
+			assert.ErrorContains(t, err, "failed to set up ENI "+eni2.ENIID)
+			assert.Equal(t, fakeCheckpoint, checkpoint.Data, "checkpoint must not be rewritten when ENI setup fails")
+		})
+	}
+}
+
+// TestNodeInitENISetupFailureIPv6 checks that nodeInit fails, and leaves the checkpoint
+// untouched, when the IPv6 prefix lookup keeps failing (for example, EC2 throttling).
+func TestNodeInitENISetupFailureIPv6(t *testing.T) {
+	shortenENIAttachTime(t)
+	m := setup(t)
+	defer m.ctrl.Finish()
+	ctx := context.Background()
+
+	fakeCheckpoint := datastore.CheckpointData{
+		Version: datastore.CheckpointFormatVersion,
+		Allocations: []datastore.CheckpointEntry{
+			{IPAMKey: datastore.IPAMKey{NetworkName: "net0", ContainerID: "sandbox-id", IfName: "eth0"}, IPv6: "2001:db8::5"},
+		},
+	}
+	checkpoint := datastore.NewTestCheckpoint(fakeCheckpoint)
+	mockContext := &IPAMContext{
+		awsClient:         m.awsutils,
+		k8sClient:         m.k8sClient,
+		maxIPsPerENI:      224,
+		maxPrefixesPerENI: 1,
+		maxENI:            1,
+		warmENITarget:     1,
+		warmIPTarget:      1,
+		primaryIP:         make(map[string]string),
+		terminating:       int32(0),
+		networkClient:     m.network,
+		numNetworkCards:   1,
+		dataStoreAccess: &datastore.DataStoreAccess{
+			DataStores: []*datastore.DataStore{datastore.NewDataStore(log, checkpoint, true, defaultNetworkCard)},
+		},
+		myNodeName:             myNodeName,
+		enablePrefixDelegation: true,
+		enableIPv4:             false,
+		enableIPv6:             true,
+		withApiServer:          true,
+	}
+
+	eni1 := getDummyENIMetadataWithV6Prefix()
+	cidrs := []string{vpcIPv6CIDR}
+	primaryIPv6 := net.ParseIP(v6ipaddr01)
+	m.awsutils.EXPECT().IsUnmanagedENI(eni1.ENIID).Return(false).AnyTimes()
+	m.awsutils.EXPECT().IsUnmanagedNIC(eni1.NetworkCard).Return(false).AnyTimes()
+	m.awsutils.EXPECT().IsEfaOnlyENI(gomock.Any(), gomock.Any()).Return(false).AnyTimes()
+	m.awsutils.EXPECT().TagENI(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	m.awsutils.EXPECT().GetVPCIPv6CIDRs().Return(cidrs, nil).AnyTimes()
+	m.network.EXPECT().SetupHostNetwork(cidrs, eni1.MAC, &primaryIPv6, false, true).Return(nil)
+	m.network.EXPECT().CleanUpStaleAWSChains(false, true).Return(nil)
+	m.awsutils.EXPECT().GetIPv6PrefixesFromEC2(gomock.Any(), eni1.ENIID).
+		Return(nil, errors.New("api error RequestLimitExceeded: Request limit exceeded.")).
+		Times(maxRetryCheckENI + 1)
+	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
+	m.awsutils.EXPECT().GetPrimaryENImac().Return(eni1.MAC)
+	m.awsutils.EXPECT().IsPrimaryENI(primaryENIid).Return(true).AnyTimes()
+	m.awsutils.EXPECT().SetUnmanagedNetworkCards(gomock.Any()).AnyTimes()
+	m.network.EXPECT().GetRouteTableNumberForENI(eni1.NetworkCard, gomock.Any(), eni1.DeviceNumber, gomock.Any(), true).AnyTimes()
+	resp := awsutils.DescribeAllENIsResult{
+		ENIMetadata:             []awsutils.ENIMetadata{eni1},
+		TagMap:                  map[string]awsutils.TagMap{},
+		EFAENIs:                 make(map[string]bool),
+		EFAOnlyENIByNetworkCard: []string{""},
+		ENIsByNetworkCard:       [][]string{defaultNetworkCard: {eni1.ENIID}},
+	}
+	m.awsutils.EXPECT().GetENILimit().Return(1)
+	m.awsutils.EXPECT().DescribeAllENIs(gomock.Any()).Return(resp, nil)
+	m.awsutils.EXPECT().SetEFAOnlyENIs(resp.EFAOnlyENIByNetworkCard).Times(1)
+	m.awsutils.EXPECT().GetLocalIPv6().Return(primaryIPv6).AnyTimes()
+	m.awsutils.EXPECT().InitHyperPodFromProviderID(gomock.Any(), testNodeProviderID).Return(nil).AnyTimes()
+	m.k8sClient.Create(ctx, &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
+		Spec:       v1.NodeSpec{ProviderID: testNodeProviderID},
+	})
+	os.Setenv("MY_NODE_NAME", myNodeName)
+
+	err := mockContext.nodeInit(ctx)
+	assert.ErrorContains(t, err, "failed to set up ENI "+eni1.ENIID)
+	assert.ErrorContains(t, err, "RequestLimitExceeded")
+	assert.Equal(t, fakeCheckpoint, checkpoint.Data, "checkpoint must not be rewritten when ENI setup fails")
+}
+
 func getDummyENIMetadata() (awsutils.ENIMetadata, awsutils.ENIMetadata, awsutils.ENIMetadata) {
 	primary := true
 	notPrimary := false
