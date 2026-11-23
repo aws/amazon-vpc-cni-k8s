@@ -234,6 +234,15 @@ func (cidr *CidrInfo) GetIPStatsFromCidr(ipCooldownPeriod time.Duration) CidrSta
 	return stats
 }
 
+func (cidr *CidrInfo) hasAddressInCooling(ipCooldownPeriod time.Duration) bool {
+	for _, addr := range cidr.IPAddresses {
+		if !addr.Assigned() && addr.inCoolingPeriod(ipCooldownPeriod) {
+			return true
+		}
+	}
+	return false
+}
+
 // Assigned returns true iff the address is allocated to a pod/sandbox.
 func (addr AddressInfo) Assigned() bool {
 	return !addr.IPAMKey.IsZero()
@@ -912,6 +921,11 @@ func (stats *DataStoreStats) AvailableAddresses() int {
 	return stats.TotalIPs - stats.AssignedIPs
 }
 
+// SurplusAddresses returns the addresses that are neither assigned nor cooling.
+func (stats *DataStoreStats) SurplusAddresses() int {
+	return stats.TotalIPs - stats.AssignedIPs - stats.CooldownIPs
+}
+
 // GetIPStats returns DataStoreStats for addressFamily
 func (ds *DataStore) GetIPStats(addressFamily string) *DataStoreStats {
 	ds.lock.Lock()
@@ -1572,6 +1586,10 @@ func (ds *DataStore) FindFreeableCidrs(eniID string) []CidrInfo {
 	var freeable []CidrInfo
 	for _, assignedaddr := range eni.AvailableIPv4Cidrs {
 		if assignedaddr.AssignedIPAddressesInCidr() == 0 {
+			if assignedaddr.hasAddressInCooling(ds.ipCooldownPeriod) {
+				ds.log.Debugf("CIDR %s is not freeable because it holds an address in cooling", assignedaddr.Cidr.String())
+				continue
+			}
 			tempFreeable := CidrInfo{
 				Cidr:          assignedaddr.Cidr,
 				IPAddresses:   nil,
