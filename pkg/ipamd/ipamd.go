@@ -61,7 +61,6 @@ import (
 const (
 	ipPoolMonitorInterval       = 5 * time.Second
 	maxRetryCheckENI            = 5
-	eniAttachTime               = 10 * time.Second
 	nodeIPPoolReconcileInterval = 60 * time.Second
 	decreaseIPPoolInterval      = 30 * time.Second
 
@@ -216,6 +215,9 @@ const (
 var log = logger.Get()
 
 var prometheusRegistered = false
+
+// eniAttachTime is the wait between setupENI retries in nodeInit; a var so tests can shorten it.
+var eniAttachTime = 10 * time.Second
 
 // IPAMContext contains node level control information
 type IPAMContext struct {
@@ -594,9 +596,10 @@ func (c *IPAMContext) nodeInit(ctx context.Context) error {
 			}
 
 			if retry > maxRetryCheckENI {
-				log.Warnf("Reached max retry: Unable to discover attached IPs for ENI from metadata service (attempted %d/%d): %v", retry, maxRetryCheckENI, err)
+				log.Errorf("Reached max retry: Unable to discover attached IPs for ENI from metadata service (attempted %d/%d): %v", retry, maxRetryCheckENI, err)
 				ipamdErrInc("waitENIAttachedMaxRetryExceeded")
-				break
+				// Fail startup so checkpoint recovery never runs against an incomplete ENI pool (#3997).
+				return errors.Wrapf(err, "ipamd init: failed to set up ENI %s after %d attempts", eni.ENIID, retry)
 			}
 
 			log.Warnf("Error trying to set up ENI %s: %v", eni.ENIID, err)
