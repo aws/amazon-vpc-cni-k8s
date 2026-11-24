@@ -27,7 +27,7 @@ import (
 
 func TestEniV1RequestHandler_ScrubsSensitiveFields(t *testing.T) {
 	// Set up a datastore with a pod assigned
-	ds := datastore.NewDataStore(log, datastore.NullCheckpoint{}, false, 0)
+	ds := datastore.NewDataStore(log, datastore.NullCheckpoint{}, false, false, 0)
 	ds.AddENI("eni-test-001", 0, true, false, false, 254, "subnet-abc")
 	ipv4Addr := net.IPNet{IP: net.ParseIP("10.0.0.5"), Mask: net.IPv4Mask(255, 255, 255, 255)}
 	ds.AddIPv4CidrToStore("eni-test-001", ipv4Addr, false)
@@ -81,7 +81,7 @@ func TestEniV1RequestHandler_ScrubsSensitiveFields(t *testing.T) {
 
 func TestEniV1RequestHandler_ScrubsIPv6Fields(t *testing.T) {
 	// Set up a datastore with an IPv6 prefix
-	ds := datastore.NewDataStore(log, datastore.NullCheckpoint{}, true, 0)
+	ds := datastore.NewDataStore(log, datastore.NullCheckpoint{}, true, false, 0)
 	ds.AddENI("eni-v6-001", 0, true, false, false, 254, "subnet-v6")
 	_, ipv6Net, _ := net.ParseCIDR("2001:db8::/64")
 	ds.AddIPv6CidrToStore("eni-v6-001", *ipv6Net, true)
