@@ -108,6 +108,9 @@ const (
 	envIPCooldownPeriod      = "IP_COOLDOWN_PERIOD"
 	envDisablePodV6          = "DISABLE_POD_V6"
 	envEnableMultiNICSupport = "ENABLE_MULTI_NIC"
+
+	envIPAssignmentWaitPeriod     = "IP_ASSIGNMENT_WAIT_PERIOD"
+	defaultIPAssignmentWaitPeriod = 10
 )
 
 // NetConfList describes an ordered list of networks.
@@ -367,6 +370,12 @@ func validateEnvVars() bool {
 	ipCooldownPeriod, err, input := utils.GetIntFromStringEnvVar(envIPCooldownPeriod, defaultIPCooldownPeriod)
 	if err != nil || ipCooldownPeriod < 0 {
 		log.Errorf("IP_COOLDOWN_PERIOD MUST be a valid positive integer. %s is invalid", input)
+		return false
+	}
+
+	ipAssignmentWaitPeriod, err, input := utils.GetIntFromStringEnvVar(envIPAssignmentWaitPeriod, defaultIPAssignmentWaitPeriod)
+	if err != nil || ipAssignmentWaitPeriod < 0 {
+		log.Errorf("IP_ASSIGNMENT_WAIT_PERIOD MUST be a valid non-negative integer. %s is invalid", input)
 		return false
 	}
 

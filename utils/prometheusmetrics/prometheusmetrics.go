@@ -180,6 +180,20 @@ var (
 			Help: "The number of pod IP assignments that fail due to no available IP addresses",
 		},
 	)
+	AddIPWaitDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "awscni_add_ip_wait_duration_seconds",
+			Help:    "The duration a CNI ADD spent waiting for a pod IP to become available in the datastore",
+			Buckets: []float64{0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 7.5, 10},
+		},
+		[]string{"result"},
+	)
+	AddIPWaiters = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "awscni_add_ip_waiters",
+			Help: "The number of CNI ADD requests currently waiting for a pod IP",
+		},
+	)
 	EniIPsInUse = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "awscni_assigned_ip_per_eni",
@@ -269,6 +283,8 @@ func PrometheusRegister() {
 	prometheus.MustRegister(TotalPrefixes)
 	prometheus.MustRegister(IpsPerCidr)
 	prometheus.MustRegister(NoAvailableIPAddrs)
+	prometheus.MustRegister(AddIPWaitDuration)
+	prometheus.MustRegister(AddIPWaiters)
 	prometheus.MustRegister(EniIPsInUse)
 	prometheus.MustRegister(IpamdStartupDuration)
 	prometheus.MustRegister(IpamdNodeInitDuration)
