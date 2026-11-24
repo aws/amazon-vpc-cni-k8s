@@ -36,84 +36,6 @@ package vpc
 // InstanceNetworkingLimits contains a mapping from instance type to networking limits for the type. Documentation found at
 // https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-eni.html#AvailableIpPerENI
 var instanceNetworkingLimits = map[string]InstanceTypeLimits{
-	"a1.2xlarge": {
-		ENILimit:                4,
-		IPv4Limit:               15,
-		DefaultNetworkCardIndex: 0,
-		NetworkCards: []NetworkCard{
-			{
-				MaximumNetworkInterfaces: 4,
-				NetworkCardIndex:         0,
-			},
-		},
-		HypervisorType: "nitro",
-		IsBareMetal:    false,
-	},
-	"a1.4xlarge": {
-		ENILimit:                8,
-		IPv4Limit:               30,
-		DefaultNetworkCardIndex: 0,
-		NetworkCards: []NetworkCard{
-			{
-				MaximumNetworkInterfaces: 8,
-				NetworkCardIndex:         0,
-			},
-		},
-		HypervisorType: "nitro",
-		IsBareMetal:    false,
-	},
-	"a1.large": {
-		ENILimit:                3,
-		IPv4Limit:               10,
-		DefaultNetworkCardIndex: 0,
-		NetworkCards: []NetworkCard{
-			{
-				MaximumNetworkInterfaces: 3,
-				NetworkCardIndex:         0,
-			},
-		},
-		HypervisorType: "nitro",
-		IsBareMetal:    false,
-	},
-	"a1.medium": {
-		ENILimit:                2,
-		IPv4Limit:               4,
-		DefaultNetworkCardIndex: 0,
-		NetworkCards: []NetworkCard{
-			{
-				MaximumNetworkInterfaces: 2,
-				NetworkCardIndex:         0,
-			},
-		},
-		HypervisorType: "nitro",
-		IsBareMetal:    false,
-	},
-	"a1.metal": {
-		ENILimit:                8,
-		IPv4Limit:               30,
-		DefaultNetworkCardIndex: 0,
-		NetworkCards: []NetworkCard{
-			{
-				MaximumNetworkInterfaces: 8,
-				NetworkCardIndex:         0,
-			},
-		},
-		HypervisorType: "unknown",
-		IsBareMetal:    true,
-	},
-	"a1.xlarge": {
-		ENILimit:                4,
-		IPv4Limit:               15,
-		DefaultNetworkCardIndex: 0,
-		NetworkCards: []NetworkCard{
-			{
-				MaximumNetworkInterfaces: 4,
-				NetworkCardIndex:         0,
-			},
-		},
-		HypervisorType: "nitro",
-		IsBareMetal:    false,
-	},
 	"bmn-sf1.metal": {
 		ENILimit:                15,
 		IPv4Limit:               50,
@@ -4729,71 +4651,6 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		HypervisorType: "nitro",
 		IsBareMetal:    false,
 	},
-	"g4ad.16xlarge": {
-		ENILimit:                8,
-		IPv4Limit:               30,
-		DefaultNetworkCardIndex: 0,
-		NetworkCards: []NetworkCard{
-			{
-				MaximumNetworkInterfaces: 8,
-				NetworkCardIndex:         0,
-			},
-		},
-		HypervisorType: "nitro",
-		IsBareMetal:    false,
-	},
-	"g4ad.2xlarge": {
-		ENILimit:                2,
-		IPv4Limit:               4,
-		DefaultNetworkCardIndex: 0,
-		NetworkCards: []NetworkCard{
-			{
-				MaximumNetworkInterfaces: 2,
-				NetworkCardIndex:         0,
-			},
-		},
-		HypervisorType: "nitro",
-		IsBareMetal:    false,
-	},
-	"g4ad.4xlarge": {
-		ENILimit:                3,
-		IPv4Limit:               10,
-		DefaultNetworkCardIndex: 0,
-		NetworkCards: []NetworkCard{
-			{
-				MaximumNetworkInterfaces: 3,
-				NetworkCardIndex:         0,
-			},
-		},
-		HypervisorType: "nitro",
-		IsBareMetal:    false,
-	},
-	"g4ad.8xlarge": {
-		ENILimit:                4,
-		IPv4Limit:               15,
-		DefaultNetworkCardIndex: 0,
-		NetworkCards: []NetworkCard{
-			{
-				MaximumNetworkInterfaces: 4,
-				NetworkCardIndex:         0,
-			},
-		},
-		HypervisorType: "nitro",
-		IsBareMetal:    false,
-	},
-	"g4ad.xlarge": {
-		ENILimit:                2,
-		IPv4Limit:               4,
-		DefaultNetworkCardIndex: 0,
-		NetworkCards: []NetworkCard{
-			{
-				MaximumNetworkInterfaces: 2,
-				NetworkCardIndex:         0,
-			},
-		},
-		HypervisorType: "nitro",
-		IsBareMetal:    false,
-	},
 	"g4dn.12xlarge": {
 		ENILimit:                8,
 		IPv4Limit:               30,
@@ -5424,6 +5281,23 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		},
 		HypervisorType: "nitro",
 		IsBareMetal:    false,
+	},
+	"g7.metal": {
+		ENILimit:                12,
+		IPv4Limit:               64,
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+			{
+				MaximumNetworkInterfaces: 12,
+				NetworkCardIndex:         0,
+			},
+			{
+				MaximumNetworkInterfaces: 12,
+				NetworkCardIndex:         1,
+			},
+		},
+		HypervisorType: "unknown",
+		IsBareMetal:    true,
 	},
 	"g7e.12xlarge": {
 		ENILimit:                10,
@@ -17851,6 +17725,58 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		IsBareMetal:    false,
 	},
 	"t8i.small": {
+		ENILimit:                3,
+		IPv4Limit:               4,
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+			{
+				MaximumNetworkInterfaces: 3,
+				NetworkCardIndex:         0,
+			},
+		},
+		HypervisorType: "nitro",
+		IsBareMetal:    false,
+	},
+	"t9g.medium": {
+		ENILimit:                3,
+		IPv4Limit:               6,
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+			{
+				MaximumNetworkInterfaces: 3,
+				NetworkCardIndex:         0,
+			},
+		},
+		HypervisorType: "nitro",
+		IsBareMetal:    false,
+	},
+	"t9g.micro": {
+		ENILimit:                2,
+		IPv4Limit:               2,
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+			{
+				MaximumNetworkInterfaces: 2,
+				NetworkCardIndex:         0,
+			},
+		},
+		HypervisorType: "nitro",
+		IsBareMetal:    false,
+	},
+	"t9g.nano": {
+		ENILimit:                2,
+		IPv4Limit:               2,
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+			{
+				MaximumNetworkInterfaces: 2,
+				NetworkCardIndex:         0,
+			},
+		},
+		HypervisorType: "nitro",
+		IsBareMetal:    false,
+	},
+	"t9g.small": {
 		ENILimit:                3,
 		IPv4Limit:               4,
 		DefaultNetworkCardIndex: 0,
