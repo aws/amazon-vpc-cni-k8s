@@ -46,8 +46,7 @@ const (
 
 	//Time duration CNI waits for an IPv6 address assigned to an interface
 	//to move to stable state before error'ing out.
-	v6DADTimeout                = 10 * time.Second
-	MAX_MAC_GENERATION_ATTEMPTS = 10
+	v6DADTimeout = 10 * time.Second
 
 	// maxVlanID is the largest valid 802.1Q VLAN id. Branch ENI VLAN ids arrive
 	// via vpc.amazonaws.com/pod-eni annotation
@@ -481,13 +480,9 @@ func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netns
 	if err := n.claimHostVethName(hostVethName, podIdentity, netnsPath, log); err != nil {
 		return nil, err
 	}
-	macAddrStr, err := NewMACGenerator().generateUniqueRandomMAC()
+	macAddr, err := generateRandomMAC()
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to generate Unique MAC addr for host side veth")
-	}
-	macAddr, err := net.ParseMAC(macAddrStr)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to parse unique generated mac addr %s", macAddrStr)
+		return nil, errors.Wrap(err, "failed to generate MAC addr for host side veth")
 	}
 	createVethContext := newCreateVethPairContext(contVethName, hostVethName, ipAddr, mtu, index, macAddr, podIdentity, log)
 	if err := n.ns.WithNetNSPath(netnsPath, createVethContext.run); err != nil {
@@ -852,43 +847,25 @@ func buildVlanLink(vlanName string, vlanID int, parentIfIndex int, eniMAC string
 	return &netlink.Vlan{LinkAttrs: la, VlanId: vlanID}
 }
 
-type MACGenerator struct {
-	netlink   netlinkwrapper.NetLink
-	randMACfn func() string
-}
-
-func NewMACGenerator() MACGenerator {
-	return MACGenerator{netlink: netlinkwrapper.NewNetLink(), randMACfn: generateRandomMAC}
-}
-
-func generateRandomMAC() string {
-	mac := make([]byte, 6)
-	rand.Read(mac)
-	// Set the local bit and unset the multicast bit
-	mac[0] = (mac[0] | 2) & 0xfe
-
-	return fmt.Sprintf("%02x:%02x:%02x:%02x:%02x:%02x",
-		mac[0], mac[1], mac[2], mac[3], mac[4], mac[5])
-}
-
-// generateUniqueRandomMAC will compare randomly generated Mac to mac addresses of veth already present in host.
-func (m MACGenerator) generateUniqueRandomMAC() (string, error) {
-	ll, err := m.netlink.LinkList()
-	if err != nil {
-		return "", err
+// generateRandomMAC returns a random locally administered unicast MAC address
+// for the host side of a pod's veth pair.
+//
+// The host end gets an explicit address at creation so that the kernel marks
+// it NET_ADDR_SET and systemd-udevd's MACAddressPolicy=persistent leaves it
+// alone. Otherwise udev rewrites the address after creation and the pod's
+// static ARP entry for its gateway no longer matches (#3354).
+//
+// The address is not checked against the node's other links. It does not need
+// to be unique: every veth pair is its own Ethernet segment, host neighbor
+// entries are keyed by interface, and the host ends are never bridged. A check
+// needs a dump of every link on each ADD, and under concurrent pod creation
+// those dumps are interrupted until the ADD fails (#3576).
+func generateRandomMAC() (net.HardwareAddr, error) {
+	mac := make(net.HardwareAddr, 6)
+	if _, err := rand.Read(mac); err != nil {
+		return nil, err
 	}
-	macMap := make(map[string]struct{})
-	for _, link := range ll {
-		if link.Attrs() != nil {
-			macMap[link.Attrs().HardwareAddr.String()] = struct{}{}
-		}
-	}
-
-	for i := 0; i < MAX_MAC_GENERATION_ATTEMPTS; i++ {
-		macAttempt := m.randMACfn()
-		if _, ok := macMap[macAttempt]; !ok {
-			return macAttempt, nil
-		}
-	}
-	return "", errors.New(fmt.Sprintf("failed to generate unique mac after %d attempts.", MAX_MAC_GENERATION_ATTEMPTS))
+	// Set the locally administered bit and clear the multicast bit.
+	mac[0] = (mac[0] | 0x02) & 0xfe
+	return mac, nil
 }

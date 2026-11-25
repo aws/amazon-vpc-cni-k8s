@@ -193,6 +193,22 @@ func TestSetupENIV6Network(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestLinkByMacSkipsHostVeth(t *testing.T) {
+	ctrl, mockNetLink, _, _, _ := setup(t)
+	defer ctrl.Finish()
+
+	mac, _ := net.ParseMAC(testMAC2)
+	// A pod's host-side veth that happens to carry the ENI's address is listed
+	// before the ENI itself; the lookup must return the ENI.
+	hostVeth := &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Name: "eni0123456789a", HardwareAddr: mac, Index: 7}}
+	eni := &netlink.Device{LinkAttrs: netlink.LinkAttrs{Name: "eth1", HardwareAddr: mac, Index: 3}}
+	mockNetLink.EXPECT().LinkList().Return([]netlink.Link{hostVeth, eni}, nil)
+
+	link, err := linkByMac(testMAC2, mockNetLink, 0*time.Second)
+	assert.NoError(t, err)
+	assert.Equal(t, eni, link)
+}
+
 func TestSetupENINetworkMACFail(t *testing.T) {
 	ctrl, mockNetLink, _, _, _ := setup(t)
 	defer ctrl.Finish()
