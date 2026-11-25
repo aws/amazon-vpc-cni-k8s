@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"time"
 
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
@@ -247,6 +248,16 @@ func CreateDeploymentSpanningENIs(f *framework.Framework, node coreV1.Node,
 		DumpENIPlacement(f, node, interfaceToPodList, replicas)
 	}
 	return interfaceToPodList, deployment
+}
+
+// WaitForPodsDeleted waits until no pods with the given label remain, so the
+// CNI DEL for each pod has run before host networking teardown is validated.
+func WaitForPodsDeleted(f *framework.Framework, labelKey string, labelVal string, timeout time.Duration) {
+	Eventually(func(g Gomega) {
+		pods, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector(labelKey, labelVal)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(pods.Items).To(BeEmpty())
+	}).WithTimeout(timeout).WithPolling(utils.PollIntervalShort).Should(Succeed())
 }
 
 // AssertSpanningENIsPreconditions fails the spec if the node configuration would

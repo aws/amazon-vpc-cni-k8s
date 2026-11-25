@@ -1,8 +1,6 @@
 package cni_upgrade_downgrade
 
 import (
-	"time"
-
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/integration/common"
@@ -61,8 +59,8 @@ var _ = Describe("test host networking", func() {
 				DeleteAndWaitTillDeploymentIsDeleted(deployment)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("waiting to allow CNI to tear down networking for terminated pods")
-			time.Sleep(time.Second * 60)
+			By("waiting for the deployment's pods to be deleted")
+			common.WaitForPodsDeleted(f, podLabelKey, podLabelVal, utils.DefaultDeploymentReadyTimeout)
 
 			By("validating host networking is teared down correctly")
 			common.ValidateHostNetworking(common.NetworkingTearDownSucceeds, podInput, primaryNode.Name, f)
