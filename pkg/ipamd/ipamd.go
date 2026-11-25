@@ -408,6 +408,12 @@ func containsPrivateIPAddressLimitExceededError(err error) bool {
 	return false
 }
 
+// containsInvalidParameterValueError returns whether EC2 rejected the request as InvalidParameterValue
+func containsInvalidParameterValueError(err error) bool {
+	var apiErr smithy.APIError
+	return errors.As(err, &apiErr) && apiErr.ErrorCode() == "InvalidParameterValue"
+}
+
 // inInsufficientCidrCoolingPeriod checks whether IPAMD is in insufficientCidrErrorCooldown
 func (c *IPAMContext) inInsufficientCidrCoolingPeriod() bool {
 	return time.Since(c.lastInsufficientCidrError) <= insufficientCidrErrorCooldown
@@ -1041,6 +1047,7 @@ func (c *IPAMContext) increaseDatastorePool(ctx context.Context, networkCard int
 			if c.useSubnetDiscovery && c.hasRoomForEni(networkCard) {
 				allocErr := c.tryAllocateENI(ctx, networkCard)
 				if allocErr == nil {
+					c.recordPoolIncreaseResult(nil)
 					c.updateLastNodeIPPoolAction(networkCard)
 					return nil
 				}
@@ -1061,7 +1068,9 @@ func (c *IPAMContext) increaseDatastorePool(ctx context.Context, networkCard int
 		// If we did not add any IPs, try to allocate an ENI.
 		if c.hasRoomForEni(networkCard) {
 			err = c.tryAllocateENI(ctx, networkCard)
-			c.recordPoolIncreaseResult(err)
+			if err == nil || !c.inInsufficientCidrCoolingPeriod() {
+				c.recordPoolIncreaseResult(err)
+			}
 			if err == nil {
 				c.updateLastNodeIPPoolAction(networkCard)
 			} else {
@@ -1140,7 +1149,8 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context, networkCard int) error
 			log.Errorf("Failed to increase pool size due to not able to allocate ENI %v", err)
 			ipamdErrInc("increaseIPPoolAllocENI")
 			log.Warnf("Failed to allocate %d IP addresses on an ENI: %v", resourcesToAllocate, err)
-			if containsInsufficientCIDRsOrSubnetIPs(err) {
+			// With prefix delegation EC2 reports an exhausted subnet as InvalidParameterValue
+			if containsInsufficientCIDRsOrSubnetIPs(err) || (c.enablePrefixDelegation && containsInvalidParameterValueError(err)) {
 				ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
 				log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
 				c.lastInsufficientCidrError = time.Now()
