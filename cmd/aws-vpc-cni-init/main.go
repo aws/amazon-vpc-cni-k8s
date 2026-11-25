@@ -25,6 +25,7 @@ import (
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+	"github.com/vishvananda/netlink"
 )
 
 const (
@@ -54,17 +55,30 @@ func getNodePrimaryIF() (string, error) {
 	if err != nil {
 		return primaryIF, errors.Wrap(err, "Failed to list links")
 	}
-	for _, link := range links {
-		if link.Attrs().HardwareAddr.String() == primaryMAC {
-			primaryIF = link.Attrs().Name
-			break
-		}
-	}
+	primaryIF = findLinkNameByMAC(links, primaryMAC)
 
 	if primaryIF == "" {
 		return primaryIF, errors.Wrap(err, "Failed to retrieve primary IF")
 	}
 	return primaryIF, nil
+}
+
+// findLinkNameByMAC returns the name of the ENI link that has the given MAC
+// address, or "" when there is none.
+//
+// The CNI plugin gives each pod's host-side veth a random address without
+// checking it against the node's links, so one may equal an ENI's address.
+// An ENI is never a veth, so veth links are skipped.
+func findLinkNameByMAC(links []netlink.Link, mac string) string {
+	for _, link := range links {
+		if _, isVeth := link.(*netlink.Veth); isVeth {
+			continue
+		}
+		if link.Attrs().HardwareAddr.String() == mac {
+			return link.Attrs().Name
+		}
+	}
+	return ""
 }
 
 func configureSystemParams(procSys procsyswrapper.ProcSys, primaryIF string) error {
