@@ -4670,3 +4670,119 @@ func TestInitHyperPodDisablesMultiNIC(t *testing.T) {
 	assert.False(t, c.enableMultiNICSupport)
 	assert.Equal(t, []bool{false, true, true}, c.markUnmanagedNetworkCards(efaOnly, enisByCard))
 }
+
+// With prefix delegation EC2 reports an exhausted subnet as InvalidParameterValue, which starts the
+// InsufficientCidr cooldown. Any other case only gets the general backoff.
+func TestIncreaseDatastorePoolInvalidParameterValueOnENIAllocation(t *testing.T) {
+	tests := []struct {
+		name                   string
+		enablePrefixDelegation bool
+		errCode                string
+		wantCooldown           bool
+		wantBackoff            time.Duration
+	}{
+		{"prefix delegation starts the cooldown", true, "InvalidParameterValue", true, 0},
+		{"secondary IP mode uses the general backoff", false, "InvalidParameterValue", false, ipPoolMonitorInterval},
+		{"prefix delegation throttling uses the general backoff", true, "RequestLimitExceeded", false, ipPoolMonitorInterval},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := setup(t)
+			defer m.ctrl.Finish()
+			ctx := context.Background()
+
+			ds := testDatastore()
+			if tt.enablePrefixDelegation {
+				ds = testDatastorewithPrefix()
+			}
+			c := &IPAMContext{
+				awsClient:              m.awsutils,
+				k8sClient:              m.k8sClient,
+				networkClient:          m.network,
+				maxIPsPerENI:           14,
+				maxPrefixesPerENI:      16,
+				maxENI:                 4,
+				warmENITarget:          1,
+				warmPrefixTarget:       1,
+				enablePrefixDelegation: tt.enablePrefixDelegation,
+				primaryIP:              make(map[string]string),
+				unmanagedENI:           []int{0},
+				dataStoreAccess:        ds,
+			}
+
+			allocErr := &smithy.GenericAPIError{Code: tt.errCode, Message: "There aren't sufficient free Ipv4 addresses or prefixes"}
+			m.awsutils.EXPECT().IsTrunkingCompatible().AnyTimes().Return(false)
+			m.awsutils.EXPECT().AllocENI(gomock.Any(), nil, "", gomock.Any(), defaultNetworkCard).Times(1).Return("", allocErr)
+
+			assert.NoError(t, c.increaseDatastorePool(ctx, defaultNetworkCard))
+			assert.Equal(t, tt.wantCooldown, c.inInsufficientCidrCoolingPeriod())
+			assert.Equal(t, tt.wantBackoff, c.poolIncreaseBackoff)
+			// The next pool-check tick must not call EC2 again; gomock fails on any unexpected call.
+			assert.NoError(t, c.increaseDatastorePool(ctx, defaultNetworkCard))
+		})
+	}
+}
+
+// A new ENI in another subnet after the existing ENI's subnet ran out is a success and resets the backoff.
+func TestIncreaseDatastorePoolSubnetDiscoveryENISuccessResetsBackoff(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+	ctx := context.Background()
+
+	ds := testDatastorewithPrefix()
+	_ = ds.GetDataStore(defaultNetworkCard).AddENI(primaryENIid, primaryDevice, true, false, false, networkutils.CalculateRouteTableId(primaryDevice, 0), "")
+
+	c := &IPAMContext{
+		awsClient:               m.awsutils,
+		k8sClient:               m.k8sClient,
+		networkClient:           m.network,
+		maxIPsPerENI:            14,
+		maxPrefixesPerENI:       16,
+		maxENI:                  4,
+		warmENITarget:           1,
+		warmPrefixTarget:        1,
+		enablePrefixDelegation:  true,
+		useSubnetDiscovery:      true,
+		primaryIP:               make(map[string]string),
+		unmanagedENI:            []int{0},
+		dataStoreAccess:         ds,
+		poolIncreaseBackoff:     40 * time.Second,
+		lastPoolIncreaseFailure: time.Now().Add(-time.Minute),
+	}
+
+	insufficientErr := &smithy.GenericAPIError{Code: INSUFFICIENT_CIDR_BLOCKS, Message: "no free CIDR blocks", Fault: smithy.FaultClient}
+	m.awsutils.EXPECT().IsTrunkingCompatible().Return(false).AnyTimes()
+	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid).AnyTimes()
+	m.awsutils.EXPECT().AllocIPAddresses(gomock.Any(), primaryENIid, gomock.Any()).Return(nil, insufficientErr).Times(2)
+	m.awsutils.EXPECT().AllocENI(gomock.Any(), nil, "", 1, defaultNetworkCard).Return(secENIid, nil)
+	m.awsutils.EXPECT().WaitForENIAndIPsAttached(secENIid, 1).Return(awsutils.ENIMetadata{
+		ENIID:          secENIid,
+		MAC:            secMAC,
+		DeviceNumber:   secDevice,
+		SubnetIPv4CIDR: secSubnet,
+		SubnetID:       "subnet-secondary",
+		NetworkCard:    defaultNetworkCard,
+	}, nil)
+	m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), gomock.Any()).Return(false, nil).AnyTimes()
+	m.network.EXPECT().GetRouteTableNumberForENI(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(0, false, nil)
+	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, defaultNetworkCard, secSubnet, gomock.Any(), false, gomock.Any(), gomock.Any()).Return(nil)
+
+	assert.NoError(t, c.increaseDatastorePool(ctx, defaultNetworkCard))
+	assert.False(t, c.inInsufficientCidrCoolingPeriod())
+	assert.Equal(t, time.Duration(0), c.poolIncreaseBackoff)
+}
+
+func TestRecordPoolIncreaseResult(t *testing.T) {
+	c := &IPAMContext{}
+	failure := errors.New("ec2 error")
+	var got []time.Duration
+	for range 7 {
+		c.recordPoolIncreaseResult(failure)
+		got = append(got, c.poolIncreaseBackoff)
+	}
+	assert.Equal(t, []time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 40 * time.Second, 80 * time.Second, 120 * time.Second, 120 * time.Second}, got)
+	assert.True(t, c.inPoolIncreaseBackoff())
+
+	c.recordPoolIncreaseResult(nil)
+	assert.False(t, c.inPoolIncreaseBackoff())
+}
