@@ -94,8 +94,8 @@ var _ = Describe("test host networking", func() {
 				DeleteAndWaitTillDeploymentIsDeleted(deployment)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("waiting to allow CNI to tear down networking for terminated pods")
-			time.Sleep(time.Second * 60)
+			By("waiting for the deployment's pods to be deleted")
+			common.WaitForPodsDeleted(f, podLabelKey, podLabelVal, utils.DefaultDeploymentReadyTimeout)
 
 			By("validating host networking is teared down correctly")
 			common.ValidateHostNetworking(common.NetworkingTearDownSucceeds, input, primaryNode.Name, f)
