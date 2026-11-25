@@ -1847,6 +1847,18 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs(ctx context.Context) (Des
 		attachment := ec2res.Attachment
 		// Validate that Attachment is populated by EC2 response before logging
 		if attachment != nil {
+			// Leave out ENIs whose detach is in progress or done. IMDS can still list such an ENI
+			// for a while, e.g. when the instance rebooted right after ipamd asked EC2 to detach it.
+			// Its IPs must not go to pods: they stop working once the detach completes, and the
+			// reconcile then force-removes the ENI with those pods still using its IPs.
+			// "attaching" is kept: DescribeNetworkInterfaces can lag IMDS, so a new ENI ipamd already
+			// added to the datastore may still be reported as attaching, and leaving it out here
+			// would make nodeIPPoolReconcile force-remove it.
+			if attachment.Status == ec2types.AttachmentStatusDetaching || attachment.Status == ec2types.AttachmentStatusDetached {
+				log.Warnf("DescribeAllENIs: ENI %s is in instance metadata but its EC2 attachment is %s, leaving it out", eniID, attachment.Status)
+				delete(eniMap, eniID)
+				continue
+			}
 			log.Infof("Got network card index %v for ENI %v", aws.ToInt32(attachment.NetworkCardIndex), eniID)
 			if aws.ToInt32(attachment.DeviceIndex) == 0 && aws.ToInt32(attachment.NetworkCardIndex) == 0 {
 				// Check if DeleteOnTermination is set for Primary ENI

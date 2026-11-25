@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -64,6 +65,16 @@ type TrafficTest struct {
 	ValidateClientPods func(list v1.PodList) error
 	// Boolean that indicates if IPv6 mode is enabled
 	IsV6Enabled bool
+	// If set, wait this long after the server pods are validated and before the client starts
+	// sending traffic. Newly attached network interfaces (e.g. branch ENIs) can take time after
+	// creation before they serve traffic.
+	PreTrafficDelay time.Duration
+	// If set, each client pod runs an init container that polls the metric server until it
+	// responds or this timeout elapses, so a client only starts sending traffic once its own
+	// pod networking (e.g. a newly created branch ENI) passes traffic.
+	ClientNetworkReadyTimeout time.Duration
+	// If set, pin all client pods to this node.
+	ClientNodeName string
 }
 
 // Tests traffic by creating multiple server pods using a deployment and multiple client pods
@@ -145,6 +156,11 @@ func (t *TrafficTest) TestTraffic() (successRate float64, err error) {
 		fmt.Fprintln(GinkgoWriter, "successfully validated the server pod list")
 	}
 
+	if t.PreTrafficDelay > 0 {
+		fmt.Fprintf(GinkgoWriter, "waiting %s for server pod networking to be ready before sending traffic\n", t.PreTrafficDelay)
+		time.Sleep(t.PreTrafficDelay)
+	}
+
 	var serverIPs []string
 	for _, pod := range podList.Items {
 		podIP := pod.Status.PodIP
@@ -186,6 +202,10 @@ func (t *TrafficTest) TestTraffic() (successRate float64, err error) {
 
 	fmt.Fprintln(GinkgoWriter, "successfully fetched the metrics from metric server")
 
+	if len(testInputs) < t.ClientCount {
+		t.reportMissingClients(podList, testInputs, metricServerPod)
+	}
+
 	successRate = t.calculateSuccessRate(testInputs)
 	if successRate != float64(100) {
 		fmt.Fprintf(GinkgoWriter, "SuccessRate: %v, Input List: %v", successRate, testInputs)
@@ -194,6 +214,43 @@ func (t *TrafficTest) TestTraffic() (successRate float64, err error) {
 	}
 
 	return successRate, nil
+}
+
+// reportMissingClients logs the client pods that did not report to the metric server, with their status and
+// logs, and the metric server logs. It runs before the test resources are deleted, so a missing client can be
+// diagnosed from the test output.
+func (t *TrafficTest) reportMissingClients(clientPods v1.PodList, testInputs []input.TestStatus, metricServerPod *v1.Pod) {
+	reported := make(map[string]bool, len(testInputs))
+	for _, status := range testInputs {
+		reported[status.SourcePod] = true
+	}
+
+	fmt.Fprintf(GinkgoWriter, "%d of %d client pods reported to the metric server\n", len(testInputs), t.ClientCount)
+	podManager := t.Framework.K8sResourceManagers.PodManager()
+	for _, pod := range clientPods.Items {
+		if reported[pod.Name] {
+			continue
+		}
+		fmt.Fprintf(GinkgoWriter, "client pod %s did not report: node=%s ip=%s phase=%s\n",
+			pod.Name, pod.Spec.NodeName, pod.Status.PodIP, pod.Status.Phase)
+		for _, cs := range append(pod.Status.InitContainerStatuses, pod.Status.ContainerStatuses...) {
+			if term := cs.State.Terminated; term != nil {
+				fmt.Fprintf(GinkgoWriter, "  container %s exited %d (%s) %s -> %s\n", cs.Name, term.ExitCode,
+					term.Reason, term.StartedAt.UTC().Format(time.RFC3339), term.FinishedAt.UTC().Format(time.RFC3339))
+			}
+		}
+		if logs, err := podManager.PodLogs(pod.Namespace, pod.Name); err != nil {
+			fmt.Fprintf(GinkgoWriter, "  failed to get logs: %v\n", err)
+		} else {
+			fmt.Fprintf(GinkgoWriter, "  logs:\n%s\n", logs)
+		}
+	}
+
+	if logs, err := podManager.PodLogs(metricServerPod.Namespace, metricServerPod.Name); err != nil {
+		fmt.Fprintf(GinkgoWriter, "failed to get metric server logs: %v\n", err)
+	} else {
+		fmt.Fprintf(GinkgoWriter, "metric server logs:\n%s\n", logs)
+	}
 }
 
 func (t *TrafficTest) startTrafficServer() (*appsV1.Deployment, error) {
@@ -229,14 +286,38 @@ func (t *TrafficTest) startTrafficClient(serverAddList string, metricServerIP st
 		}).
 		Build()
 
-	clientJob := manifest.NewDefaultJobBuilder().
+	clientJobBuilder := manifest.NewDefaultJobBuilder().
 		Name("traffic-client-regular-pods").
 		Parallelism(t.ClientCount).
 		Container(trafficClientContainer).
 		PodLabels(t.ClientPodLabelKey, t.ClientPodLabelVal).
-		Build()
+		NodeName(t.ClientNodeName)
+
+	if t.ClientNetworkReadyTimeout > 0 {
+		clientJobBuilder.InitContainer(t.clientNetworkReadyContainer(metricServerIP))
+	}
+
+	clientJob := clientJobBuilder.Build()
 
 	return t.Framework.K8sResourceManagers.JobManager().CreateAndWaitTillJobCompleted(clientJob)
+}
+
+// clientNetworkReadyContainer returns an init container that retries a read-only GET against the
+// metric server until it succeeds or ClientNetworkReadyTimeout elapses. It shares the client pod's
+// network namespace, so it succeeding means the client pod can reach other pods.
+func (t *TrafficTest) clientNetworkReadyContainer(metricServerIP string) v1.Container {
+	timeoutSeconds := int(t.ClientNetworkReadyTimeout.Seconds())
+	return manifest.NewCurlContainer(t.Framework.Options.TestImageRegistry).
+		Name("wait-for-pod-network").
+		Command([]string{"curl"}).
+		Args([]string{
+			"--silent", "--show-error", "--fail", "--output", "/dev/null",
+			"--connect-timeout", "2", "--max-time", "3",
+			"--retry", strconv.Itoa(timeoutSeconds), "--retry-delay", "1",
+			"--retry-all-errors", "--retry-max-time", strconv.Itoa(timeoutSeconds),
+			fmt.Sprintf("http://%s/get/metric/connectivity", net.JoinHostPort(metricServerIP, metricServerPort)),
+		}).
+		Build()
 }
 
 func (t *TrafficTest) startMetricServerPod() (*v1.Pod, error) {

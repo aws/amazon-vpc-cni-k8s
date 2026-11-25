@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"strings"
 	"syscall"
 	"testing"
 
@@ -733,7 +734,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
-						value: "1",
+						value: "0",
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
@@ -835,7 +836,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
-						value: "1",
+						value: "0",
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
@@ -937,7 +938,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
-						value: "1",
+						value: "0",
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
@@ -1039,7 +1040,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
-						value: "1",
+						value: "0",
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
@@ -1252,7 +1253,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
-						value: "1",
+						value: "0",
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
@@ -1348,7 +1349,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
-						value: "1",
+						value: "0",
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
@@ -3370,7 +3371,7 @@ func Test_createVethPairContext_runWithPeerNamespace(t *testing.T) {
 	// Host-side IPv6 sysctls are applied inside the host namespace, before the
 	// host end is brought up.
 	ra := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_ra", "0").Return(nil)
-	redirects := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_redirects", "1").Return(nil)
+	redirects := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_redirects", "0").Return(nil)
 	forwarding := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/forwarding", "0").Return(nil)
 	gomock.InOrder(ra, redirects, forwarding, hostLinkUp)
 
@@ -3393,6 +3394,89 @@ func Test_createVethPairContext_runWithPeerNamespace(t *testing.T) {
 	}
 
 	assert.NoError(t, createVethContext.run(hostNS))
+}
+
+// The ownership stamp is written as soon as the host end exists, before the
+// host-side sysctls and bring-up, so a concurrent ADD computing the same name
+// can attribute the link instead of treating it as unowned.
+func Test_createVethPairContext_runStampsBeforeHostBringUp(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	hostVeth := &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Name: "eni8ea2c11fe35", Index: 9}}
+
+	netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
+	netLink.EXPECT().LinkAdd(gomock.Any()).Return(nil)
+	byName := netLink.EXPECT().LinkByName("eni8ea2c11fe35").Return(hostVeth, nil)
+	alias := netLink.EXPECT().LinkSetAlias(hostVeth, hostVethAlias(testPodIdentity)).Return(nil)
+	hostLinkUp := netLink.EXPECT().LinkSetUp(hostVeth).Return(nil)
+
+	procSys := mock_procsyswrapper.NewMockProcSys(ctrl)
+	ra := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_ra", "0").Return(nil)
+	redirects := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_redirects", "0").Return(nil)
+	forwarding := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/forwarding", "0").Return(nil)
+	// The stamp lands after the link is found and before anything brings it up.
+	gomock.InOrder(byName, alias, ra, redirects, forwarding, hostLinkUp)
+
+	hostNS := mock_ns.NewMockNetNS(ctrl)
+	hostNS.EXPECT().Fd().Return(uintptr(3))
+	hostNS.EXPECT().Do(gomock.Any()).DoAndReturn(func(toRun func(ns.NetNS) error) error {
+		return toRun(nil)
+	})
+
+	createVethContext := &createVethPairContext{
+		contVethName: "eth0",
+		hostVethName: "eni8ea2c11fe35",
+		ipAddr:       &net.IPNet{IP: net.ParseIP("192.168.120.1"), Mask: net.CIDRMask(32, 32)},
+		mtu:          9001,
+		netLink:      netLink,
+		procSys:      procSys,
+		hostMACAddr:  net.HardwareAddr("00:00:5e:00:53:af"),
+		podIdentity:  testPodIdentity,
+		log:          testLogger,
+	}
+	// The container-side work is not reached: the stamp fails the run below, and
+	// here it stops at the first container call, which this test does not assert.
+	netLink.EXPECT().LinkByName("eth0").Return(nil, errors.New("stop here")).AnyTimes()
+
+	err := createVethContext.run(hostNS)
+	assert.Error(t, err, "stops at the container end, after the host end is stamped and up")
+}
+
+// A failed stamp aborts setup rather than leaving an unattributable link up.
+func Test_createVethPairContext_runStampFailureAborts(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	hostVeth := &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Name: "eni8ea2c11fe35", Index: 9}}
+
+	netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
+	netLink.EXPECT().LinkAdd(gomock.Any()).Return(nil)
+	netLink.EXPECT().LinkByName("eni8ea2c11fe35").Return(hostVeth, nil)
+	netLink.EXPECT().LinkSetAlias(hostVeth, hostVethAlias(testPodIdentity)).Return(errors.New("ifalias write failed"))
+	// No LinkSetUp and no sysctls: gomock fails the test if the run continues.
+
+	hostNS := mock_ns.NewMockNetNS(ctrl)
+	hostNS.EXPECT().Fd().Return(uintptr(3))
+	hostNS.EXPECT().Do(gomock.Any()).DoAndReturn(func(toRun func(ns.NetNS) error) error {
+		return toRun(nil)
+	})
+
+	createVethContext := &createVethPairContext{
+		contVethName: "eth0",
+		hostVethName: "eni8ea2c11fe35",
+		ipAddr:       &net.IPNet{IP: net.ParseIP("192.168.120.1"), Mask: net.CIDRMask(32, 32)},
+		mtu:          9001,
+		netLink:      netLink,
+		procSys:      mock_procsyswrapper.NewMockProcSys(ctrl),
+		hostMACAddr:  net.HardwareAddr("00:00:5e:00:53:af"),
+		podIdentity:  testPodIdentity,
+		log:          testLogger,
+	}
+
+	err := createVethContext.run(hostNS)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to stamp ownership alias")
 }
 
 // Regression test: with PeerNamespace enabled the host end must be brought up
@@ -3475,7 +3559,7 @@ func Test_createVethPairContext_runWithPeerNamespaceIPv6(t *testing.T) {
 	// Host-side IPv6 sysctls must precede the host-end bring-up: the host end
 	// must never be up while still accepting router advertisements.
 	ra := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_ra", "0").Return(nil)
-	redirects := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_redirects", "1").Return(nil)
+	redirects := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_redirects", "0").Return(nil)
 	forwarding := procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/forwarding", "0").Return(nil)
 	gomock.InOrder(ra, redirects, forwarding, hostLinkUp)
 
@@ -3529,7 +3613,7 @@ func Test_createVethPairContext_runHostSysctlFailure(t *testing.T) {
 		value string
 	}{
 		{"net/ipv6/conf/eni8ea2c11fe35/accept_ra", "0"},
-		{"net/ipv6/conf/eni8ea2c11fe35/accept_redirects", "1"},
+		{"net/ipv6/conf/eni8ea2c11fe35/accept_redirects", "0"},
 		{"net/ipv6/conf/eni8ea2c11fe35/forwarding", "0"},
 	}
 	for _, tt := range tests {
@@ -3616,7 +3700,7 @@ func Test_createVethPairContext_runIPv6SysctlsNotSupported(t *testing.T) {
 
 	procSys := mock_procsyswrapper.NewMockProcSys(ctrl)
 	procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_ra", "0").Return(syscall.ENOENT)
-	procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_redirects", "1").Return(syscall.ENOENT)
+	procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/accept_redirects", "0").Return(syscall.ENOENT)
 	procSys.EXPECT().Set("net/ipv6/conf/eni8ea2c11fe35/forwarding", "0").Return(syscall.ENOENT)
 
 	hostNS := mock_ns.NewMockNetNS(ctrl)
@@ -3638,8 +3722,27 @@ func Test_createVethPairContext_runIPv6SysctlsNotSupported(t *testing.T) {
 	assert.NoError(t, createVethContext.run(hostNS))
 }
 
+const testPodIdentity = "ns-1/pod-1"
+
 func Test_linuxNetwork_setupVeth(t *testing.T) {
+	// Stamped for testPodIdentity, so setupVeth may reclaim it.
 	hostVethWithIndex9 := &netlink.Veth{
+		LinkAttrs: netlink.LinkAttrs{
+			Name:  "eni8ea2c11fe35",
+			Index: 9,
+			Alias: hostVethAlias(testPodIdentity),
+		},
+	}
+	// Stamped for a different sandbox.
+	hostVethOwnedByOtherSandbox := &netlink.Veth{
+		LinkAttrs: netlink.LinkAttrs{
+			Name:  "eni8ea2c11fe35",
+			Index: 9,
+			Alias: hostVethAlias("some-other-sandbox"),
+		},
+	}
+	// No ownership stamp, as when setupVeth runs without a sandbox ID.
+	hostVethUnstamped := &netlink.Veth{
 		LinkAttrs: netlink.LinkAttrs{
 			Name:  "eni8ea2c11fe35",
 			Index: 9,
@@ -3668,10 +3771,17 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 		err   error
 	}
 
+	type linkSetAliasCall struct {
+		link  netlink.Link
+		alias string
+		err   error
+	}
+
 	type fields struct {
 		linkByNameCalls    []linkByNameCall
 		linkDelCalls       []linkDelCall
 		linkSetupCalls     []linkSetupCall
+		linkSetAliasCalls  []linkSetAliasCall
 		withNetNSPathCalls []withNetNSPathCall
 		procSysSetCalls    []procSysSetCall
 	}
@@ -3681,6 +3791,7 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 		contVethName string
 		netnsPath    string
 		mtu          int
+		podIdentity  string
 	}
 	tests := []struct {
 		name    string
@@ -3712,8 +3823,38 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 				hostVethName: "eni8ea2c11fe35",
 				contVethName: "eth0",
 				netnsPath:    "/proc/42/ns/net",
+				podIdentity:  testPodIdentity,
 			},
 			want: hostVethWithIndex9,
+		},
+		{
+			// The stamp is written inside run, which this table stubs out, so
+			// setupVeth itself must never call LinkSetAlias.
+			name: "successfully setup veth - empty sandboxID leaves the link unstamped",
+			fields: fields{
+				linkByNameCalls: []linkByNameCall{
+					{
+						linkName: "eni8ea2c11fe35",
+						err:      errors.New("not exists"),
+					},
+					{
+						linkName: "eni8ea2c11fe35",
+						link:     hostVethUnstamped,
+					},
+				},
+				withNetNSPathCalls: []withNetNSPathCall{
+					{
+						netNSPath: "/proc/42/ns/net",
+					},
+				},
+			},
+			args: args{
+				hostVethName: "eni8ea2c11fe35",
+				contVethName: "eth0",
+				netnsPath:    "/proc/42/ns/net",
+				podIdentity:  "",
+			},
+			want: hostVethUnstamped,
 		},
 		{
 			name: "successfully setup veth - old hostVeth exists",
@@ -3743,6 +3884,7 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 				hostVethName: "eni8ea2c11fe35",
 				contVethName: "eth0",
 				netnsPath:    "/proc/42/ns/net",
+				podIdentity:  testPodIdentity,
 			},
 			want: hostVethWithIndex9,
 		},
@@ -3766,8 +3908,27 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 				hostVethName: "eni8ea2c11fe35",
 				contVethName: "eth0",
 				netnsPath:    "/proc/42/ns/net",
+				podIdentity:  testPodIdentity,
 			},
 			wantErr: errors.New("failed to delete old hostVeth eni8ea2c11fe35: some error"),
+		},
+		{
+			name: "refuse to delete hostVeth owned by another pod",
+			fields: fields{
+				linkByNameCalls: []linkByNameCall{
+					{
+						linkName: "eni8ea2c11fe35",
+						link:     hostVethOwnedByOtherSandbox,
+					},
+				},
+			},
+			args: args{
+				hostVethName: "eni8ea2c11fe35",
+				contVethName: "eth0",
+				netnsPath:    "/proc/42/ns/net",
+				podIdentity:  testPodIdentity,
+			},
+			wantErr: errors.New(`hostVeth eni8ea2c11fe35 is owned by another pod, refusing to delete it for pod "ns-1/pod-1"`),
 		},
 		{
 			name: "failed to create veth pair",
@@ -3834,6 +3995,9 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 			for _, call := range tt.fields.linkSetupCalls {
 				netLink.EXPECT().LinkSetUp(call.link).Return(call.err)
 			}
+			for _, call := range tt.fields.linkSetAliasCalls {
+				netLink.EXPECT().LinkSetAlias(call.link, call.alias).Return(call.err)
+			}
 
 			ns := mock_nswrapper.NewMockNS(ctrl)
 			for _, call := range tt.fields.withNetNSPathCalls {
@@ -3851,7 +4015,7 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 				ns:      ns,
 				procSys: procSys,
 			}
-			got, err := n.setupVeth(tt.args.hostVethName, tt.args.contVethName, tt.args.netnsPath, nil, tt.args.mtu, testLogger, 0)
+			got, err := n.setupVeth(tt.args.hostVethName, tt.args.contVethName, tt.args.netnsPath, nil, tt.args.mtu, tt.args.podIdentity, testLogger, 0)
 			if tt.wantErr != nil {
 				assert.EqualError(t, err, tt.wantErr.Error())
 			} else {
@@ -3966,7 +4130,7 @@ func Test_linuxNetwork_setupVlan(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
-						value: "1",
+						value: "0",
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
@@ -4034,7 +4198,7 @@ func Test_linuxNetwork_setupVlan(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
-						value: "1",
+						value: "0",
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
@@ -4129,7 +4293,7 @@ func Test_linuxNetwork_setupVlan(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
-						value: "1",
+						value: "0",
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
@@ -4184,7 +4348,7 @@ func Test_linuxNetwork_setupVlan(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
-						value: "1",
+						value: "0",
 					},
 					{
 						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
@@ -5531,4 +5695,280 @@ func isUnicastMAC(mac string) bool {
 		return false
 	}
 	return addr[0]&0x1 == 0 && addr[0]&0x2 == 0x02
+}
+
+func Test_linuxNetwork_claimHostVethName(t *testing.T) {
+	const (
+		vethName  = "eni8ea2c11fe35"
+		netnsPath = "/proc/42/ns/net"
+		hostIndex = 9
+		peerIndex = 42
+	)
+	stamped := func(alias string) *netlink.Veth {
+		return &netlink.Veth{LinkAttrs: netlink.LinkAttrs{
+			Name: vethName, Index: hostIndex, ParentIndex: peerIndex, Alias: alias,
+		}}
+	}
+	// A veth created before the alias existed: no stamp, peer index set.
+	legacy := stamped("")
+
+	tests := []struct {
+		name string
+		// existing is the link already holding the name, nil if the name is free.
+		existing netlink.Link
+		// peer is what LinkByIndex returns inside netnsPath, nil for an error.
+		peer           netlink.Link
+		expectPeerCall bool
+		// netnsOpenErr makes entering netnsPath fail, so the peer is never looked up.
+		netnsOpenErr bool
+		// noPodIdentity calls claimHostVethName with an empty sandbox ID. Nothing
+		// can be stamped or matched by stamp in that case, so ownership has to be
+		// established from the veth peer or not at all.
+		noPodIdentity bool
+		wantDelete    bool
+		wantErr       string
+	}{
+		{
+			name:     "name is free",
+			existing: nil,
+		},
+		{
+			name:       "alias matches this sandbox",
+			existing:   stamped(hostVethAlias(testPodIdentity)),
+			wantDelete: true,
+		},
+		{
+			name:     "alias set for another pod",
+			existing: stamped(hostVethAlias("other")),
+			wantErr:  `hostVeth eni8ea2c11fe35 is owned by another pod, refusing to delete it for pod "ns-1/pod-1"`,
+		},
+		{
+			name:     "unstamped, peer is reciprocal in target netns",
+			existing: legacy,
+			// Points back at the host end, so this is our pair.
+			peer:           &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Index: peerIndex, ParentIndex: hostIndex}},
+			expectPeerCall: true,
+			wantDelete:     true,
+		},
+		{
+			// The common leftover: owner deleted, so its peer is in the old netns.
+			name:           "unstamped, peer does not point back",
+			existing:       legacy,
+			peer:           &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Index: peerIndex, ParentIndex: 7}},
+			expectPeerCall: true,
+			wantDelete:     true,
+		},
+		{
+			name:           "unstamped, peer index absent from target netns",
+			existing:       legacy,
+			peer:           nil,
+			expectPeerCall: true,
+			wantDelete:     true,
+		},
+		{
+			name:           "unstamped, peer in netns is not a veth",
+			existing:       legacy,
+			peer:           &netlink.Dummy{LinkAttrs: netlink.LinkAttrs{Index: peerIndex, ParentIndex: hostIndex}},
+			expectPeerCall: true,
+			wantDelete:     true,
+		},
+		{
+			// The peer cannot be checked, but unstamped links are reclaimed anyway.
+			name:         "unstamped, target netns cannot be entered",
+			existing:     legacy,
+			netnsOpenErr: true,
+			wantDelete:   true,
+		},
+		{
+			// Not a pod's host veth, so it is never reclaimed.
+			name:     "existing link is not a veth",
+			existing: &netlink.Dummy{LinkAttrs: netlink.LinkAttrs{Name: vethName, Index: hostIndex}},
+			wantErr:  "hostVeth eni8ea2c11fe35 already exists and is not a veth, refusing to delete it",
+		},
+		{
+			// The type check runs before the alias cases, so a device carrying this
+			// pod's stamp is still refused when it is not a veth.
+			name: "non-veth link carrying this pod's alias",
+			existing: &netlink.Dummy{LinkAttrs: netlink.LinkAttrs{
+				Name: vethName, Index: hostIndex, Alias: hostVethAlias(testPodIdentity),
+			}},
+			wantErr: "hostVeth eni8ea2c11fe35 already exists and is not a veth, refusing to delete it",
+		},
+		{
+			name:       "unstamped veth reports no peer index",
+			existing:   &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Name: vethName, Index: hostIndex}},
+			wantDelete: true,
+		},
+		{
+			// An empty sandbox ID can never match a stamp, so even a link carrying
+			// what would otherwise be our own alias is refused rather than deleted.
+			name:          "no pod identity, refuses a link stamped by any pod",
+			existing:      stamped(hostVethAlias(testPodIdentity)),
+			noPodIdentity: true,
+			wantErr:       `hostVeth eni8ea2c11fe35 is owned by another pod, refusing to delete it for pod ""`,
+		},
+		{
+			// The case the sandbox-ID stamp got wrong. CNI DEL does not delete the host
+			// veth, so a new sandbox of the same pod can find the old link still stamped.
+			// Keying on pod identity lets the pod reclaim its own link.
+			name:       "same pod, earlier sandbox still holds the link",
+			existing:   stamped(hostVethAlias(testPodIdentity)),
+			wantDelete: true,
+		},
+		{
+			// The collision this guards against is a different pod, which still refuses.
+			name:     "different pod identity is refused",
+			existing: stamped(hostVethAlias("other-ns/other-pod")),
+			wantErr:  `hostVeth eni8ea2c11fe35 is owned by another pod, refusing to delete it for pod "ns-1/pod-1"`,
+		},
+		{
+			// The upgrade path when no sandbox ID is available: the stamp cannot
+			// help, so the reciprocal peer is the only evidence of ownership.
+			name:           "no sandbox ID, reclaims an unstamped link whose peer is reciprocal",
+			existing:       legacy,
+			peer:           &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Index: peerIndex, ParentIndex: hostIndex}},
+			expectPeerCall: true,
+			noPodIdentity:  true,
+			wantDelete:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
+			nsMock := mock_nswrapper.NewMockNS(ctrl)
+
+			if tt.existing == nil {
+				netLink.EXPECT().LinkByName(vethName).Return(nil, errors.New("not exists"))
+			} else {
+				netLink.EXPECT().LinkByName(vethName).Return(tt.existing, nil)
+			}
+			if tt.netnsOpenErr {
+				nsMock.EXPECT().WithNetNSPath(netnsPath, gomock.Any()).Return(errors.New("no such file or directory"))
+			} else if tt.expectPeerCall {
+				// Actually run the callback inside the mocked netns so that the
+				// peer lookup is exercised rather than skipped.
+				nsMock.EXPECT().WithNetNSPath(netnsPath, gomock.Any()).DoAndReturn(
+					func(_ string, toRun func(ns.NetNS) error) error {
+						return toRun(nil)
+					})
+				if tt.peer == nil {
+					netLink.EXPECT().LinkByIndex(peerIndex).Return(nil, errors.New("not found"))
+				} else {
+					netLink.EXPECT().LinkByIndex(peerIndex).Return(tt.peer, nil)
+				}
+			}
+			if tt.wantDelete {
+				netLink.EXPECT().LinkDel(tt.existing).Return(nil)
+			}
+
+			podIdentity := testPodIdentity
+			if tt.noPodIdentity {
+				podIdentity = ""
+			}
+
+			n := &linuxNetwork{netLink: netLink, ns: nsMock}
+			err := n.claimHostVethName(vethName, podIdentity, netnsPath, testLogger)
+			if tt.wantErr != "" {
+				assert.EqualError(t, err, tt.wantErr)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func Test_linuxNetwork_claimAltHostVethName(t *testing.T) {
+	const (
+		vethName  = "vlan8ea2c11fe35"
+		altName   = "eni8ea2c11fe35"
+		netnsPath = "/proc/42/ns/net"
+	)
+	foreign := &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Name: altName, Index: 9, ParentIndex: 42, Alias: hostVethAlias("other")}}
+	ours := &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Name: altName, Index: 9, ParentIndex: 42, Alias: hostVethAlias(testPodIdentity)}}
+
+	tests := []struct {
+		name     string
+		alt      string
+		existing netlink.Link // nil: alt name is free
+		wantDel  bool
+		wantErr  string
+	}{
+		{name: "no alt name", alt: ""},
+		{name: "alt equals the name", alt: vethName},
+		{name: "alt name is free", alt: altName},
+		{name: "alt name owned by this sandbox", alt: altName, existing: ours, wantDel: true},
+		{name: "alt name owned by another pod", alt: altName, existing: foreign,
+			wantErr: `hostVeth eni8ea2c11fe35 is owned by another pod, refusing to delete it for pod "ns-1/pod-1"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+			netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
+			if tt.alt != "" && tt.alt != vethName {
+				if tt.existing == nil {
+					netLink.EXPECT().LinkByName(tt.alt).Return(nil, errors.New("not exists"))
+				} else {
+					netLink.EXPECT().LinkByName(tt.alt).Return(tt.existing, nil)
+				}
+			}
+			if tt.wantDel {
+				netLink.EXPECT().LinkDel(tt.existing).Return(nil)
+			}
+			n := &linuxNetwork{netLink: netLink}
+			err := n.claimAltHostVethName(VirtualInterfaceMetadata{HostVethName: vethName, AltHostVethName: tt.alt, PodIdentity: testPodIdentity}, netnsPath, testLogger)
+			if tt.wantErr != "" {
+				assert.EqualError(t, err, tt.wantErr)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func Test_linuxNetwork_SetupPodNetworks_refuseForeignAltHostVethName(t *testing.T) {
+	meta := VirtualInterfaceMetadata{
+		HostVethName:      "eni8ea2c11fe35",
+		AltHostVethName:   "vlan8ea2c11fe35",
+		ContainerVethName: "eth0",
+		PodIdentity:       testPodIdentity,
+		IPAddress:         &net.IPNet{IP: net.ParseIP("192.168.100.42"), Mask: net.CIDRMask(32, 32)},
+	}
+	foreign := &netlink.Veth{LinkAttrs: netlink.LinkAttrs{Name: meta.AltHostVethName, Index: 9, ParentIndex: 42, Alias: hostVethAlias("other")}}
+
+	for _, branch := range []bool{false, true} {
+		t.Run(fmt.Sprintf("branchENI=%v", branch), func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+			netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
+			netLink.EXPECT().LinkByName(meta.AltHostVethName).Return(foreign, nil)
+			n := &linuxNetwork{netLink: netLink}
+
+			var err error
+			if branch {
+				err = n.SetupBranchENIPodNetwork(meta, "/proc/42/ns/net", 7, "00:00:5e:00:53:af", "192.168.120.1", 3, 9001, sgpp.EnforcingModeStrict, testLogger)
+			} else {
+				err = n.SetupPodNetwork([]VirtualInterfaceMetadata{meta}, "/proc/42/ns/net", 9001, testLogger)
+			}
+			assert.ErrorContains(t, err, `hostVeth vlan8ea2c11fe35 is owned by another pod`)
+		})
+	}
+}
+
+// The stamp goes in IFLA_IFALIAS, which the kernel caps at 256 bytes. A namespace can be 63
+// characters and a pod name 253, so storing the identity raw would fail the ADD for long
+// names. Hashing keeps it fixed-width.
+func TestHostVethAlias_FitsIfAlias(t *testing.T) {
+	const ifAliasMax = 256
+	longest := strings.Repeat("n", 63) + "/" + strings.Repeat("p", 253)
+
+	alias := hostVethAlias(longest)
+
+	assert.Less(t, len(alias), ifAliasMax, "the stamp must fit IFLA_IFALIAS")
+	assert.Equal(t, len(hostVethAlias("ns/pod")), len(alias), "the stamp must be fixed width")
+	assert.NotEqual(t, hostVethAlias("a/b"), hostVethAlias("a/c"), "distinct pods must stamp differently")
 }
