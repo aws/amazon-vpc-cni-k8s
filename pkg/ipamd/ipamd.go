@@ -1347,10 +1347,13 @@ func (c *IPAMContext) setupENI(ctx context.Context, eni string, eniMetadata awsu
 		return errors.Wrapf(err, "failed to get route table ID for ENI %s", eni)
 	}
 
-	// Add the ENI to the datastore
-	err = c.dataStoreAccess.GetDataStore(eniMetadata.NetworkCard).AddENI(eni, eniMetadata.DeviceNumber, eni == primaryENI, isTrunkENI, isEFAENI, routeTableID, eniMetadata.SubnetID)
-	if err != nil && err.Error() != datastore.DuplicatedENIError {
-		return errors.Wrapf(err, "failed to add ENI %s to data store", eni)
+	// Add the ENI to the datastore. A trunk ENI is added only after SetupENINetwork below, because
+	// AddNetwork treats GetTrunkENI() != "" as ready for branch VLANs (#3925).
+	if !isTrunkENI {
+		err = c.dataStoreAccess.GetDataStore(eniMetadata.NetworkCard).AddENI(eni, eniMetadata.DeviceNumber, eni == primaryENI, isTrunkENI, isEFAENI, routeTableID, eniMetadata.SubnetID)
+		if err != nil && err.Error() != datastore.DuplicatedENIError {
+			return errors.Wrapf(err, "failed to add ENI %s to data store", eni)
+		}
 	}
 
 	// Store the addressable IP for the ENI
@@ -1363,7 +1366,7 @@ func (c *IPAMContext) setupENI(ctx context.Context, eni string, eniMetadata awsu
 	// Check if this ENI (primary or secondary) is in an excluded subnet and mark it for exclusion.
 	// Fail open on error: aborting here would leave the ENI in the datastore with allocatable IPs
 	// but never wired up via SetupENINetwork, black-holing any pod that gets one of those IPs.
-	if c.useSubnetDiscovery {
+	if c.useSubnetDiscovery && !isTrunkENI {
 		if _, err := c.excludedENIBasedOnSubnetTags(ctx, eni, eniMetadata); err != nil {
 			msg := fmt.Sprintf("subnet-exclusion check failed for ENI %s (subnet %s), treating as not excluded: %v", eni, eniMetadata.SubnetID, err)
 			if eventRecorder := eventrecorder.Get(); eventRecorder != nil {
@@ -1394,12 +1397,22 @@ func (c *IPAMContext) setupENI(ctx context.Context, eni string, eniMetadata awsu
 		err := c.networkClient.SetupENINetwork(c.primaryIP[eni], eniMetadata.MAC, eniMetadata.NetworkCard, subnetCidr, c.maxENI, isTrunkENI, routeTableID, isRuleConfigured)
 		if err != nil {
 			// Failed to set up the ENI
-			errRemove := c.dataStoreAccess.GetDataStore(eniMetadata.NetworkCard).RemoveENIFromDataStore(eni, true)
-			if errRemove != nil {
-				log.Warnf("failed to remove ENI %s: %v", eni, errRemove)
+			if !isTrunkENI {
+				errRemove := c.dataStoreAccess.GetDataStore(eniMetadata.NetworkCard).RemoveENIFromDataStore(eni, true)
+				if errRemove != nil {
+					log.Warnf("failed to remove ENI %s: %v", eni, errRemove)
+				}
 			}
 			delete(c.primaryIP, eni)
 			return errors.Wrapf(err, "failed to set up ENI %s network", eni)
+		}
+	}
+
+	if isTrunkENI {
+		err = c.dataStoreAccess.GetDataStore(eniMetadata.NetworkCard).AddENI(eni, eniMetadata.DeviceNumber, eni == primaryENI, isTrunkENI, isEFAENI, routeTableID, eniMetadata.SubnetID)
+		if err != nil && err.Error() != datastore.DuplicatedENIError {
+			delete(c.primaryIP, eni)
+			return errors.Wrapf(err, "failed to add ENI %s to data store", eni)
 		}
 	}
 
