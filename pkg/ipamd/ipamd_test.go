@@ -4405,6 +4405,67 @@ func TestIPAMContext_InInsufficientCidrCoolingPeriod(t *testing.T) {
 	}
 }
 
+// With subnet discovery, an unfilled ENI whose subnet is exhausted is skipped so that a new ENI can be
+// tried in another subnet. If that ENI allocation also fails, ipamd must enter the InsufficientCidr
+// cooldown instead of retrying both EC2 calls on every pool-check tick.
+func TestIncreaseDatastorePoolSubnetDiscoveryENIFailureStartsCooldown(t *testing.T) {
+	tests := []struct {
+		name                   string
+		enablePrefixDelegation bool
+		firstAllocCount        int
+		eniAllocCount          int
+	}{
+		{"secondary IP mode", false, 14, 14},
+		{"prefix delegation", true, 1, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := setup(t)
+			defer m.ctrl.Finish()
+			ctx := context.Background()
+
+			ds := testDatastore()
+			if tt.enablePrefixDelegation {
+				ds = testDatastorewithPrefix()
+			}
+			_ = ds.GetDataStore(defaultNetworkCard).AddENI(primaryENIid, primaryDevice, true, false, false, networkutils.CalculateRouteTableId(primaryDevice, 0), "")
+
+			mockContext := &IPAMContext{
+				awsClient:              m.awsutils,
+				k8sClient:              m.k8sClient,
+				maxIPsPerENI:           14,
+				maxPrefixesPerENI:      16,
+				maxENI:                 4,
+				warmENITarget:          1,
+				warmPrefixTarget:       1,
+				dataStoreAccess:        ds,
+				networkClient:          m.network,
+				useSubnetDiscovery:     true,
+				enablePrefixDelegation: tt.enablePrefixDelegation,
+				primaryIP:              make(map[string]string),
+				terminating:            int32(0),
+				unmanagedENI:           []int{0},
+			}
+
+			m.awsutils.EXPECT().IsTrunkingCompatible().Return(false).AnyTimes()
+			insufficientErr := &smithy.GenericAPIError{Code: INSUFFICIENT_CIDR_BLOCKS, Message: "no free CIDR blocks", Fault: smithy.FaultClient}
+			m.awsutils.EXPECT().AllocIPAddresses(gomock.Any(), primaryENIid, tt.firstAllocCount).Return(nil, insufficientErr)
+			m.awsutils.EXPECT().AllocIPAddresses(gomock.Any(), primaryENIid, 1).Return(nil, insufficientErr)
+			m.awsutils.EXPECT().AllocENI(gomock.Any(), nil, "", tt.eniAllocCount, defaultNetworkCard).Return("", &smithy.GenericAPIError{
+				Code:    "InvalidParameterValue",
+				Message: "There aren't sufficient free Ipv4 addresses or prefixes",
+				Fault:   smithy.FaultClient,
+			})
+
+			assert.NoError(t, mockContext.increaseDatastorePool(ctx, defaultNetworkCard))
+			assert.True(t, mockContext.inInsufficientCidrCoolingPeriod(), "cooldown should start when both the unfilled ENI and a new ENI fail")
+
+			// Within the cooldown the next tick must not call EC2 again; gomock fails on any unexpected call.
+			assert.NoError(t, mockContext.increaseDatastorePool(ctx, defaultNetworkCard))
+		})
+	}
+}
+
 func newIPv6TestContext(m *testMocks) *IPAMContext {
 	ds := testDatastorewithPrefix()
 	_ = ds.GetDataStore(defaultNetworkCard).AddENI(primaryENIid, primaryDevice, true, false, false, networkutils.CalculateRouteTableId(primaryDevice, 0), "")

@@ -83,10 +83,12 @@ The following table lists the configurable parameters for this chart and their d
 | `nodeAgent.enableCloudWatchLogs`  | Enable CW logging for Node Agent              | `false`                             |
 | `nodeAgent.networkPolicyAgentLogFileLocation`  | Log File location of Network Policy Agent | `/var/log/aws-routed-eni/network-policy-agent.log` |
 | `nodeAgent.enablePolicyEventLogs` | Enable policy decision logs for Node Agent    | `false`                             |
+| `nodeAgent.policyEventLogsScope` | Which verdicts produce policy events: `all` (ACCEPT and DENY) or `deny` (DENY only). Needs `enablePolicyEventLogs=true`, and a Node Agent image with [aws-network-policy-agent#763](https://github.com/aws/aws-network-policy-agent/pull/763); an older agent exits on the flag | `""` (not passed; agent default `all`) |
 | `nodeAgent.metricsBindAddr` | Node Agent port for metrics                         | `8162`                              |
 | `nodeAgent.healthProbeBindAddr` | Node Agent port for health probes               | `8163`                              |
 | `nodeAgent.conntrackCacheCleanupPeriod` | Cleanup interval for network policy agent conntrack cache | 300               |
 | `nodeAgent.conntrackCacheTableSize` | Size of the conntrack cache table (valid range: 32K-1024K) | `524288`            |
+| `nodeAgent.enableTcpResetOnDeny` | Answer a TCP connection that a network policy denies with a reset instead of dropping it. Needs a Node Agent image with [aws-network-policy-agent#782](https://github.com/aws/aws-network-policy-agent/pull/782); an older agent exits on the flag | `false`                             |
 | `nodeAgent.enableIpv6`  | Enable IPv6 support for Node Agent                      | `false`                             |
 | `nodeAgent.resources`   | Node Agent resources, will defualt to .Values.resources if not set | `{}`                     |
 | `nodeAgent.logLevel`    | Node Agent logging verbosity level.                     | `debug`                             |
