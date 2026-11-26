@@ -1103,7 +1103,31 @@ func setupENINetwork(eniIP string, eniMac string, networkCard int, eniSubnetCIDR
 		log.Debugf("setupENINetwork: skipping rule for Primary IP of ENI %s, conditions IsTrunkENI: %t, RuleExists: %t", eniIP, isTrunkENI, isRuleConfigured)
 	}
 
+	if isTrunkENI {
+		raiseVlanMTUs(netLink, linkIndex, mtu)
+	}
+
 	return nil
+}
+
+// raiseVlanMTUs raises branch ENI VLAN links on the trunk link to the trunk's MTU. The kernel lowers a
+// VLAN along with its parent but never raises it.
+func raiseVlanMTUs(netLink netlinkwrapper.NetLink, trunkLinkIndex int, mtu int) {
+	links, err := netLink.LinkList()
+	if err != nil {
+		log.Warnf("raiseVlanMTUs: failed to list links, not checking VLAN MTUs: %v", err)
+		return
+	}
+	for _, link := range links {
+		vlan, ok := link.(*netlink.Vlan)
+		if !ok || vlan.ParentIndex != trunkLinkIndex || vlan.MTU >= mtu {
+			continue
+		}
+		log.Infof("raiseVlanMTUs: raising MTU of %s from %d to the trunk MTU %d", vlan.Name, vlan.MTU, mtu)
+		if err := netLink.LinkSetMTU(vlan, mtu); err != nil {
+			log.Warnf("raiseVlanMTUs: failed to set MTU %d on %s: %v", mtu, vlan.Name, err)
+		}
+	}
 }
 
 func getRouteTableNumberForENI(networkCard int, eniIP string, mask int, deviceNumber int, maxENIsPerNetworkCard int, isV6 bool, netLink netlinkwrapper.NetLink) (int, bool, error) {
