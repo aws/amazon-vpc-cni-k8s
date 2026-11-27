@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -777,6 +778,101 @@ func (ds *DataStore) AssignPodIPv6Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 	return "", -1, 0, ErrNoAvailableIPInDataStore
 }
 
+// assignmentCandidate is one place a new pod IP can come from: an IPv4 CIDR together with the
+// ENI it hangs off.
+type assignmentCandidate struct {
+	eni  *ENI
+	cidr *CidrInfo
+
+	// The ranking keys below are only filled in by candidatesForAssignment in prefix
+	// delegation mode, the one mode it orders. They stay zero everywhere else.
+	canServe     bool
+	cidrAssigned int
+	eniAssigned  int
+}
+
+// candidatesForAssignment returns every CIDR pod IP allocation may draw from, in the order it
+// should consider them. The caller must hold ds.lock: the candidates point into the datastore.
+//
+// Two things are worth reclaiming on a node: a /28 prefix, which EC2 only takes back once all
+// 16 of its addresses are unassigned, and an ENI, which can only be detached once it holds no
+// pods at all. Both need the pods packed together rather than spread out, so candidates are
+// ranked by
+//
+//  1. whether the CIDR can serve an address at all. A prefix whose addresses are all either
+//     assigned or still in IP_COOLDOWN_PERIOD has none to hand out, and a full prefix would
+//     otherwise carry the highest rank below and be tried first on every pod add.
+//  2. assigned addresses in the CIDR, descending. A new pod fills a gap in a prefix that is
+//     already in use before it opens one that is still empty. No separate "prefer a used
+//     prefix" rule is needed, since empty prefixes count 0 and so sort last on their own.
+//  3. pods on the ENI, descending. This picks the ENI a new prefix is opened on, and decides
+//     between two equally full prefixes on different ENIs.
+//  4. device number, then the CIDR string, so the walk is reproducible across ipamd restarts.
+//
+// The CIDR is checked before the ENI, and that costs ENI packing nothing. A prefix that holds
+// some pods always sits on an ENI that holds pods too, so taking an address from it never puts
+// the first pod on an empty ENI. An ENI with no pods stays empty and can still be detached.
+//
+// Ordering does not defeat IP_COOLDOWN_PERIOD. A prefix that was recently full has no servable
+// address, so under churn faster than the cooldown window allocation lands on emptier prefixes
+// that still hold never-touched addresses - the opposite of packing. Only a shorter cooldown
+// window fixes that; candidate order cannot.
+//
+// Secondary IP mode is deliberately left in Go map order. There every CidrInfo is a single /32,
+// so an assigned one counts 1 and a free one counts 0, and fullest-first would sort every
+// assigned address ahead of every free one. getUnusedIP fails on an assigned /32, so the loop
+// would work through all of them before reaching the first address it can actually hand out -
+// O(assigned) wasted attempts per pod add, where map order finds a free address in roughly one.
+// Ordering the ENIs alone would help there, since ENI detach works the same in both modes, but
+// that needs a guard of its own against a fully used ENI ranking first.
+func (ds *DataStore) candidatesForAssignment() []assignmentCandidate {
+	var candidates []assignmentCandidate
+	for _, eni := range ds.eniPool {
+		// Skip ENIs that are excluded from pod IP allocation
+		if eni.IsExcludedForPodIPs {
+			ds.log.Debugf("Skipping ENI %s as it is excluded from pod IP allocation", eni.ID)
+			continue
+		}
+		for _, cidr := range eni.AvailableIPv4Cidrs {
+			candidates = append(candidates, assignmentCandidate{eni: eni, cidr: cidr})
+		}
+	}
+	if !ds.isPDEnabled || len(candidates) < 2 {
+		return candidates
+	}
+
+	// GetIPStatsFromCidr counts the assigned and the cooling addresses in the one pass over the
+	// CIDR that ranking needs anyway, and this runs on the pod add path. Once those two cover
+	// every address the CIDR holds, nothing in it can be handed out.
+	podsPerENI := make(map[string]int, len(ds.eniPool))
+	for i := range candidates {
+		stats := candidates[i].cidr.GetIPStatsFromCidr(ds.ipCooldownPeriod)
+		candidates[i].cidrAssigned = stats.AssignedIPs
+		candidates[i].canServe = stats.AssignedIPs+stats.CooldownIPs < candidates[i].cidr.Size()
+		podsPerENI[candidates[i].eni.ID] += stats.AssignedIPs
+	}
+	for i := range candidates {
+		candidates[i].eniAssigned = podsPerENI[candidates[i].eni.ID]
+	}
+
+	sort.Slice(candidates, func(a, b int) bool {
+		if candidates[a].canServe != candidates[b].canServe {
+			return candidates[a].canServe
+		}
+		if candidates[a].cidrAssigned != candidates[b].cidrAssigned {
+			return candidates[a].cidrAssigned > candidates[b].cidrAssigned
+		}
+		if candidates[a].eniAssigned != candidates[b].eniAssigned {
+			return candidates[a].eniAssigned > candidates[b].eniAssigned
+		}
+		if candidates[a].eni.DeviceNumber != candidates[b].eni.DeviceNumber {
+			return candidates[a].eni.DeviceNumber < candidates[b].eni.DeviceNumber
+		}
+		return candidates[a].cidr.Cidr.String() < candidates[b].cidr.Cidr.String()
+	})
+	return candidates
+}
+
 // AssignPodIPv4Address assigns an IPv4 address to pod
 // It returns the assigned IPv4 address, device number, route table ID, and error
 func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey, ipamMetadata IPAMMetadata) (ipv4address string, deviceNumber int, routeTableId int, err error) {
@@ -790,68 +886,71 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 		return addr.Address, eni.DeviceNumber, eni.RouteTableID, nil
 	}
 
-	for _, eni := range ds.eniPool {
-		// Skip ENIs that are excluded from pod IP allocation
-		if eni.IsExcludedForPodIPs {
-			ds.log.Debugf("Skipping ENI %s as it is excluded from pod IP allocation", eni.ID)
+	for _, candidate := range ds.candidatesForAssignment() {
+		eni, availableCidr := candidate.eni, candidate.cidr
+		var addr *AddressInfo
+		var strPrivateIPv4 string
+		var err error
+
+		if (ds.isPDEnabled && availableCidr.IsPrefix) || (!ds.isPDEnabled && !availableCidr.IsPrefix) {
+			strPrivateIPv4, err = ds.getFreeIPv4AddrfromCidr(availableCidr)
+			if err != nil {
+				// Names the ENI, so an ENI running out of addresses is still visible here when
+				// a later candidate serves the pod and the allocation as a whole succeeds.
+				ds.log.Debugf("Unable to get IP address from CIDR on ENI %s: %v", eni.ID, err)
+				// Check in next CIDR
+				continue
+			}
+			ds.log.Debugf("New IP from CIDR pool- %s", strPrivateIPv4)
+			if availableCidr.IPAddresses == nil {
+				availableCidr.IPAddresses = make(map[string]*AddressInfo)
+			}
+			// Update prometheus for ips per cidr
+			// Secondary IP mode will have /32:1 and Prefix mode will have /28:<number of /32s>
+			prometheusmetrics.IpsPerCidr.With(prometheus.Labels{"cidr": availableCidr.Cidr.String()}).Inc()
+		} else {
+			// This can happen during upgrade or PD enable/disable knob toggle
+			// ENI can have prefixes attached and no space for SIPs or vice versa
 			continue
 		}
 
-		for _, availableCidr := range eni.AvailableIPv4Cidrs {
-			var addr *AddressInfo
-			var strPrivateIPv4 string
-			var err error
-
-			if (ds.isPDEnabled && availableCidr.IsPrefix) || (!ds.isPDEnabled && !availableCidr.IsPrefix) {
-				strPrivateIPv4, err = ds.getFreeIPv4AddrfromCidr(availableCidr)
-				if err != nil {
-					ds.log.Debugf("Unable to get IP address from CIDR: %v", err)
-					// Check in next CIDR
-					continue
-				}
-				ds.log.Debugf("New IP from CIDR pool- %s", strPrivateIPv4)
-				if availableCidr.IPAddresses == nil {
-					availableCidr.IPAddresses = make(map[string]*AddressInfo)
-				}
-				// Update prometheus for ips per cidr
-				// Secondary IP mode will have /32:1 and Prefix mode will have /28:<number of /32s>
-				prometheusmetrics.IpsPerCidr.With(prometheus.Labels{"cidr": availableCidr.Cidr.String()}).Inc()
-			} else {
-				// This can happen during upgrade or PD enable/disable knob toggle
-				// ENI can have prefixes attached and no space for SIPs or vice versa
-				continue
-			}
-
-			addr = availableCidr.IPAddresses[strPrivateIPv4]
-			if addr == nil {
-				// addr is nil when we are using a new IP from prefix or SIP pool
-				// if addr is out of cooldown or not assigned, we can reuse addr
-				addr = &AddressInfo{Address: strPrivateIPv4}
-				ds.log.Debugf("Allocating new IP %s from CIDR %s for pod", strPrivateIPv4, availableCidr.Cidr.String())
-			} else if !addr.UnassignedTime.IsZero() {
-				// IP was previously used and is being reassigned
-				timeSinceFree := time.Since(addr.UnassignedTime)
-				ds.log.Debugf("Reassigning IP %s (was free for %v)", addr.Address, timeSinceFree.Round(time.Second))
-			}
-
-			availableCidr.IPAddresses[strPrivateIPv4] = addr
-			ds.assignPodIPAddressUnsafe(addr, ipamKey, ipamMetadata, time.Now())
-
-			if err := ds.writeBackingStoreUnsafe(); err != nil {
-				ds.log.Warnf("Failed to update backing store: %v", err)
-				// Important! Unwind assignment
-				ds.unassignPodIPAddressUnsafe(addr)
-				// Remove the IP from eni DB
-				delete(availableCidr.IPAddresses, addr.Address)
-				// Update prometheus for ips per cidr
-				prometheusmetrics.IpsPerCidr.With(prometheus.Labels{"cidr": availableCidr.Cidr.String()}).Dec()
-				return "", -1, 0, err
-			}
-			// Increment ENI IP usage on pod IPv4 allocation
-			prometheusmetrics.EniIPsInUse.WithLabelValues(eni.ID).Inc()
-			return addr.Address, eni.DeviceNumber, eni.RouteTableID, nil
+		addr = availableCidr.IPAddresses[strPrivateIPv4]
+		if addr == nil {
+			// addr is nil when we are using a new IP from prefix or SIP pool
+			// if addr is out of cooldown or not assigned, we can reuse addr
+			addr = &AddressInfo{Address: strPrivateIPv4}
+			ds.log.Debugf("Allocating new IP %s from CIDR %s for pod", strPrivateIPv4, availableCidr.Cidr.String())
+		} else if !addr.UnassignedTime.IsZero() {
+			// IP was previously used and is being reassigned
+			timeSinceFree := time.Since(addr.UnassignedTime)
+			ds.log.Debugf("Reassigning IP %s (was free for %v)", addr.Address, timeSinceFree.Round(time.Second))
 		}
-		ds.log.Debugf("AssignPodIPv4Address: ENI %s does not have available addresses", eni.ID)
+
+		availableCidr.IPAddresses[strPrivateIPv4] = addr
+		ds.assignPodIPAddressUnsafe(addr, ipamKey, ipamMetadata, time.Now())
+
+		if err := ds.writeBackingStoreUnsafe(); err != nil {
+			ds.log.Warnf("Failed to update backing store: %v", err)
+			// Important! Unwind assignment
+			ds.unassignPodIPAddressUnsafe(addr)
+			// Remove the IP from eni DB
+			delete(availableCidr.IPAddresses, addr.Address)
+			// Update prometheus for ips per cidr
+			prometheusmetrics.IpsPerCidr.With(prometheus.Labels{"cidr": availableCidr.Cidr.String()}).Dec()
+			return "", -1, 0, err
+		}
+		// Increment ENI IP usage on pod IPv4 allocation
+		prometheusmetrics.EniIPsInUse.WithLabelValues(eni.ID).Inc()
+		return addr.Address, eni.DeviceNumber, eni.RouteTableID, nil
+	}
+
+	// Reached only when no candidate could serve, so every ENI allocation may draw from came up
+	// empty. The candidate walk interleaves ENIs, so the per-ENI report belongs here rather
+	// than inside the walk.
+	for _, eni := range ds.eniPool {
+		if !eni.IsExcludedForPodIPs {
+			ds.log.Debugf("AssignPodIPv4Address: ENI %s does not have available addresses", eni.ID)
+		}
 	}
 
 	prometheusmetrics.NoAvailableIPAddrs.Inc()
